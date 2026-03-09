@@ -1,0 +1,61 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: agsfjope
+  
+  # Database Configuration (PostgreSQL 15+)
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  
+  # JPA / Hibernate Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate # Tắt tính năng tự sinh bảng, sử dụng file schema gốc
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Mail / SMTP Configuration (Gmail)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          # Fix lỗi bị Gmail chặn nếu server delay
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+# Custom Application Properties
+'[app]':
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      access-token-expiration-ms: 3600000 # 1 giờ
+      refresh-token-expiration-ms: 86400000 # 1 ngày
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS}
+
+# OpenAPI / Swagger UI
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method

@@ -1,0 +1,19 @@
+# Build folders
+target/
+*.jar
+*.war
+*.log
+
+# Git and IDE configs
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Local env files
+.env
+application-dev.yml
+
+# OS generated files
+.DS_Store
+Thumbs.db

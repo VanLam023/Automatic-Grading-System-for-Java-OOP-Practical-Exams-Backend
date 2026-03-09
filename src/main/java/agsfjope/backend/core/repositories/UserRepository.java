@@ -1,0 +1,37 @@
+package agsfjope.backend.core.repositories;
+
+import agsfjope.backend.core.entities.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Repository interface for managing User entities in the database.
+ * Extends JpaRepository to provide standard CRUD operations automatically via Spring Data JPA.
+ */
+@Repository
+public interface UserRepository extends JpaRepository<User, UUID> {
+
+    /**
+     * Finds a User by their unique username.
+     * Used in the Login flow to look up a user before verifying their password.
+     * @param username the username to search for
+     * @return an Optional containing the User if found, or empty if not found
+     */
+    Optional<User> findByUsername(String username);
+
+    /**
+     * Finds a User by their unique email address.
+     * @param email the email to search for
+     * @return an Optional containing the User if found, or empty if not found
+     */
+    Optional<User> findByEmail(String email);
+    /**
+     * Finds a user by their MSSV (student ID) — used during registration to check uniqueness.
+     * @param mssv the student ID (e.g. se173173)
+     * @return Optional containing the User if found
+     */
+    Optional<User> findByMssv(String mssv);
+}

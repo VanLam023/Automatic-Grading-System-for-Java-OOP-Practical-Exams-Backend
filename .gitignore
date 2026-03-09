@@ -1,0 +1,76 @@
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Spring Boot ###
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### Compiled output ###
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+*.jar
+*.war
+*.nar
+*.ear
+
+### Archives (do NOT ignore source zips accidentally) ###
+*.tar.gz
+*.rar
+
+### MAC OS ###
+.DS_Store
+
+### ❗ Sensitive / Secret files — NEVER commit these ###
+# PowerShell scripts (may contain hardcoded credentials)
+# Whitelist only the known-safe utility scripts
+*.ps1
+!run-local.ps1
+!run-docker.ps1
+
+# Environment variable files
+.env
+.env.*
+!.env.example
+*.env
+# Spring profile-specific configs (contain real secrets)
+application-dev.yml
+application-prod.yml
+application-local.yml
+application-staging.yml
+# Docker env files
+docker.env
+docker-compose.override.yml
+
+### Logs ###
+*.log
+logs/
