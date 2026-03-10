@@ -74,7 +74,3 @@ docker-compose.override.yml
 ### Logs ###
 *.log
 logs/
-
-### Database Schema ###
-# Ignored to keep DB structure private or separated from source code
-docker/init-scripts/schema.sql
