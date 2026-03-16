@@ -1,4 +1,4 @@
-package agsfjope.backend.core.repositories;
+package agsfjope.backend.core.repositories.auth;
 
 import agsfjope.backend.core.entities.Role;
 import org.springframework.data.jpa.repository.JpaRepository;

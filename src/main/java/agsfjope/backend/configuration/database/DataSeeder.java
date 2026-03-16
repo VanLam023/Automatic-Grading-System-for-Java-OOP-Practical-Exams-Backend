@@ -2,8 +2,8 @@ package agsfjope.backend.configuration.database;
 
 import agsfjope.backend.core.entities.Role;
 import agsfjope.backend.core.entities.User;
-import agsfjope.backend.core.repositories.RoleRepository;
-import agsfjope.backend.core.repositories.UserRepository;
+import agsfjope.backend.core.repositories.auth.RoleRepository;
+import agsfjope.backend.core.repositories.auth.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
