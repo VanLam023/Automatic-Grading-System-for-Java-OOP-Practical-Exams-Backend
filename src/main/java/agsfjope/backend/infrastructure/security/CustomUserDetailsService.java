@@ -1,7 +1,7 @@
 package agsfjope.backend.infrastructure.security;
 
 import agsfjope.backend.core.entities.User;
-import agsfjope.backend.core.repositories.UserRepository;
+import agsfjope.backend.core.repositories.auth.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;

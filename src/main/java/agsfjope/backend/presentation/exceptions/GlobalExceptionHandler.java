@@ -6,6 +6,8 @@ import agsfjope.backend.core.exceptions.auth.InvalidTokenException;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.exceptions.auth.TokenExpiredException;
 import agsfjope.backend.core.exceptions.auth.UnauthorizedException;
+import agsfjope.backend.core.exceptions.config.ConfigNotFoundException;
+import agsfjope.backend.core.exceptions.config.InvalidConfigException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -56,6 +58,14 @@ public class GlobalExceptionHandler {
                 .body(buildErrorResponse(ex.getMessage()));
     }
 
+    // 4.1 Handle Config Not Found (system config key or grading mode not found)
+    @ExceptionHandler(ConfigNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleConfigNotFound(ConfigNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
     // 5. Handle Invalid Refresh Token (not found in DB or already revoked)
     @ExceptionHandler(InvalidTokenException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidToken(InvalidTokenException ex) {
@@ -89,6 +99,14 @@ public class GlobalExceptionHandler {
     // 8. Handle Business-rule validation failures during registration (e.g. username/MSSV mismatch)
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 8.1 Handle invalid system configuration payloads
+    @ExceptionHandler(InvalidConfigException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidConfig(InvalidConfigException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(buildErrorResponse(ex.getMessage()));
