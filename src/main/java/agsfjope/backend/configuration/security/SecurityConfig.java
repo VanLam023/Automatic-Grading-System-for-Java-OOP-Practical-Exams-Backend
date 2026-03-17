@@ -92,7 +92,7 @@ public class SecurityConfig {
                     "/api-docs/**",
                     "/error"                        // Spring Boot default error routing
                 ).permitAll()
-                    .requestMatchers("/api/admin/**").hasAnyAuthority("SYSTEM_ADMIN", "ROLE_SYSTEM_ADMIN")
+                    .requestMatchers("/api/admin/**").hasAnyRole("SYSTEM_ADMIN", "ADMIN")
                 // /api/auth/logout requires a valid Bearer JWT (JwtAuthenticationFilter must pass first)
                 .requestMatchers("/api/auth/logout").authenticated()
                 // All other endpoints require authentication (valid JWT token)

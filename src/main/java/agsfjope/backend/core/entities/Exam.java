@@ -4,6 +4,8 @@ import agsfjope.backend.core.enums.ExamStatus;
 import agsfjope.backend.core.enums.GradingMode;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -49,7 +51,8 @@ public class Exam {
     private ExamStatus status = ExamStatus.UPCOMING;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "GradingMode", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "GradingMode", nullable = false, columnDefinition = "grading_mode")
     @Builder.Default
     private GradingMode gradingMode = GradingMode.MODE_1;
 

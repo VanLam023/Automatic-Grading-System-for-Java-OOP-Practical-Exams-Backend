@@ -89,6 +89,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // Do NOT set authentication — Spring Security will treat this as an unauthenticated request.
             // For permitAll() endpoints (login, register), the request still proceeds normally.
             SecurityContextHolder.clearContext();
+        } catch (Exception e) {
+            // Any unexpected error in loading user details/auth context should not crash request processing.
+            // Clear security context so downstream security rules can return 401/403 instead of 500.
+            SecurityContextHolder.clearContext();
         }
 
         // Step 5: Always pass the request to the next filter in the chain
