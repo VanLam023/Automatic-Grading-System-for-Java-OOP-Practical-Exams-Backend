@@ -45,9 +45,10 @@ public class Exam {
     @Column(name = "EndTime", nullable = false)
     private OffsetDateTime endTime;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "Status", nullable = false)
     @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Status", columnDefinition = "exam_status", nullable = false)
     private ExamStatus status = ExamStatus.UPCOMING;
 
     @Enumerated(EnumType.STRING)
