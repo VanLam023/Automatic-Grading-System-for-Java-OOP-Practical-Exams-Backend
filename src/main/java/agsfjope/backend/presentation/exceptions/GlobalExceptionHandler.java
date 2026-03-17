@@ -8,6 +8,8 @@ import agsfjope.backend.core.exceptions.auth.TokenExpiredException;
 import agsfjope.backend.core.exceptions.auth.UnauthorizedException;
 import agsfjope.backend.core.exceptions.config.ConfigNotFoundException;
 import agsfjope.backend.core.exceptions.config.InvalidConfigException;
+import agsfjope.backend.core.exceptions.exam.ExamConflictException;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -111,6 +113,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleInvalidConfig(InvalidConfigException ex) {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 8.15 Handle exam deletion conflict (exam has existing submissions — BR-12)
+    @ExceptionHandler(ExamConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleExamConflict(ExamConflictException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
                 .body(buildErrorResponse(ex.getMessage()));
     }
 

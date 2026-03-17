@@ -1,39 +1,58 @@
 package agsfjope.backend.application.examservices;
 
-import agsfjope.backend.application.dtos.requests.auth.CreateExamRequest;
-import agsfjope.backend.application.dtos.responses.auth.ExamResponse;
+import agsfjope.backend.application.dtos.requests.exam.CreateExamRequest;
+import agsfjope.backend.application.dtos.requests.exam.UpdateExamRequest;
+import agsfjope.backend.application.dtos.responses.exam.ExamResponse;
 
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Service interface for Exam management use cases.
+ * Encapsulates business logic for creating, retrieving, updating, and deleting exams.
+ * Only {@code EXAM_STAFF} role is authorized to invoke these operations.
+ */
 public interface ExamService {
 
     /**
-     * Creates a new exam.
-     * Validates exam information before saving.
+     * Creates a new exam after validating all business rules.
+     * Validates start time is in the future, duration &lt;= 5 hours, and no duplicate name+semester.
      *
-     * @param request exam creation request
+     * @param request exam creation request payload
      * @return created exam information
      */
     ExamResponse createExam(CreateExamRequest request);
 
     /**
-     * Returns all exams in the system.
+     * Returns all active (non-deleted) exams in the system.
      *
-     * @return list of exams
+     * @return list of exam responses
      */
     List<ExamResponse> getAllExams();
 
     /**
-     * Returns exam details by id.
+     * Returns full details of a single active exam by its ID.
      *
      * @param examId exam identifier
      * @return exam information
+     * @throws agsfjope.backend.core.exceptions.auth.NotFoundException if exam not found or deleted
      */
     ExamResponse getExamById(UUID examId);
 
     /**
-     * Deletes an exam by id.
+     * Updates mutable fields of an existing exam.
+     * Only fields provided in the request will be updated.
+     *
+     * @param examId  exam identifier
+     * @param request update payload
+     * @return updated exam information
+     */
+    ExamResponse updateExam(UUID examId, UpdateExamRequest request);
+
+    /**
+     * Soft-deletes an exam by setting its {@code deletedAt} timestamp.
+     * Throws {@link agsfjope.backend.core.exceptions.exam.ExamConflictException}
+     * if the exam has existing submissions (BR-12).
      *
      * @param examId exam identifier
      */
