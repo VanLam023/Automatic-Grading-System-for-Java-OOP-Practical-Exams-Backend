@@ -10,6 +10,7 @@ import agsfjope.backend.core.exceptions.config.ConfigNotFoundException;
 import agsfjope.backend.core.exceptions.config.InvalidConfigException;
 import agsfjope.backend.core.exceptions.exam.ExamConflictException;
 import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
+import jakarta.persistence.EntityNotFoundException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -148,8 +149,15 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.NOT_FOUND)
                 .body(buildErrorResponse(ex.getMessage()));
     }
+    // 10. Handle JPA Entity Not Found (audit log detail, etc.)
+    @ExceptionHandler(EntityNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleEntityNotFound(EntityNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
 
-    // 10. Handle Generic/Unexpected Internal Server Errors
+    // 11. Handle Generic/Unexpected Internal Server Errors
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGlobalException(Exception ex) {
         return ResponseEntity
