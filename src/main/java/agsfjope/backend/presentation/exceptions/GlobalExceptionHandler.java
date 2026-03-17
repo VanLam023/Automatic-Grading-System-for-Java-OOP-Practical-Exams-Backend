@@ -9,6 +9,7 @@ import agsfjope.backend.core.exceptions.auth.UnauthorizedException;
 import agsfjope.backend.core.exceptions.config.ConfigNotFoundException;
 import agsfjope.backend.core.exceptions.config.InvalidConfigException;
 import agsfjope.backend.core.exceptions.exam.ExamConflictException;
+import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -140,7 +141,15 @@ public class GlobalExceptionHandler {
                 .body(buildErrorResponse("Bạn không có quyền truy cập tài nguyên này"));
     }
 
-    // 9. Handle Generic/Unexpected Internal Server Errors
+    // 9. Handle Notification Not Found (MSG-82)
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotificationNotFound(NotificationNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 10. Handle Generic/Unexpected Internal Server Errors
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGlobalException(Exception ex) {
         return ResponseEntity
