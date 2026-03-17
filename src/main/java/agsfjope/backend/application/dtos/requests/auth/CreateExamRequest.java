@@ -43,9 +43,27 @@ public class CreateExamRequest {
     @NotNull
     private OffsetDateTime endTime;
 
-    private String createdBy;
-    /** Grading mode used for the exam */
+
     @NotNull
     private GradingMode gradingMode;
+
+    @AssertTrue(message = "End time must be after start time")
+    public boolean isValidTimeRange() {
+        if (startTime == null || endTime == null) return true;
+        return endTime.isAfter(startTime);
+    }
+
+    @AssertTrue(message = "Academic year must be a valid range (e.g., 2025-2026)")
+    public boolean isValidAcademicYearRange() {
+        if (academicYear == null) return true;
+        try {
+            String[] parts = academicYear.split("-");
+            int start = Integer.parseInt(parts[0]);
+            int end = Integer.parseInt(parts[1]);
+            return end == start + 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
 }
