@@ -7,6 +7,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Implementation of Spring Security's UserDetailsService.
@@ -28,10 +29,16 @@ public class CustomUserDetailsService implements UserDetailsService {
      * @throws UsernameNotFoundException if no user with the given username exists in the DB
      */
     @Override
+    @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         // Query the database for the user by username
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy người dùng: " + username));
+
+        // Force initialize role to prevent lazy-loading failures when authorities are read later.
+        if (user.getRole() != null) {
+            user.getRole().getName();
+        }
 
         // Wrap the User entity in our CustomUserDetails class for Spring Security
         return new CustomUserDetails(user);

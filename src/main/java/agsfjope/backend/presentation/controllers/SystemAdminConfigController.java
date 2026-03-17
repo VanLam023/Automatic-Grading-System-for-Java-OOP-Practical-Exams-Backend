@@ -28,7 +28,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/config")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyAuthority('SYSTEM_ADMIN','ROLE_SYSTEM_ADMIN')")
+@PreAuthorize("hasAnyRole('SYSTEM_ADMIN','ADMIN')")
 public class SystemAdminConfigController {
 
     private final SystemConfigService systemConfigService;

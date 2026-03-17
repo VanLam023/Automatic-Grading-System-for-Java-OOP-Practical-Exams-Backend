@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.GradingMode;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -26,7 +28,8 @@ public class GradingResult {
     private Submission submission;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "GradingMode", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "GradingMode", nullable = false, columnDefinition = "grading_mode")
     private GradingMode gradingMode;
 
     @Column(name = "TotalScore", nullable = false, precision = 6, scale = 2)

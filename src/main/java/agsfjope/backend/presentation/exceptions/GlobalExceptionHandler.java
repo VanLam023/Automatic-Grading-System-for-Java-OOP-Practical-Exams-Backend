@@ -10,6 +10,8 @@ import agsfjope.backend.core.exceptions.config.ConfigNotFoundException;
 import agsfjope.backend.core.exceptions.config.InvalidConfigException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -110,6 +112,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 8.2 Handle missing/invalid authentication context (often when Bearer token missing/invalid)
+    @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleAuthenticationCredentialsNotFound(AuthenticationCredentialsNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(buildErrorResponse("Bạn chưa đăng nhập hoặc token không hợp lệ"));
+    }
+
+    // 8.3 Handle access denied due to insufficient role/authority
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(buildErrorResponse("Bạn không có quyền truy cập tài nguyên này"));
     }
 
     // 9. Handle Generic/Unexpected Internal Server Errors

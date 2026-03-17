@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.GradingMode;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 
@@ -20,7 +22,8 @@ public class GradingModeConfig {
     private Integer gradingModeConfigId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "Mode", nullable = false, unique = true)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Mode", nullable = false, unique = true, columnDefinition = "grading_mode")
     private GradingMode mode;
 
     @Column(name = "DisplayName", nullable = false, length = 100)
