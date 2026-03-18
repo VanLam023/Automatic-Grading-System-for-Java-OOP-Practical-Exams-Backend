@@ -51,6 +51,15 @@ public interface ExamRepository extends JpaRepository<Exam, UUID> {
     Optional<Exam> findByExamIdAndDeletedAtIsNull(UUID examId);
 
     /**
+     * Checks if an active (non-deleted) exam exists with the given ID.
+     * Used by BlockService to validate the parent exam before listing blocks.
+     *
+     * @param examId exam identifier
+     * @return true if the exam exists and is not deleted
+     */
+    boolean existsByExamIdAndDeletedAtIsNull(UUID examId);
+
+    /**
      * Checks if any submission exists linked to any block belonging to the given exam.
      * Uses JPQL to navigate Submission → Block → Exam relationship.
      * Used to enforce BR-12: exam can only be deleted if no submissions exist.

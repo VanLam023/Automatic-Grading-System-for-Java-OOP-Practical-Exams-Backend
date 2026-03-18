@@ -1,5 +1,6 @@
 package agsfjope.backend.application.examservices.impl;
 
+import agsfjope.backend.application.blockservices.BlockService;
 import agsfjope.backend.application.dtos.requests.exam.CreateExamRequest;
 import agsfjope.backend.application.dtos.requests.exam.UpdateExamRequest;
 import agsfjope.backend.application.dtos.responses.exam.ExamResponse;
@@ -11,9 +12,12 @@ import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.exceptions.exam.ExamConflictException;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.core.repositories.exam.ExamRepository;
+import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.infrastructure.security.SecurityUtils;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -44,6 +48,15 @@ public class ExamServiceImpl implements ExamService {
 
     private final ExamRepository examRepository;
     private final SystemConfigRepository systemConfigRepository;
+    private final BlockRepository blockRepository;
+
+    /**
+     * Injected lazily to avoid circular dependency:
+     * ExamServiceImpl → BlockService → BlockServiceImpl → ExamRepository ← ExamServiceImpl
+     */
+    @Lazy
+    @Autowired
+    private BlockService blockService;
 
     /** Maximum allowed exam duration: 4 months and 15 days = 135 days */
     private static final int MAX_EXAM_DURATION_DAYS = 135;
@@ -113,6 +126,10 @@ public class ExamServiceImpl implements ExamService {
                 .build();
 
         examRepository.save(exam);
+
+        // BR-08: Auto-create Block 10 + Block 3 for this exam
+        blockService.createDefaultBlocks(exam);
+
         return mapToResponse(exam);
     }
 
@@ -209,15 +226,27 @@ public class ExamServiceImpl implements ExamService {
         Exam exam = examRepository.findByExamIdAndDeletedAtIsNull(examId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy kỳ thi với ID: " + examId));
 
-        // BR-12: Only delete exam if no submissions exist on any block
-        if (examRepository.existsSubmissionsByExamId(examId)) {
+        OffsetDateTime now = OffsetDateTime.now();
+
+        // ✅ Trường hợp 1: Kỳ thi đã kết thúc → luôn cho phép xóa (dù có submission)
+        if (!now.isBefore(exam.getEndTime())) {
+            exam.setDeletedAt(now);
+            examRepository.save(exam);
+            return;
+        }
+
+        // ❌ Trường hợp 2: Kỳ thi chưa kết thúc — chặn nếu có block bắt đầu trong 14 ngày tới
+        OffsetDateTime threshold = now.plusDays(14);
+        if (blockRepository.existsBlockStartingOnOrBefore(examId, threshold)) {
             throw new ExamConflictException(
-                    "Không thể xóa kỳ thi \"" + exam.getName() + "\" vì đã có sinh viên nộp bài. " +
-                    "Vui lòng kiểm tra lại trước khi xóa."
+                    "Không thể xóa kỳ thi \"" + exam.getName() + "\". " +
+                    "Có block sẽ diễn ra trong vòng 14 ngày tới (hoặc đã diễn ra). " +
+                    "Chỉ được xóa khi kỳ thi chưa có block nào trong 14 ngày, hoặc kỳ thi đã kết thúc."
             );
         }
 
-        exam.setDeletedAt(OffsetDateTime.now());
+        // ✅ Trường hợp 3: Kỳ thi chưa kết thúc nhưng tất cả blocks cách hơn 14 ngày → cho xóa
+        exam.setDeletedAt(now);
         examRepository.save(exam);
     }
 
