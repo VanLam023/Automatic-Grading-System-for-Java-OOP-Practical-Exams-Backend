@@ -15,5 +15,20 @@ services:
       - ./init-scripts/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     restart: unless-stopped
 
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: oop_exam_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"   # S3 API — Spring Boot kết nối vào port này
+      - "9001:9001"   # Console UI — mở browser http://localhost:9001
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  minio_data:

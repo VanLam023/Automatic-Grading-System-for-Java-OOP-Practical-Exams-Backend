@@ -15,7 +15,7 @@ spring:
   # JPA / Hibernate Configuration
   jpa:
     hibernate:
-      ddl-auto: validate # Tắt tính năng tự sinh bảng, sử dụng file schema gốc
+      ddl-auto: validate # Hibernate validates entities match DB — Flyway manages schema
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     show-sql: true
@@ -23,6 +23,14 @@ spring:
       hibernate:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Flyway Database Migrations
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true     # Cho phep baseline DB da co san (Supabase)
+    baseline-version: 1           # Danh dau V1 da duoc apply (DB hien tai = V1)
+    validate-on-migrate: true     # Kiem tra migration chua bi chinh sua
 
   # Mail / SMTP Configuration (Gmail)
   mail:
@@ -53,6 +61,15 @@ spring:
     secret-key: ${APP_ENCRYPTION_SECRET_KEY:change-this-secret-key-in-production}
   cors:
     allowed-origins: ${ALLOWED_ORIGINS}
+
+# MinIO Object Storage (S3-compatible)
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  bucket:
+    exam-papers: exam-papers
+    submissions: submissions
 
 # OpenAPI / Swagger UI
 springdoc:
