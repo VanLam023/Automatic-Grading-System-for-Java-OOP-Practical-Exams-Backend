@@ -9,6 +9,8 @@ import agsfjope.backend.core.exceptions.auth.UnauthorizedException;
 import agsfjope.backend.core.exceptions.config.ConfigNotFoundException;
 import agsfjope.backend.core.exceptions.config.InvalidConfigException;
 import agsfjope.backend.core.exceptions.exam.ExamConflictException;
+import agsfjope.backend.core.exceptions.exampaper.ExamPaperHasSubmissionsException;
+import agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException;
 import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 
@@ -123,6 +125,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleExamConflict(ExamConflictException ex) {
         return ResponseEntity
                 .status(HttpStatus.CONFLICT)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 8.16 Handle exam paper modification/deletion when submissions already exist (BR-11)
+    @ExceptionHandler(ExamPaperHasSubmissionsException.class)
+    public ResponseEntity<Map<String, Object>> handleExamPaperHasSubmissions(ExamPaperHasSubmissionsException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 8.17 Handle invalid exam paper archive structure (wrong zip/rar layout — BR-10)
+    @ExceptionHandler(InvalidZipStructureException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidZipStructure(InvalidZipStructureException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 8.18 Handle file validation errors (wrong extension, exceeds size limit — BR-16)
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalState(IllegalStateException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
                 .body(buildErrorResponse(ex.getMessage()));
     }
 
