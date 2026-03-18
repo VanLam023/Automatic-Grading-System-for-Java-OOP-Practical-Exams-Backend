@@ -38,6 +38,24 @@ public class Question {
     @Column(name = "MaxScore", nullable = false, precision = 5, scale = 2)
     private BigDecimal maxScore;
 
+    /**
+     * If true, all whitespace characters are stripped from the INPUT data
+     * before feeding it into the student's program during grading.
+     * Parsed from {@code REMOVE_SPACES} flag in the exam paper's {@code tc{n}.txt}.
+     */
+    @Column(name = "RemoveSpaces", nullable = false)
+    @Builder.Default
+    private Boolean removeSpaces = true;
+
+    /**
+     * If true, the comparison between the student's actual output and the expected output
+     * is case-sensitive. If false, comparison is case-insensitive.
+     * Parsed from {@code CASE_SENSITIVE} flag in the exam paper's {@code tc{n}.txt}.
+     */
+    @Column(name = "CaseSensitive", nullable = false)
+    @Builder.Default
+    private Boolean caseSensitive = true;
+
     @Column(name = "CreatedAt", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
