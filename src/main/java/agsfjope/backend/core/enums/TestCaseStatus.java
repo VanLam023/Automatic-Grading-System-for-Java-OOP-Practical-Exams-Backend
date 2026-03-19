@@ -1,5 +1,5 @@
 package agsfjope.backend.core.enums;
 
 public enum TestCaseStatus {
-    PASS, FAIL, ERROR, TIMEOUT
+    PASS_TESTCASE, FAIL_TESTCASE, ERROR, TIMEOUT
 }

@@ -1,9 +1,11 @@
 package agsfjope.backend.core.repositories.submission;
 
 import agsfjope.backend.core.entities.Submission;
+import agsfjope.backend.core.enums.SubmissionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,4 +37,33 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
      * @return the existing submission, or empty if none
      */
     Optional<Submission> findByStudent_UserIdAndBlock_BlockId(UUID studentId, UUID blockId);
+
+    /**
+     * Finds all submissions for a block with a specific status.
+     * Used by GradingService to fetch submissions that need to be graded (SUBMITTED status).
+     *
+     * @param blockId the block UUID
+     * @param status  the submission status filter
+     * @return list of matching submissions
+     */
+    List<Submission> findByBlock_BlockIdAndStatus(UUID blockId, SubmissionStatus status);
+
+    /**
+     * Counts total submissions for a block.
+     * Used to calculate grading progress.
+     *
+     * @param blockId the block UUID
+     * @return total number of submissions in the block
+     */
+    long countByBlock_BlockId(UUID blockId);
+
+    /**
+     * Counts submissions for a block with a specific status.
+     * Used to calculate how many submissions have been graded.
+     *
+     * @param blockId the block UUID
+     * @param status  the submission status filter
+     * @return count of matching submissions
+     */
+    long countByBlock_BlockIdAndStatus(UUID blockId, SubmissionStatus status);
 }
