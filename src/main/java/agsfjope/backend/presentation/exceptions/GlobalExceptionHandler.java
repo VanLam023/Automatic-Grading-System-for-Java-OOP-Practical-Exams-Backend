@@ -13,6 +13,7 @@ import agsfjope.backend.core.exceptions.exampaper.ExamPaperHasSubmissionsExcepti
 import agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException;
 import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
 import agsfjope.backend.core.exceptions.submission.ExamNotOngoingException;
+import agsfjope.backend.application.grading.GradingAlreadyInProgressException;
 import jakarta.persistence.EntityNotFoundException;
 
 import org.springframework.http.HttpStatus;
@@ -193,7 +194,14 @@ public class GlobalExceptionHandler {
                 .body(buildErrorResponse(ex.getMessage()));
     }
 
-    // 12. Handle Generic/Unexpected Internal Server Errors
+    // 12. Handle GradingAlreadyInProgressException (409: concurrent GRADE_ALL guard)
+    @ExceptionHandler(GradingAlreadyInProgressException.class)
+    public ResponseEntity<Map<String, Object>> handleGradingInProgress(GradingAlreadyInProgressException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGlobalException(Exception ex) {
         return ResponseEntity
