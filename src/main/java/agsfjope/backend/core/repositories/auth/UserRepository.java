@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,4 +37,20 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * @return Optional containing the User if found
      */
     Optional<User> findByMssv(String mssv);
+
+    /**
+     * Finds all Users whose email is in the provided list.
+     * Used for batch duplicate checking during Excel import to avoid N+1 queries.
+     * @param emails list of email addresses to check (should be lowercase)
+     * @return list of matching User entities
+     */
+    List<User> findByEmailIn(List<String> emails);
+
+    /**
+     * Finds all Users whose MSSV is in the provided list.
+     * Used for batch duplicate checking during Excel import to avoid N+1 queries.
+     * @param mssvs list of student IDs to check
+     * @return list of matching User entities
+     */
+    List<User> findByMssvIn(List<String> mssvs);
 }
