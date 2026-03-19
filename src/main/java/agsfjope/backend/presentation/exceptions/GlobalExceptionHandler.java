@@ -12,6 +12,7 @@ import agsfjope.backend.core.exceptions.exam.ExamConflictException;
 import agsfjope.backend.core.exceptions.exampaper.ExamPaperHasSubmissionsException;
 import agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException;
 import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
+import agsfjope.backend.core.exceptions.submission.ExamNotOngoingException;
 import jakarta.persistence.EntityNotFoundException;
 
 import org.springframework.http.HttpStatus;
@@ -175,6 +176,7 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.NOT_FOUND)
                 .body(buildErrorResponse(ex.getMessage()));
     }
+
     // 10. Handle JPA Entity Not Found (audit log detail, etc.)
     @ExceptionHandler(EntityNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleEntityNotFound(EntityNotFoundException ex) {
@@ -183,7 +185,15 @@ public class GlobalExceptionHandler {
                 .body(buildErrorResponse(ex.getMessage()));
     }
 
-    // 11. Handle Generic/Unexpected Internal Server Errors
+    // 11. Handle ExamNotOngoingException (BR-14: submission outside ONGOING window)
+    @ExceptionHandler(ExamNotOngoingException.class)
+    public ResponseEntity<Map<String, Object>> handleExamNotOngoing(ExamNotOngoingException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(buildErrorResponse(ex.getMessage()));
+    }
+
+    // 12. Handle Generic/Unexpected Internal Server Errors
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGlobalException(Exception ex) {
         return ResponseEntity
