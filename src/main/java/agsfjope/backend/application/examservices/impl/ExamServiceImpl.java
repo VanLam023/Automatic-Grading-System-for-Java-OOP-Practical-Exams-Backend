@@ -18,6 +18,8 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -144,6 +146,29 @@ public class ExamServiceImpl implements ExamService {
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns a paginated list of active exams, mapped to ExamResponse DTOs.
+     */
+    @Override
+    public Page<ExamResponse> getAllExams(Pageable pageable) {
+        return examRepository.findAllByDeletedAtIsNull(pageable)
+                .map(this::mapToResponse);
+    }
+
+    /**
+     * Searches exams by name/semester (contains, ignore case) and filters by academic year.
+     * Null/blank params are converted to null so JPQL treats them as "no filter".
+     */
+    @Override
+    public Page<ExamResponse> searchExams(String name, String semester, String academicYear, Pageable pageable) {
+        String nameTrimmed         = (name         != null && !name.isBlank())         ? name.trim()         : null;
+        String semesterTrimmed     = (semester     != null && !semester.isBlank())     ? semester.trim()     : null;
+        String academicYearTrimmed = (academicYear != null && !academicYear.isBlank()) ? academicYear.trim() : null;
+
+        return examRepository.searchExams(nameTrimmed, semesterTrimmed, academicYearTrimmed, pageable)
+                .map(this::mapToResponse);
     }
 
     /**
@@ -345,6 +370,8 @@ public class ExamServiceImpl implements ExamService {
 
     /**
      * Maps Exam entity to ExamResponse DTO including all fields.
+     * Note: status is NOT mapped here — it is computed dynamically
+     * in {@link ExamResponse#getStatus()} based on startTime/endTime.
      */
     private ExamResponse mapToResponse(Exam exam) {
         return ExamResponse.builder()
@@ -355,10 +382,10 @@ public class ExamServiceImpl implements ExamService {
                 .description(exam.getDescription())
                 .startTime(exam.getStartTime())
                 .endTime(exam.getEndTime())
-                .status(exam.getStatus())
                 .gradingMode(exam.getGradingMode())
                 .createdBy(exam.getCreatedBy() != null ? exam.getCreatedBy().getUsername() : null)
                 .createdAt(exam.getCreatedAt())
                 .build();
     }
+
 }

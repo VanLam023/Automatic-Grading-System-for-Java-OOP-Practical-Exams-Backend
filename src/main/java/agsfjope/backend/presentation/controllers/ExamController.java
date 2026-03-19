@@ -6,12 +6,15 @@ import agsfjope.backend.application.dtos.responses.exam.ExamResponse;
 import agsfjope.backend.application.examservices.ExamService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -70,18 +73,52 @@ public class ExamController {
     }
 
     /**
-     * Get a list of all active (non-deleted) exams.
+     * Get a paginated + searchable list of all active (non-deleted) exams.
      *
      * <p>Method: GET</p>
-     * <p>URL: /api/exams</p>
-     * <p>Header: Authorization: Bearer &lt;jwt_token&gt;</p>
+     * <p>URL: /api/exams?page=0&size=20&sort=createdAt,desc&name=OOP&semester=SP26&academicYear=2025-2026</p>
      *
-     * @return list of exams wrapped in standard success response
+     * @param page         page number (0-indexed, default 0)
+     * @param size         items per page (default 20)
+     * @param sort         sort field and direction (default: createdAt,desc)
+     * @param name         partial name search (optional)
+     * @param semester     partial semester search (optional, e.g. "SP26")
+     * @param academicYear exact academic year filter (optional, e.g. "2025-2026")
+     * @return paginated + filtered list of exams with metadata
      */
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getAllExams() {
-        List<ExamResponse> exams = examService.getAllExams();
-        return ResponseEntity.ok(buildSuccessResponse("Lấy danh sách kỳ thi thành công", exams));
+    public ResponseEntity<Map<String, Object>> getAllExams(
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String semester,
+            @RequestParam(required = false) String academicYear
+    ) {
+        String[] sortParts = sort.split(",");
+        String sortField = sortParts[0];
+        Sort.Direction direction = sortParts.length > 1 && sortParts[1].equalsIgnoreCase("asc")
+                ? Sort.Direction.ASC : Sort.Direction.DESC;
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortField));
+
+        // Use searchExams when any filter param is provided; otherwise fallback to simple list
+        boolean hasFilter = (name != null && !name.isBlank())
+                         || (semester != null && !semester.isBlank())
+                         || (academicYear != null && !academicYear.isBlank());
+
+        Page<ExamResponse> result = hasFilter
+                ? examService.searchExams(name, semester, academicYear, pageable)
+                : examService.getAllExams(pageable);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("content",       result.getContent());
+        data.put("currentPage",   result.getNumber());
+        data.put("totalItems",    result.getTotalElements());
+        data.put("totalPages",    result.getTotalPages());
+        data.put("pageSize",      result.getSize());
+        data.put("isLast",        result.isLast());
+
+        return ResponseEntity.ok(buildSuccessResponse("Lấy danh sách kỳ thi thành công", data));
     }
 
     /**

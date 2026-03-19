@@ -1,6 +1,8 @@
 package agsfjope.backend.core.repositories.exam;
 
 import agsfjope.backend.core.entities.Exam;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -41,6 +43,39 @@ public interface ExamRepository extends JpaRepository<Exam, UUID> {
      * @return list of active exams
      */
     List<Exam> findAllByDeletedAtIsNull();
+
+    /**
+     * Returns a paginated list of active (non-deleted) exams.
+     *
+     * @param pageable paging and sorting parameters
+     * @return page of active exams
+     */
+    Page<Exam> findAllByDeletedAtIsNull(Pageable pageable);
+
+    /**
+     * Searches active exams by name (contains, ignore case), semester (contains, ignore case),
+     * and optionally filters by academic year (exact match).
+     * Any null/empty parameter is treated as "no filter" via JPQL LOWER/LIKE.
+     *
+     * @param name         partial exam name to search (null = match all)
+     * @param semester     partial semester code to search (null = match all)
+     * @param academicYear exact academic year to filter (null = match all)
+     * @param pageable     paging and sorting params
+     * @return page of matching active exams
+     */
+    @Query("""
+            SELECT e FROM Exam e
+            WHERE e.deletedAt IS NULL
+              AND (:name IS NULL OR LOWER(e.name) LIKE LOWER(CONCAT('%', :name, '%')))
+              AND (:semester IS NULL OR LOWER(e.semester) LIKE LOWER(CONCAT('%', :semester, '%')))
+              AND (:academicYear IS NULL OR LOWER(e.academicYear) LIKE LOWER(CONCAT('%', :academicYear, '%')))
+            """)
+    Page<Exam> searchExams(
+            @Param("name")         String name,
+            @Param("semester")     String semester,
+            @Param("academicYear") String academicYear,
+            Pageable pageable
+    );
 
     /**
      * Returns a non-deleted exam by its ID.
