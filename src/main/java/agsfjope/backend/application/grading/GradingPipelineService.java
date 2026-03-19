@@ -15,6 +15,7 @@ import agsfjope.backend.domain.grading.FinalGradingScore;
 import agsfjope.backend.domain.grading.QuestionScore;
 import agsfjope.backend.domain.grading.ScoreCalculator;
 import agsfjope.backend.domain.grading.ScoreCalculator.QuestionInput;
+import agsfjope.backend.application.notificationservices.NotificationService;
 import agsfjope.backend.infrastructure.ai.AIReviewRequest;
 import agsfjope.backend.infrastructure.ai.AIReviewResult;
 import agsfjope.backend.infrastructure.ai.LLMReviewService;
@@ -81,6 +82,7 @@ public class GradingPipelineService {
     private final LLMReviewService    llmReviewService;
     private final ScoreCalculator     scoreCalculator;
     private final ObjectMapper        objectMapper;
+    private final NotificationService notificationService;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -121,6 +123,7 @@ public class GradingPipelineService {
                     new FinalGradingScore(List.of(), BigDecimal.ZERO,
                             BigDecimal.ZERO, BigDecimal.ZERO, false,
                             "No answers found in submission"));
+            sendGradingCompleteNotification(submission, BigDecimal.ZERO, false);
             return;
         }
 
@@ -204,6 +207,7 @@ public class GradingPipelineService {
 
         // ── Step D: Persist ───────────────────────────────────────────────────
         saveGradingResult(submission, gradedByUser, modeConfig, finalScore);
+        sendGradingCompleteNotification(submission, finalScore.totalScore(), finalScore.passed());
         log.info("Grading submission {} complete. Score={}, Passed={}",
                 subId, finalScore.totalScore(), finalScore.passed());
     }
@@ -382,6 +386,39 @@ public class GradingPipelineService {
         // Update submission status
         submission.setStatus(SubmissionStatus.GRADED);
         submission.setGradedAt(OffsetDateTime.now());
+    }
+
+    // ─── NOTIFICATION ─────────────────────────────────────────────────────────
+
+    /**
+     * Sends an in-app notification to the student telling them their submission has been graded.
+     * Failure is swallowed — a notification error must never abort the grading result.
+     */
+    private void sendGradingCompleteNotification(Submission submission,
+                                                  BigDecimal totalScore, boolean passed) {
+        try {
+            UUID studentId = submission.getStudent().getUserId();
+            Block block    = submission.getBlock();
+            String examName  = block.getExam() != null ? block.getExam().getName() : "kỳ thi";
+            String blockName = block.getName() != null ? block.getName() : "block";
+
+            String status = passed ? "✅ ĐẠT" : "❌ KHÔNG ĐẠT";
+            String title  = "Kết quả chấm bài: " + examName;
+            String body   = String.format(
+                    "Bài nộp của bạn trong %s — %s đã được chấm xong.\n" +
+                    "Điểm số: %.2f | Kết quả: %s\n" +
+                    "Nhấn để xem chi tiết kết quả.",
+                    examName, blockName,
+                    totalScore, status);
+
+            notificationService.createNotification(
+                    studentId, title, body,
+                    "GRADING_RESULT", submission.getSubmissionId());
+
+        } catch (Exception e) {
+            log.warn("Failed to send grading notification for submission {}: {}",
+                    submission.getSubmissionId(), e.getMessage());
+        }
     }
 
     private String buildNotes(FinalGradingScore score) {
