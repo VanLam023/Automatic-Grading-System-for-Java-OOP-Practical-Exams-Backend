@@ -414,6 +414,26 @@ public class SystemAdminConfigController {
     }
 
     /**
+     * Lấy cấu hình hệ thống dành cho sinh viên (public config).
+     * <p>
+     * Chỉ trả về các thông tin cần thiết, không lộ dữ liệu nhạy cảm.
+     * <ul>
+     *   <li>Method: GET</li>
+     *   <li>URL: /api/config/public — dùng trên frontend student</li>
+     * </ul>
+     *
+     * @return { maxUploadSizeMb }
+     */
+    @GetMapping("/public")
+    @PreAuthorize("hasAnyAuthority('STUDENT','ROLE_STUDENT','EXAM_STAFF','ROLE_EXAM_STAFF','SYSTEM_ADMIN','ROLE_SYSTEM_ADMIN','ADMIN','ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> getPublicConfig() {
+        SystemSettingsResponse settings = systemConfigService.getSystemSettings();
+        Map<String, Object> publicData = new HashMap<>();
+        publicData.put("maxUploadSizeMb", settings.getMaxUploadSizeMb());
+        return ResponseEntity.ok(buildSuccessResponse("Lấy cấu hình công khai thành công", publicData));
+    }
+
+    /**
      * Build standardized API success response payload.
      * Format: { success, message, data, errors }
      *

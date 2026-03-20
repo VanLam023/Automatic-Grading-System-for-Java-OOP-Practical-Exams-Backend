@@ -40,7 +40,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/exams")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF')")
 public class ExamController {
 
     private final ExamService examService;
@@ -67,6 +66,7 @@ public class ExamController {
      * @return created exam data wrapped in standard success response
      */
     @PostMapping
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF')")
     public ResponseEntity<Map<String, Object>> createExam(@Valid @RequestBody CreateExamRequest request) {
         ExamResponse exam = examService.createExam(request);
         return ResponseEntity.ok(buildSuccessResponse("MSG-19: Tạo kỳ thi thành công", exam));
@@ -87,6 +87,7 @@ public class ExamController {
      * @return paginated + filtered list of exams with metadata
      */
     @GetMapping
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF', 'SYSTEM_ADMIN', 'ROLE_SYSTEM_ADMIN', 'STUDENT', 'ROLE_STUDENT')")
     public ResponseEntity<Map<String, Object>> getAllExams(
             @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "20") int size,
@@ -132,6 +133,7 @@ public class ExamController {
      * @return exam detail wrapped in standard success response
      */
     @GetMapping("/{examId}")
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF', 'SYSTEM_ADMIN', 'ROLE_SYSTEM_ADMIN', 'STUDENT', 'ROLE_STUDENT')")
     public ResponseEntity<Map<String, Object>> getExamById(@PathVariable UUID examId) {
         ExamResponse exam = examService.getExamById(examId);
         return ResponseEntity.ok(buildSuccessResponse("Lấy thông tin kỳ thi thành công", exam));
@@ -150,6 +152,7 @@ public class ExamController {
      * @return updated exam data wrapped in standard success response
      */
     @PutMapping("/{examId}")
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF')")
     public ResponseEntity<Map<String, Object>> updateExam(
             @PathVariable UUID examId,
             @Valid @RequestBody UpdateExamRequest request
@@ -170,6 +173,7 @@ public class ExamController {
      * @return success message
      */
     @DeleteMapping("/{examId}")
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF')")
     public ResponseEntity<Map<String, Object>> deleteExam(@PathVariable UUID examId) {
         examService.deleteExam(examId);
         return ResponseEntity.ok(buildSuccessResponse("MSG-21: Xóa kỳ thi thành công", null));
