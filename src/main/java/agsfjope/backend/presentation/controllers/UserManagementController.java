@@ -3,13 +3,18 @@ package agsfjope.backend.presentation.controllers;
 import agsfjope.backend.application.dtos.requests.user.CreateUserRequest;
 import agsfjope.backend.application.dtos.responses.user.CreateUserResponse;
 import agsfjope.backend.application.dtos.responses.user.ImportStudentResponse;
+import agsfjope.backend.application.dtos.responses.user.UserDetailResponse;
 import agsfjope.backend.application.usermanagementservices.UserManagementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -157,8 +162,75 @@ public class UserManagementController {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Helpers — matches the standard response format used throughout the project
+    // READ endpoints
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /api/admin/users
+     * Lấy danh sách tất cả user (có phân trang + search + filter role).
+     *
+     * <p>Query params:</p>
+     * <ul>
+     *   <li>{@code page}     — page number, 0-indexed (default: 0)</li>
+     *   <li>{@code size}     — items per page (default: 20)</li>
+     *   <li>{@code sort}     — field + direction e.g. {@code createdAt,desc} (default)</li>
+     *   <li>{@code search}   — partial match on username / email / fullName (optional)</li>
+     *   <li>{@code roleName} — exact role filter e.g. {@code STUDENT} (optional)</li>
+     * </ul>
+     *
+     * @return paginated list of users wrapped in standard success response
+     */
+    @GetMapping
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    public ResponseEntity<Map<String, Object>> getAllUsers(
+            @RequestParam(defaultValue = "0")              int    page,
+            @RequestParam(defaultValue = "20")             int    size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort,
+            @RequestParam(required = false)                String search,
+            @RequestParam(required = false)                String roleName) {
+
+        String[] sortParts    = sort.split(",");
+        String   sortField    = sortParts[0];
+        Sort.Direction dir    = sortParts.length > 1 && sortParts[1].equalsIgnoreCase("asc")
+                ? Sort.Direction.ASC : Sort.Direction.DESC;
+        var pageable = PageRequest.of(page, size, Sort.by(dir, sortField));
+
+        boolean hasFilter = (search   != null && !search.isBlank())
+                         || (roleName != null && !roleName.isBlank());
+
+        Page<UserDetailResponse> result = hasFilter
+                ? userManagementService.searchUsers(search, roleName, pageable)
+                : userManagementService.getAllUsers(pageable);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("content",     result.getContent());
+        data.put("currentPage", result.getNumber());
+        data.put("totalItems",  result.getTotalElements());
+        data.put("totalPages",  result.getTotalPages());
+        data.put("pageSize",    result.getSize());
+        data.put("isLast",      result.isLast());
+
+        return ResponseEntity.ok(buildSuccessResponse("Lấy danh sách user thành công", data));
+    }
+
+    /**
+     * GET /api/admin/users/{userId}
+     * Lấy chi tiết một user theo UUID.
+     *
+     * @param userId UUID của user cần xem
+     * @return user detail wrapped in standard success response, or 400 if not found / deleted
+     */
+    @GetMapping("/{userId}")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    public ResponseEntity<Map<String, Object>> getUserById(@PathVariable UUID userId) {
+        try {
+            UserDetailResponse result = userManagementService.getUserById(userId);
+            return ResponseEntity.ok(buildSuccessResponse("Lấy thông tin user thành công", result));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(buildErrorResponse(e.getMessage()));
+        }
+    }
+
 
     /**
      * Builds the standard success response map.

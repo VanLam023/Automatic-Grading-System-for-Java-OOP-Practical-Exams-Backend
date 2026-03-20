@@ -1,8 +1,12 @@
 package agsfjope.backend.core.repositories.auth;
 
 import agsfjope.backend.core.entities.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -53,4 +57,38 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * @return list of matching User entities
      */
     List<User> findByMssvIn(List<String> mssvs);
+
+    /**
+     * Returns a paginated list of all non-deleted users, eagerly loading their Role.
+     * Used by the Admin "Get All Users" endpoint.
+     *
+     * @param pageable pagination and sorting configuration
+     * @return page of active (non-soft-deleted) users
+     */
+    @EntityGraph(attributePaths = {"role"})
+    Page<User> findAllByDeletedAtIsNull(Pageable pageable);
+
+    /**
+     * Full-text search across username, email, and fullName with optional role filter.
+     * Excludes soft-deleted users. All string comparisons are case-insensitive.
+     *
+     * @param keyword  search term (matched with LIKE against username, email, fullName); null to skip
+     * @param roleName exact role name filter (e.g. "STUDENT"); null to skip
+     * @param pageable pagination and sorting configuration
+     * @return page of matching non-soft-deleted users
+     */
+    @EntityGraph(attributePaths = {"role"})
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.deletedAt IS NULL
+              AND (:keyword IS NULL OR
+                   LOWER(u.username) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.email)    LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')))
+              AND (:roleName IS NULL OR u.role.name = :roleName)
+            """)
+    Page<User> searchUsers(
+            @Param("keyword")  String keyword,
+            @Param("roleName") String roleName,
+            Pageable pageable);
 }

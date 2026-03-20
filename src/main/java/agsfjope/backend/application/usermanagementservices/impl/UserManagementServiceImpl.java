@@ -2,6 +2,7 @@ package agsfjope.backend.application.usermanagementservices.impl;
 
 import agsfjope.backend.application.dtos.requests.user.ImportStudentRequest;
 import agsfjope.backend.application.dtos.responses.user.ImportStudentResponse;
+import agsfjope.backend.application.dtos.responses.user.UserDetailResponse;
 import agsfjope.backend.application.ports.out.EmailService;
 import agsfjope.backend.application.usermanagementservices.UserManagementService;
 import agsfjope.backend.core.entities.Role;
@@ -12,6 +13,8 @@ import agsfjope.backend.infrastructure.excel.ExcelStudentParser;
 import agsfjope.backend.infrastructure.security.jwt.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -396,5 +400,81 @@ public class UserManagementServiceImpl implements UserManagementService {
         userRepository.save(user);
 
         log.info("[UserManagement] Admin activated account '{}' (ID: {}).", user.getUsername(), userId);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // getAllUsers — paginated list of all non-deleted users
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserDetailResponse> getAllUsers(Pageable pageable) {
+        return userRepository.findAllByDeletedAtIsNull(pageable)
+                .map(this::mapToUserDetailResponse);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // searchUsers — filter by keyword and/or roleName
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserDetailResponse> searchUsers(String keyword, String roleName, Pageable pageable) {
+        // Normalize: pass null to JPQL to skip the filter clause
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
+        String rn = (roleName != null && !roleName.isBlank()) ? roleName.trim().toUpperCase() : null;
+        return userRepository.searchUsers(kw, rn, pageable)
+                .map(this::mapToUserDetailResponse);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // getUserById — detail view of a single user
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserDetailResponse getUserById(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Không tìm thấy user với ID: " + userId));
+
+        if (user.getDeletedAt() != null) {
+            throw new IllegalArgumentException(
+                    "Tài khoản '" + user.getUsername() + "' đã bị xoá.");
+        }
+
+        return mapToUserDetailResponse(user);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Private mapper: User entity → UserDetailResponse DTO
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Maps a {@link User} entity to a {@link UserDetailResponse} DTO.
+     * Centralised here to avoid duplication across getAllUsers / searchUsers / getUserById.
+     *
+     * @param user the source entity (must have role eagerly loaded)
+     * @return the mapped response DTO
+     */
+    private UserDetailResponse mapToUserDetailResponse(User user) {
+        return UserDetailResponse.builder()
+                .userId(user.getUserId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .roleName(user.getRole().getName())
+                .mssv(user.getMssv())
+                .phone(user.getPhone())
+                .avatarUrl(user.getAvatarUrl())
+                .isActive(user.getIsActive())
+                .isLocked(user.getIsLocked())
+                .loginFailCount(user.getLoginFailCount())
+                .lastLoginAt(user.getLastLoginAt())
+                .emailVerifiedAt(user.getEmailVerifiedAt())
+                .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
+                .deletedAt(user.getDeletedAt())
+                .build();
     }
 }
