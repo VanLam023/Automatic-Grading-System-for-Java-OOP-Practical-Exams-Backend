@@ -8,6 +8,7 @@ import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateGradingModeRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
+import agsfjope.backend.application.dtos.responses.config.SystemSettingsResponse;
 import agsfjope.backend.core.enums.GradingMode;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
