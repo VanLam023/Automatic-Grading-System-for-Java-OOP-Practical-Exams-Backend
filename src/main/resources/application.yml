@@ -11,7 +11,11 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
-  
+
+  # Jackson JSON serialization — múi giờ Việt Nam
+  jackson:
+    time-zone: Asia/Ho_Chi_Minh
+
   # JPA / Hibernate Configuration
   jpa:
     hibernate:

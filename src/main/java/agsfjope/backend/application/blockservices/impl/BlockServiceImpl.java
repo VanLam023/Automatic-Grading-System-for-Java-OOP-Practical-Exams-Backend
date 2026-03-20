@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -56,22 +55,15 @@ public class BlockServiceImpl implements BlockService {
             return;
         }
 
-        LocalDate defaultDate = exam.getStartTime().toLocalDate();
-
+        // Chỉ tạo block với tên — ngày/giờ thi để null, Exam Staff sẽ cập nhật sau
         Block block10 = Block.builder()
                 .exam(exam)
                 .name(BLOCK_10)
-                .examDate(defaultDate)
-                .startTime(exam.getStartTime())
-                .endTime(exam.getEndTime())
                 .build();
 
         Block block3 = Block.builder()
                 .exam(exam)
                 .name(BLOCK_3)
-                .examDate(defaultDate)
-                .startTime(exam.getStartTime())
-                .endTime(exam.getEndTime())
                 .build();
 
         blockRepository.save(block10);
@@ -86,10 +78,18 @@ public class BlockServiceImpl implements BlockService {
      * Returns both blocks for the given exam, ordered by name (Block 10, Block 3).
      */
     @Override
+    @Transactional
     public List<BlockResponse> getBlocksByExamId(UUID examId) {
-        if (!examRepository.existsByExamIdAndDeletedAtIsNull(examId)) {
-            throw new NotFoundException("Không tìm thấy kỳ thi với ID: " + examId);
+        Exam exam = examRepository.findByExamIdAndDeletedAtIsNull(examId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy kỳ thi với ID: " + examId));
+
+        // BR-08: Nếu exam chưa có block (exam tạo trước khi có logic auto-create),
+        // tự tạo Block 10 + Block 3 ngay lúc này để đảm bảo tính nhất quán.
+        if (!blockRepository.existsByExam_ExamId(examId)) {
+            log.warn("Exam '{}' has no blocks yet — auto-creating Block 10 + Block 3.", exam.getName());
+            createDefaultBlocks(exam);
         }
+
         return blockRepository.findByExam_ExamIdOrderByNameAsc(examId)
                 .stream()
                 .map(this::mapToResponse)

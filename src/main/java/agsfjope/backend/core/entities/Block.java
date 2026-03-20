@@ -32,16 +32,16 @@ public class Block {
     @Column(name = "Description", columnDefinition = "TEXT")
     private String description;
 
-    /** Ngày diễn ra thi của block này */
-    @Column(name = "ExamDate", nullable = false)
+    /** Ngày diễn ra thi của block này (null nếu chưa lên lịch) */
+    @Column(name = "ExamDate", nullable = true)
     private LocalDate examDate;
 
-    /** Thời gian bắt đầu làm bài thi */
-    @Column(name = "StartTime", nullable = false)
+    /** Thời gian bắt đầu làm bài thi (null nếu chưa lên lịch) */
+    @Column(name = "StartTime", nullable = true)
     private OffsetDateTime startTime;
 
-    /** Thời gian kết thúc làm bài thi (CHK_BlockTime: EndTime > StartTime) */
-    @Column(name = "EndTime", nullable = false)
+    /** Thời gian kết thúc làm bài thi (null nếu chưa lên lịch). CHK_BlockTime: EndTime > StartTime khi cả hai đều được set */
+    @Column(name = "EndTime", nullable = true)
     private OffsetDateTime endTime;
 
     @Column(name = "CreatedAt", nullable = false, updatable = false)
