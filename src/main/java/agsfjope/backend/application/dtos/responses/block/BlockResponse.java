@@ -37,4 +37,7 @@ public class BlockResponse {
 
     /** Timestamp when this block was created (auto-set on exam creation). */
     private OffsetDateTime createdAt;
+
+    /** True nếu block này đã có đề thi được upload. */
+    private boolean hasPaper;
 }

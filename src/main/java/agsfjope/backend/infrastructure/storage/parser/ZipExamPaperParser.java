@@ -179,30 +179,80 @@ public class ZipExamPaperParser {
 
     /**
      * Finds the root folder and question sub-folders, then delegates to question parsers.
+     *
+     * <p>Supports both flat and nested structures, e.g.:</p>
+     * <pre>
+     *   Flat:    MyExam/1/Q1.docx
+     *   Nested:  MyExam/PaperNo_3/1/Q1.docx
+     * </pre>
      */
     private ParsedExamPaper parseEntries(Map<String, byte[]> entries) throws IOException {
-        // Find the root folder prefix — the common top-level folder name
-        String rootPrefix = findRootPrefix(entries);
-        log.debug("ZipParser: detected root folder prefix = '{}'", rootPrefix);
+        // Find the actual folder prefix that directly contains numbered question folders.
+        // This handles both flat (root/1/) and nested (root/PaperNo_3/1/) structures.
+        String questionRoot = findQuestionRoot(entries);
+        log.debug("ZipParser: detected question root = '{}'", questionRoot);
 
-        // Discover numbered question folders (1/, 2/, 3/, ...) under the root
-        Set<Integer> questionNumbers = findQuestionNumbers(entries, rootPrefix);
+        // Discover numbered question folders (1/, 2/, 3/, ...) under the question root
+        Set<Integer> questionNumbers = findQuestionNumbers(entries, questionRoot);
         if (questionNumbers.isEmpty()) {
             throw new InvalidZipStructureException(
-                    "Không tìm thấy thư mục câu hỏi (1/, 2/, ...) bên trong '" + rootPrefix +
-                    "'. Hãy kiểm tra lại cấu trúc file nén.");
+                    "Không tìm thấy thư mục câu hỏi (1/, 2/, ...) bên trong '" + questionRoot +
+                    "'. Hãy kiểm tra lại cấu trúc file nén.\n" +
+                    "Cấu trúc hợp lệ: <TênFile>/<TênThùMục>/1/, 2/, ... hoặc <TênFile>/1/, 2/, ...");
         }
 
         // Parse each question
         List<ParsedExamPaper.ParsedQuestion> questions = new ArrayList<>();
         for (int qNum : questionNumbers.stream().sorted().toList()) {
-            ParsedExamPaper.ParsedQuestion q = parseQuestion(entries, rootPrefix, qNum);
+            ParsedExamPaper.ParsedQuestion q = parseQuestion(entries, questionRoot, qNum);
             questions.add(q);
         }
 
         log.info("ZipParser: parsed {} questions, {} total test cases",
                 questions.size(), questions.stream().mapToInt(q -> q.testCases().size()).sum());
         return new ParsedExamPaper(questions);
+    }
+
+    /**
+     * Finds the deepest folder prefix that directly contains numbered question sub-folders (1/, 2/, ...).
+     *
+     * <p>Algorithm: collect all unique directory prefixes from all entry paths,
+     * then for each prefix check if it has at least one numbered immediate child folder.
+     * Returns the first match (BFS order by depth).</p>
+     *
+     * <p>This handles extra intermediate folders like {@code PaperNo_3/} between the archive
+     * root and the actual question folders.</p>
+     */
+    private String findQuestionRoot(Map<String, byte[]> entries) {
+        // Collect all unique folder prefixes present in the archive
+        Set<String> allPrefixes = new LinkedHashSet<>();
+        allPrefixes.add(""); // archive root (no prefix)
+        for (String path : entries.keySet()) {
+            // Add every ancestor directory of each entry
+            String[] parts = path.split("/", -1);
+            StringBuilder prefix = new StringBuilder();
+            for (int i = 0; i < parts.length - 1; i++) {
+                if (!parts[i].isEmpty()) {
+                    prefix.append(parts[i]).append("/");
+                    allPrefixes.add(prefix.toString());
+                }
+            }
+        }
+
+        // Sort by depth (shallow first) so we return the shallowest valid parent
+        List<String> sorted = allPrefixes.stream()
+                .sorted(Comparator.comparingLong(p -> p.chars().filter(c -> c == '/').count()))
+                .toList();
+
+        for (String prefix : sorted) {
+            Set<Integer> nums = findQuestionNumbers(entries, prefix);
+            if (!nums.isEmpty()) {
+                return prefix;
+            }
+        }
+
+        // Fallback: return the top-level folder (findRootPrefix behavior)
+        return findRootPrefix(entries);
     }
 
     /**

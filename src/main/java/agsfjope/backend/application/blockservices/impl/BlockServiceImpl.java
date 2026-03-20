@@ -8,6 +8,7 @@ import agsfjope.backend.core.entities.Exam;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.core.repositories.exam.ExamRepository;
+import agsfjope.backend.core.repositories.exampaper.ExamPaperRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,8 +36,9 @@ public class BlockServiceImpl implements BlockService {
     private static final String BLOCK_10 = "Block 10";
     private static final String BLOCK_3  = "Block 3";
 
-    private final BlockRepository blockRepository;
-    private final ExamRepository  examRepository;
+    private final BlockRepository    blockRepository;
+    private final ExamRepository     examRepository;
+    private final ExamPaperRepository examPaperRepository;
 
     // ─── AUTO-CREATE ─────────────────────────────────────────────────────
 
@@ -162,6 +164,8 @@ public class BlockServiceImpl implements BlockService {
     // ─── MAPPING ──────────────────────────────────────────────────────────
 
     private BlockResponse mapToResponse(Block block) {
+        boolean hasPaper = block.getBlockId() != null
+                && examPaperRepository.existsByBlock_BlockId(block.getBlockId());
         return BlockResponse.builder()
                 .blockId(block.getBlockId())
                 .examId(block.getExam().getExamId())
@@ -171,6 +175,7 @@ public class BlockServiceImpl implements BlockService {
                 .startTime(block.getStartTime())
                 .endTime(block.getEndTime())
                 .createdAt(block.getCreatedAt())
+                .hasPaper(hasPaper)
                 .build();
     }
 }

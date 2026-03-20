@@ -129,6 +129,9 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             log.info("ExamPaperService: Found existing exam paper {} for block {}. Overwriting (BR-09).",
                     old.getExamPaperId(), blockId);
             overwriteOldPaper(old);
+            // Flush immediately so the DELETE is sent to DB before the INSERT below,
+            // otherwise Hibernate batches them and the UNIQUE constraint fires first.
+            examPaperRepository.flush();
         });
 
         // ── 7. Parse the archive ──────────────────────────────────────────────
