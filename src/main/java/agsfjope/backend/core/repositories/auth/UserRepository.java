@@ -59,6 +59,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findByMssvIn(List<String> mssvs);
 
     /**
+     * Finds all Users whose username is in the provided list.
+     * Used for batch duplicate checking during Excel import to avoid N+1 queries.
+     * @param usernames list of usernames to check
+     * @return list of matching User entities
+     */
+    List<User> findByUsernameIn(List<String> usernames);
+
+    /**
      * Returns a paginated list of all non-deleted users, eagerly loading their Role.
      * Used by the Admin "Get All Users" endpoint.
      *

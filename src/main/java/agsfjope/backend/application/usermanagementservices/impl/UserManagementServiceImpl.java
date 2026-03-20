@@ -5,12 +5,13 @@ import agsfjope.backend.application.dtos.responses.user.ImportStudentResponse;
 import agsfjope.backend.application.dtos.responses.user.UserDetailResponse;
 import agsfjope.backend.application.ports.out.EmailService;
 import agsfjope.backend.application.usermanagementservices.UserManagementService;
+import agsfjope.backend.core.entities.PasswordResetToken;
 import agsfjope.backend.core.entities.Role;
 import agsfjope.backend.core.entities.User;
+import agsfjope.backend.core.repositories.auth.PasswordResetTokenRepository;
 import agsfjope.backend.core.repositories.auth.RoleRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.infrastructure.excel.ExcelStudentParser;
-import agsfjope.backend.infrastructure.security.jwt.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -30,7 +32,7 @@ import java.util.stream.Collectors;
 /**
  * Implementation of {@link UserManagementService}.
  * Orchestrates the full import flow: parse Excel → validate duplicates →
- * batch-create accounts → send credential emails asynchronously.
+ * batch-create accounts → send reset-password emails asynchronously.
  */
 @Slf4j
 @Service
@@ -43,9 +45,9 @@ public class UserManagementServiceImpl implements UserManagementService {
     private final ExcelStudentParser excelStudentParser;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
-    private final JwtTokenProvider jwtTokenProvider;
 
     /**
      * Bulk-imports student accounts from an uploaded Excel (.xlsx) file.
@@ -95,20 +97,31 @@ public class UserManagementServiceImpl implements UserManagementService {
                         "Role 'STUDENT' not found in DB. Check seed data."));
 
         // ── Step 3: Batch-check duplicates to avoid N+1 DB queries ─────────
-        // Collect all emails and MSSVs from parsed rows for a single IN query each
+        // Collect all emails, MSSVs, and usernames from parsed rows for single IN queries
         List<String> emails = parsedRows.stream()
                 .map(r -> r.getEmail().toLowerCase())
                 .toList();
         List<String> mssvs = parsedRows.stream()
                 .map(ImportStudentRequest::getMssv)
                 .toList();
+        // Pre-derive usernames from emails so we can batch-check them in one query
+        List<String> derivedUsernames = parsedRows.stream()
+                .map(r -> {
+                    String em = r.getEmail().toLowerCase();
+                    return em.substring(0, em.indexOf('@'));
+                })
+                .toList();
 
-        // Set of existing emails and MSSVs from the database (case-insensitive)
+        // Set of existing emails, MSSVs, and usernames from the database (case-insensitive)
         Set<String> existingEmails = userRepository.findByEmailIn(emails).stream()
                 .map(u -> u.getEmail().toLowerCase())
                 .collect(Collectors.toSet());
         Set<String> existingMssvs = userRepository.findByMssvIn(mssvs).stream()
                 .map(User::getMssv)
+                .collect(Collectors.toSet());
+        // Single IN-query for all usernames — replaces N+1 findByUsername calls inside loop
+        Set<String> existingUsernames = userRepository.findByUsernameIn(derivedUsernames).stream()
+                .map(User::getUsername)
                 .collect(Collectors.toSet());
 
         // Also track usernames we're about to insert in this same batch
@@ -139,12 +152,8 @@ public class UserManagementServiceImpl implements UserManagementService {
                 continue;
             }
 
-            // Check duplicate username in DB (derived from email, so usually same as email
-            // check,
-            // but guard against edge cases where two different emails share the same
-            // prefix)
-            boolean usernameExistsInDb = userRepository.findByUsername(username).isPresent();
-            if (usernameExistsInDb || pendingUsernames.contains(username)) {
+            // Check duplicate username — now uses pre-fetched Set (O(1) lookup, no DB call)
+            if (existingUsernames.contains(username) || pendingUsernames.contains(username)) {
                 skippedDetails.add(buildSkipped(i, row, "Username '" + username + "' đã tồn tại"));
                 continue;
             }
@@ -177,17 +186,23 @@ public class UserManagementServiceImpl implements UserManagementService {
             log.info("[UserManagement] Saved {} new student accounts.", newUsers.size());
         }
 
-        // ── Step 6: Send credential + activation emails asynchronously ──────────────
-        // Generate a fresh activation JWT for each user (24-hour expiry, signed with
-        // email).
-        // sendCredentialEmailAsync is @Async — runs on a background thread, Admin gets
-        // response immediately.
+        // ── Step 6: Create reset-password tokens + send credential emails asynchronously ───
+        // For each new user, generate a PasswordResetToken (24h expiry)
+        // and send a credential email with username, default password, and a
+        // reset-password link. When the user resets their password via that link,
+        // the system will auto-activate their account (isActive = true).
         for (User user : newUsers) {
-            // generateActivationToken(email) creates a JWT identical to the
-            // self-registration flow
-            String activationToken = jwtTokenProvider.generateActivationToken(user.getEmail());
-            String activationLink = "http://localhost:5173/verify-account?token=" + activationToken;
-            sendCredentialEmailAsync(user.getEmail(), user.getUsername(), activationLink);
+            String rawToken = UUID.randomUUID().toString();
+            PasswordResetToken tokenEntity = PasswordResetToken.builder()
+                    .user(user)
+                    .tokenHash(rawToken)
+                    .expiresAt(OffsetDateTime.now().plusHours(24))
+                    .isUsed(false)
+                    .build();
+            passwordResetTokenRepository.save(tokenEntity);
+
+            String resetLink = "http://localhost:5173/reset-password?token=" + rawToken;
+            sendCredentialEmailAsync(user.getEmail(), user.getUsername(), resetLink);
         }
 
         return buildResponse(totalRows, newUsers.size(), skippedDetails);
@@ -198,23 +213,20 @@ public class UserManagementServiceImpl implements UserManagementService {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Sends the credential + activation email on a separate async thread so the
-     * Admin's
-     * HTTP request is not blocked by SMTP operations.
-     * Spring's @Async requires {@code @EnableAsync} in a configuration class
-     * (AsyncConfig).
+     * Sends an account-credential email (username + default password + reset-password link)
+     * on a separate async thread so the Admin's HTTP request is not blocked by SMTP.
+     * Spring's @Async requires {@code @EnableAsync} in a configuration class (AsyncConfig).
      *
-     * @param email          recipient email
-     * @param username       the generated username
-     * @param activationLink the verify-account URL (JWT signed, 24h expiry)
+     * @param email     recipient email
+     * @param username  the generated username
+     * @param resetLink the reset-password URL containing the token
      */
     @Async
-    protected void sendCredentialEmailAsync(String email, String username, String activationLink) {
+    protected void sendCredentialEmailAsync(String email, String username, String resetLink) {
         try {
-            emailService.sendAccountCredentialsEmail(email, username, DEFAULT_PASSWORD, activationLink);
+            emailService.sendAccountCredentialsEmail(email, username, DEFAULT_PASSWORD, resetLink);
         } catch (Exception e) {
             // Email failure must NOT roll back the DB transaction.
-            // Log the error; Admin can manually resend or inform students.
             log.error("[UserManagement] Failed to send credential email to {}: {}", email, e.getMessage());
         }
     }
@@ -279,7 +291,9 @@ public class UserManagementServiceImpl implements UserManagementService {
         String email = request.getEmail().trim().toLowerCase();
         // Normalize fullName: collapse consecutive spaces → single space
         String fullName = request.getFullName().strip().replaceAll("\\s{2,}", " ");
-        String mssv = (request.getMssv() != null && !request.getMssv().isBlank())
+        // MSSV is only applicable for STUDENT role — force null for all other roles
+        // to prevent accidental DB writes even if the caller passes in a value.
+        String mssv = "STUDENT".equals(roleName) && request.getMssv() != null && !request.getMssv().isBlank()
                 ? request.getMssv().trim().toUpperCase()
                 : null;
 
@@ -287,10 +301,15 @@ public class UserManagementServiceImpl implements UserManagementService {
         String username = email.substring(0, email.indexOf('@'));
 
         // ── 3. Business validation ───────────────────────────────────────────
-        // For STUDENT with MSSV: email must belong to FPT student domain
-        if ("STUDENT".equals(roleName) && mssv != null && !email.endsWith("@fpt.edu.vn")) {
+        // STUDENT bắt buộc phải có MSSV
+        if ("STUDENT".equals(roleName) && mssv == null) {
             throw new IllegalArgumentException(
-                    "Sinh viên có MSSV bắt buộc phải dùng email FPT (@fpt.edu.vn). Nhận được: " + email);
+                    "MSSV là bắt buộc khi tạo tài khoản STUDENT.");
+        }
+        // For STUDENT with MSSV: email must belong to FPT student domain
+        if ("STUDENT".equals(roleName) && !email.endsWith("@fpt.edu.vn")) {
+            throw new IllegalArgumentException(
+                    "Sinh viên bắt buộc phải dùng email FPT (@fpt.edu.vn). Nhận được: " + email);
         }
 
         // ── 4. Duplicate checks ──────────────────────────────────────────────
@@ -324,10 +343,18 @@ public class UserManagementServiceImpl implements UserManagementService {
         userRepository.save(newUser);
         log.info("[UserManagement] Created account '{}' with role '{}'.", username, roleName);
 
-        // ── 7. Send credential + activation email (async) ───────────────────
-        String activationToken = jwtTokenProvider.generateActivationToken(email);
-        String activationLink = "http://localhost:5173/verify-account?token=" + activationToken;
-        sendCredentialEmailAsync(email, username, activationLink);
+        // ── 7. Create reset-password token + send credential email (async) ────
+        String rawToken = UUID.randomUUID().toString();
+        PasswordResetToken tokenEntity = PasswordResetToken.builder()
+                .user(newUser)
+                .tokenHash(rawToken)
+                .expiresAt(OffsetDateTime.now().plusHours(24))
+                .isUsed(false)
+                .build();
+        passwordResetTokenRepository.save(tokenEntity);
+
+        String resetLink = "http://localhost:5173/reset-password?token=" + rawToken;
+        sendCredentialEmailAsync(email, username, resetLink);
 
         return agsfjope.backend.application.dtos.responses.user.CreateUserResponse.builder()
                 .username(username)

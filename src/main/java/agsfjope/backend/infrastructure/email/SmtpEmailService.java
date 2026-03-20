@@ -362,16 +362,15 @@ public class SmtpEmailService implements EmailService {
    * Builds a branded blue HTML template for the account-credentials email.
    * Blue (#1d4ed8) conveys information — distinct from reset (orange) and
    * activation (green).
-   * The student is reminded to change their password on first login to activate
-   * Builds the account-credentials email template.
-   * Giữ nguyên layout cũ (credentials box + warning box), chỉ thêm dòng activation link ở dưới.
+   * The email shows username + default password and a CTA to reset password,
+   * which also activates the account.
    *
-   * @param username       the auto-generated username to display
-   * @param password       the plain-text default password displayed once in this email
-   * @param activationLink the verify-account URL for the student to activate their account
+   * @param username  the auto-generated username to display
+   * @param password  the plain-text default password displayed once in this email
+   * @param resetLink the reset-password URL for the user to set a new password and activate
    * @return HTML string ready to be sent as email body
    */
-  private String buildAccountCredentialsEmailTemplate(String username, String password, String activationLink) {
+  private String buildAccountCredentialsEmailTemplate(String username, String password, String resetLink) {
     return """
         <!DOCTYPE html>
         <html lang="vi">
@@ -442,21 +441,21 @@ public class SmtpEmailService implements EmailService {
                           <td style="padding:16px 20px;">
                             <p style="margin:0;font-size:14px;color:#92400e;line-height:1.6;">
                               ⚠️ <strong>Quan trọng:</strong> Tài khoản của bạn chưa được kích hoạt.<br/>
-                              Vui lòng nhấn nút bên dưới để kích hoạt trước khi đăng nhập.
+                              Vui lòng nhấn nút bên dưới để <strong>đặt lại mật khẩu</strong> và kích hoạt tài khoản.
                             </p>
                           </td>
                         </tr>
                       </table>
 
-                      <!-- ACTIVATION BUTTON -->
+                      <!-- RESET PASSWORD & ACTIVATE BUTTON -->
                       <table cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
                         <tr>
-                          <td style="border-radius:6px;background:#16a34a;">
+                          <td style="border-radius:6px;background:#f37120;">
                             <a href="%s"
                                style="display:inline-block;padding:12px 28px;font-size:15px;
                                       font-weight:bold;color:#ffffff;text-decoration:none;
                                       border-radius:6px;">
-                              ✅ Kích hoạt tài khoản
+                              🔐 Đặt lại mật khẩu &amp; Kích hoạt
                             </a>
                           </td>
                         </tr>
@@ -494,6 +493,6 @@ public class SmtpEmailService implements EmailService {
           </table>
         </body>
         </html>
-        """.formatted(username, password, activationLink, activationLink, activationLink);
+        """.formatted(username, password, resetLink, resetLink, resetLink);
   }
 }

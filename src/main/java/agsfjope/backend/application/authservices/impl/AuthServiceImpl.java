@@ -354,6 +354,18 @@ public class AuthServiceImpl implements AuthService {
         // === STEP 2: Hash the new password and update the User ===
         User user = tokenEntity.getUser();
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+
+        // === STEP 2b: Auto-activate account if not yet active ===
+        // This handles the flow where Admin creates an account and sends a reset-password link.
+        // When the user resets their password, the account is automatically activated.
+        if (Boolean.FALSE.equals(user.getIsActive())) {
+            user.setIsActive(true);
+            user.setIsLocked(false);
+            if (user.getEmailVerifiedAt() == null) {
+                user.setEmailVerifiedAt(OffsetDateTime.now());
+            }
+        }
+
         userRepository.save(user);
 
         // === STEP 3: Mark token as consumed so it cannot be replayed ===
