@@ -63,13 +63,21 @@ public interface ExamRepository extends JpaRepository<Exam, UUID> {
      * @param pageable     paging and sorting params
      * @return page of matching active exams
      */
-    @Query("""
-            SELECT e FROM Exam e
-            WHERE e.deletedAt IS NULL
-              AND (:name IS NULL OR LOWER(e.name) LIKE LOWER(CONCAT('%', :name, '%')))
-              AND (:semester IS NULL OR LOWER(e.semester) LIKE LOWER(CONCAT('%', :semester, '%')))
-              AND (:academicYear IS NULL OR LOWER(e.academicYear) LIKE LOWER(CONCAT('%', :academicYear, '%')))
-            """)
+    @Query(value = """
+            SELECT * FROM Exams e
+            WHERE e.DeletedAt IS NULL
+              AND (CAST(:name AS TEXT) IS NULL OR lower(e.Name) LIKE lower('%' || CAST(:name AS TEXT) || '%'))
+              AND (CAST(:semester AS TEXT) IS NULL OR lower(e.Semester) LIKE lower('%' || CAST(:semester AS TEXT) || '%'))
+              AND (CAST(:academicYear AS TEXT) IS NULL OR lower(e.AcademicYear) LIKE lower('%' || CAST(:academicYear AS TEXT) || '%'))
+            """,
+            countQuery = """
+            SELECT COUNT(*) FROM Exams e
+            WHERE e.DeletedAt IS NULL
+              AND (CAST(:name AS TEXT) IS NULL OR lower(e.Name) LIKE lower('%' || CAST(:name AS TEXT) || '%'))
+              AND (CAST(:semester AS TEXT) IS NULL OR lower(e.Semester) LIKE lower('%' || CAST(:semester AS TEXT) || '%'))
+              AND (CAST(:academicYear AS TEXT) IS NULL OR lower(e.AcademicYear) LIKE lower('%' || CAST(:academicYear AS TEXT) || '%'))
+            """,
+            nativeQuery = true)
     Page<Exam> searchExams(
             @Param("name")         String name,
             @Param("semester")     String semester,

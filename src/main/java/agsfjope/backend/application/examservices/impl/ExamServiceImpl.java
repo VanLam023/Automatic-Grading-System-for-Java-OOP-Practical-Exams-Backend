@@ -288,34 +288,24 @@ public class ExamServiceImpl implements ExamService {
      *   <li>Sep–Dec  (FA semester):       academicYear = currentYear–(currentYear+1), e.g., "2025-2026"</li>
      * </ul>
      *
-     * @return academic year string in format "YYYY-YYYY"
+     * @return academic year string in format "YYYY"
      */
     private String calculateAcademicYear() {
-        LocalDate today = LocalDate.now();
-        int year = today.getYear();
-        // Sep–Dec: FA semester starts new academic year
-        if (today.getMonth().compareTo(Month.SEPTEMBER) >= 0) {
-            return year + "-" + (year + 1);
-        } else {
-            // Jan–Aug: still in the academic year that started previous Sep
-            return (year - 1) + "-" + year;
-        }
+        return String.valueOf(LocalDate.now().getYear());
     }
 
     /**
      * Returns the [start, end] date range of an academic year.
-     * Academic year "YYYY-YYYY+1" spans from Sep 1 of YYYY to Aug 31 of YYYY+1.
+     * Academic year "YYYY" spans from Jan 1 to Dec 31 of that year.
      *
-     * @param academicYear academic year string (e.g. "2024-2025")
+     * @param academicYear academic year string (e.g. "2026")
      * @return array [startOfYear, endOfYear] as OffsetDateTime in UTC+7
      */
     private OffsetDateTime[] getAcademicYearRange(String academicYear) {
-        String[] parts = academicYear.split("-");
-        int startYear = Integer.parseInt(parts[0]);
-        int endYear   = Integer.parseInt(parts[1]);
+        int year = Integer.parseInt(academicYear);
         ZoneOffset vn = ZoneOffset.ofHours(7);
-        OffsetDateTime start = OffsetDateTime.of(startYear, 9, 1, 0, 0, 0, 0, vn);
-        OffsetDateTime end   = OffsetDateTime.of(endYear,   8, 31, 23, 59, 59, 0, vn);
+        OffsetDateTime start = OffsetDateTime.of(year, 1, 1,  0,  0,  0, 0, vn);
+        OffsetDateTime end   = OffsetDateTime.of(year, 12, 31, 23, 59, 59, 0, vn);
         return new OffsetDateTime[]{start, end};
     }
 

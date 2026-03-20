@@ -40,8 +40,7 @@ public class CreateExamRequest {
      * Must be in the future, within the current academic year,
      * and the total duration (start → end) cannot exceed 4.5 months.
      */
-    @NotNull(message = "Thời gian bắt đầu không được để trống")
-    @Future(message = "Thời gian bắt đầu phải ở tương lai")
+    @NotNull(message = "Ngày bắt đầu không được để trống")
     private OffsetDateTime startTime;
 
     /**
@@ -49,7 +48,7 @@ public class CreateExamRequest {
      * Must be after start time, within the current academic year,
      * and within 4.5 months from start time.
      */
-    @NotNull(message = "Thời gian kết thúc không được để trống")
+    @NotNull(message = "Ngày kết thúc không được để trống")
     private OffsetDateTime endTime;
 
     /**
@@ -57,7 +56,7 @@ public class CreateExamRequest {
      *
      * @return true if time range is valid
      */
-    @AssertTrue(message = "Thời gian kết thúc phải sau thời gian bắt đầu")
+    @AssertTrue(message = "Ngày kết thúc phải sau ngày bắt đầu")
     public boolean isValidTimeRange() {
         if (startTime == null || endTime == null) return true;
         return endTime.isAfter(startTime);
