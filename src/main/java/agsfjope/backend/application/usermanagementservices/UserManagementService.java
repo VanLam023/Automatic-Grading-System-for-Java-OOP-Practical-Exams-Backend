@@ -1,6 +1,7 @@
 package agsfjope.backend.application.usermanagementservices;
 
 import agsfjope.backend.application.dtos.requests.user.CreateUserRequest;
+import agsfjope.backend.application.dtos.requests.user.UpdateUserRequest;
 import agsfjope.backend.application.dtos.responses.user.CreateUserResponse;
 import agsfjope.backend.application.dtos.responses.user.ImportStudentResponse;
 import agsfjope.backend.application.dtos.responses.user.UserDetailResponse;
@@ -105,4 +106,17 @@ public interface UserManagementService {
      * @throws IllegalArgumentException if user not found or soft-deleted
      */
     UserDetailResponse getUserById(UUID userId);
+
+    /**
+     * Updates an existing user's information.
+     * Only non-null fields in the request will be applied.
+     * Cannot update SYSTEM_ADMIN or soft-deleted accounts.
+     *
+     * @param userId  target user UUID
+     * @param request fields to update (null fields are ignored)
+     * @return updated user detail
+     * @throws IllegalArgumentException if user not found, deleted, is SYSTEM_ADMIN,
+     *                                  or validation fails (duplicate email/username/mssv, invalid role)
+     */
+    UserDetailResponse updateUser(UUID userId, UpdateUserRequest request);
 }

@@ -447,9 +447,9 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Override
     @Transactional(readOnly = true)
     public Page<UserDetailResponse> searchUsers(String keyword, String roleName, Pageable pageable) {
-        // Normalize: pass null to JPQL to skip the filter clause
-        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
-        String rn = (roleName != null && !roleName.isBlank()) ? roleName.trim().toUpperCase() : null;
+        // Normalize: pass empty string to JPQL to skip the filter clause (avoids PostgreSQL bytea cast issue with null)
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : "";
+        String rn = (roleName != null && !roleName.isBlank()) ? roleName.trim().toUpperCase() : "";
         return userRepository.searchUsers(kw, rn, pageable)
                 .map(this::mapToUserDetailResponse);
     }
@@ -469,6 +469,118 @@ public class UserManagementServiceImpl implements UserManagementService {
             throw new IllegalArgumentException(
                     "Tài khoản '" + user.getUsername() + "' đã bị xoá.");
         }
+
+        return mapToUserDetailResponse(user);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // updateUser — Admin updates user info
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public UserDetailResponse updateUser(java.util.UUID userId,
+            agsfjope.backend.application.dtos.requests.user.UpdateUserRequest request) {
+
+        // ── 1. Find user ────────────────────────────────────────────────────
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Không tìm thấy user với ID: " + userId));
+
+        // ── 2. Guard: cannot edit SYSTEM_ADMIN ──────────────────────────────
+        if ("SYSTEM_ADMIN".equals(user.getRole().getName())) {
+            throw new IllegalArgumentException(
+                    "Không thể chỉnh sửa tài khoản SYSTEM_ADMIN.");
+        }
+
+        // ── 3. Guard: cannot edit soft-deleted user ─────────────────────────
+        if (user.getDeletedAt() != null) {
+            throw new IllegalArgumentException(
+                    "Tài khoản '" + user.getUsername() + "' đã bị xoá, không thể chỉnh sửa.");
+        }
+
+        // ── 4. Update fullName ──────────────────────────────────────────────
+        if (request.getFullName() != null && !request.getFullName().isBlank()) {
+            String fullName = request.getFullName().strip().replaceAll("\\s{2,}", " ");
+            user.setFullName(fullName);
+        }
+
+        // ── 5. Update email (+ re-derive username if no explicit username given) ──
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String newEmail = request.getEmail().trim().toLowerCase();
+            if (!newEmail.equals(user.getEmail())) {
+                // Check duplicate
+                if (userRepository.findByEmail(newEmail).isPresent()) {
+                    throw new IllegalArgumentException("Email '" + newEmail + "' đã được sử dụng.");
+                }
+                user.setEmail(newEmail);
+
+                // Auto-derive username from new email if no explicit username provided
+                if (request.getUsername() == null || request.getUsername().isBlank()) {
+                    String derivedUsername = newEmail.substring(0, newEmail.indexOf('@'));
+                    if (!derivedUsername.equals(user.getUsername())
+                            && userRepository.findByUsername(derivedUsername).isPresent()) {
+                        throw new IllegalArgumentException(
+                                "Username '" + derivedUsername + "' (derived từ email mới) đã tồn tại.");
+                    }
+                    user.setUsername(derivedUsername);
+                }
+            }
+        }
+
+        // ── 6. Update username (explicit override) ──────────────────────────
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            String newUsername = request.getUsername().trim().toLowerCase();
+            if (!newUsername.equals(user.getUsername())) {
+                if (userRepository.findByUsername(newUsername).isPresent()) {
+                    throw new IllegalArgumentException("Username '" + newUsername + "' đã tồn tại.");
+                }
+                user.setUsername(newUsername);
+            }
+        }
+
+        // ── 7. Update MSSV ─────────────────────────────────────────────────
+        if (request.getMssv() != null) {
+            if (request.getMssv().isBlank()) {
+                // Empty string = clear MSSV
+                user.setMssv(null);
+            } else {
+                String newMssv = request.getMssv().trim().toUpperCase();
+                if (!newMssv.equals(user.getMssv())) {
+                    if (userRepository.findByMssv(newMssv).isPresent()) {
+                        throw new IllegalArgumentException(
+                                "MSSV '" + newMssv + "' đã tồn tại trong hệ thống.");
+                    }
+                    user.setMssv(newMssv);
+                }
+            }
+        }
+
+        // ── 8. Update phone ─────────────────────────────────────────────────
+        if (request.getPhone() != null) {
+            user.setPhone(request.getPhone().isBlank() ? null : request.getPhone().trim());
+        }
+
+        // ── 9. Update role ──────────────────────────────────────────────────
+        if (request.getRoleName() != null && !request.getRoleName().isBlank()) {
+            String newRoleName = request.getRoleName().trim().toUpperCase();
+            java.util.Set<String> allowedRoles = java.util.Set.of("STUDENT", "EXAM_STAFF", "LECTURER");
+            if (!allowedRoles.contains(newRoleName)) {
+                throw new IllegalArgumentException(
+                        "Role '" + request.getRoleName()
+                                + "' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER.");
+            }
+            if (!newRoleName.equals(user.getRole().getName())) {
+                Role newRole = roleRepository.findByName(newRoleName)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Role '" + newRoleName + "' không tìm thấy trong database."));
+                user.setRole(newRole);
+            }
+        }
+
+        // ── 10. Save and return ─────────────────────────────────────────────
+        userRepository.save(user);
+        log.info("[UserManagement] Updated user '{}' (ID: {}).", user.getUsername(), userId);
 
         return mapToUserDetailResponse(user);
     }
@@ -505,3 +617,4 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .build();
     }
 }
+

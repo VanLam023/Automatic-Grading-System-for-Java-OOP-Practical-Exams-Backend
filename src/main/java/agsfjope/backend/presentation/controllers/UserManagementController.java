@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -161,6 +162,29 @@ public class UserManagementController {
         }
     }
 
+    /**
+     * PUT /api/admin/users/{userId}
+     * Admin chỉnh sửa thông tin một tài khoản.
+     * Chỉ các field non-null trong request body sẽ được cập nhật.
+     * Không cho sửa SYSTEM_ADMIN hoặc tài khoản đã bị xoá.
+     *
+     * @param userId  UUID của user cần sửa
+     * @param request các field cần update (null = giữ nguyên)
+     */
+    @PutMapping("/{userId}")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    public ResponseEntity<Map<String, Object>> updateUser(
+            @PathVariable(name = "userId") UUID userId,
+            @Valid @RequestBody agsfjope.backend.application.dtos.requests.user.UpdateUserRequest request) {
+        try {
+            UserDetailResponse result = userManagementService.updateUser(userId, request);
+            return ResponseEntity.ok(buildSuccessResponse(
+                    "Cập nhật tài khoản '" + result.getUsername() + "' thành công.", result));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(buildErrorResponse(e.getMessage()));
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // READ endpoints
     // ─────────────────────────────────────────────────────────────────────────
@@ -183,11 +207,11 @@ public class UserManagementController {
     @GetMapping
     @PreAuthorize("hasRole('SYSTEM_ADMIN')")
     public ResponseEntity<Map<String, Object>> getAllUsers(
-            @RequestParam(defaultValue = "0")              int    page,
-            @RequestParam(defaultValue = "20")             int    size,
-            @RequestParam(defaultValue = "createdAt,desc") String sort,
-            @RequestParam(required = false)                String search,
-            @RequestParam(required = false)                String roleName) {
+            @RequestParam(name = "page", defaultValue = "0")              int    page,
+            @RequestParam(name = "size", defaultValue = "20")             int    size,
+            @RequestParam(name = "sort", defaultValue = "createdAt,desc") String sort,
+            @RequestParam(name = "search", required = false)              String search,
+            @RequestParam(name = "roleName", required = false)            String roleName) {
 
         String[] sortParts    = sort.split(",");
         String   sortField    = sortParts[0];

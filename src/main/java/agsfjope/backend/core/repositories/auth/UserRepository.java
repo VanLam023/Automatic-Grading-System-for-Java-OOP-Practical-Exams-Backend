@@ -89,11 +89,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("""
             SELECT u FROM User u
             WHERE u.deletedAt IS NULL
-              AND (:keyword IS NULL OR
+              AND (:keyword = '' OR
                    LOWER(u.username) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
                    LOWER(u.email)    LIKE LOWER(CONCAT('%', :keyword, '%')) OR
-                   LOWER(u.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')))
-              AND (:roleName IS NULL OR u.role.name = :roleName)
+                   LOWER(u.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+              AND (:roleName = '' OR u.role.name = :roleName)
             """)
     Page<User> searchUsers(
             @Param("keyword")  String keyword,
