@@ -46,7 +46,7 @@ public class BlockController {
      * @return list of block responses
      */
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF', 'SYSTEM_ADMIN', 'ROLE_SYSTEM_ADMIN', 'ADMIN', 'ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF', 'SYSTEM_ADMIN', 'ROLE_SYSTEM_ADMIN', 'ADMIN', 'ROLE_ADMIN', 'STUDENT', 'ROLE_STUDENT')")
     public ResponseEntity<List<BlockResponse>> getBlocksByExam(@PathVariable UUID examId) {
         return ResponseEntity.ok(blockService.getBlocksByExamId(examId));
     }
@@ -60,7 +60,7 @@ public class BlockController {
      * @return block response
      */
     @GetMapping("/{blockId}")
-    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF', 'SYSTEM_ADMIN', 'ROLE_SYSTEM_ADMIN', 'ADMIN', 'ROLE_ADMIN')")
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF', 'SYSTEM_ADMIN', 'ROLE_SYSTEM_ADMIN', 'ADMIN', 'ROLE_ADMIN', 'STUDENT', 'ROLE_STUDENT')")
     public ResponseEntity<BlockResponse> getBlockById(
             @PathVariable UUID examId,
             @PathVariable UUID blockId

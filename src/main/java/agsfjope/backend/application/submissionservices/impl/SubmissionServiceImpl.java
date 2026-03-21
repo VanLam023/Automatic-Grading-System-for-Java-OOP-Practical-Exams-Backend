@@ -97,19 +97,17 @@ public class SubmissionServiceImpl implements SubmissionService {
                     "Block " + blockId + " không thuộc kỳ thi " + examId + ".");
         }
 
-        // ── 3. BR-14: Exam must be ONGOING ───────────────────────────────────
-        var exam = block.getExam();
-        if (exam.getStatus() != ExamStatus.ONGOING) {
-            String msg = switch (exam.getStatus()) {
-                case UPCOMING ->
-                        "Kỳ thi \"" + exam.getName() + "\" chưa bắt đầu. " +
-                        "Vui lòng quay lại khi kỳ thi ở trạng thái ONGOING (MSG-40).";
-                case COMPLETED ->
-                        "Không thể nộp bài. Kỳ thi \"" + exam.getName() + "\" đã kết thúc (MSG-34).";
-                default ->
-                        "Kỳ thi không ở trạng thái hợp lệ để nộp bài.";
-            };
-            throw new ExamNotOngoingException(msg);
+        // ── 3. BR-14: Block must be ONGOING (check by block times) ──────────────
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        if (block.getStartTime() != null && now.isBefore(block.getStartTime())) {
+            throw new ExamNotOngoingException(
+                    "Ca thi \"" + block.getName() + "\" của kỳ thi \"" + block.getExam().getName() +
+                    "\" chưa bắt đầu. Ca thi sẽ mở lúc " + block.getStartTime() + " (MSG-40).");
+        }
+        if (block.getEndTime() != null && now.isAfter(block.getEndTime())) {
+            throw new ExamNotOngoingException(
+                    "Ca thi \"" + block.getName() + "\" của kỳ thi \"" + block.getExam().getName() +
+                    "\" đã kết thúc lúc " + block.getEndTime() + " (MSG-34). Không thể nộp bài.");
         }
 
         // ── 4. Validate block has an exam paper ──────────────────────────────
@@ -152,6 +150,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 submissionRepository.findByStudent_UserIdAndBlock_BlockId(studentId, blockId);
         if (existing.isPresent()) {
             deleteOldSubmission(existing.get());
+            submissionRepository.flush(); // Ép Hibernate flush DELETE trước INSERT mới (tránh uq_studentblock violation)
             isResubmit = true;
             log.info("SubmissionService: Resubmit detected — deleted old submission {} (BR-17).",
                     existing.get().getSubmissionId());
