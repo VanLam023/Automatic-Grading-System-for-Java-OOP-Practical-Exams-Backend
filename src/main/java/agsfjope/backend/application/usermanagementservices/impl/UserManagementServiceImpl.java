@@ -436,7 +436,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Override
     @Transactional(readOnly = true)
     public Page<UserDetailResponse> getAllUsers(Pageable pageable) {
-        return userRepository.findAllByDeletedAtIsNull(pageable)
+        return userRepository.findAllByDeletedAtIsNullAndRoleNameNot("SYSTEM_ADMIN", pageable)
                 .map(this::mapToUserDetailResponse);
     }
 
@@ -464,6 +464,11 @@ public class UserManagementServiceImpl implements UserManagementService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy user với ID: " + userId));
+
+        if ("SYSTEM_ADMIN".equals(user.getRole().getName())) {
+            throw new IllegalArgumentException(
+                    "Không tìm thấy user với ID: " + userId);
+        }
 
         if (user.getDeletedAt() != null) {
             throw new IllegalArgumentException(

@@ -67,14 +67,15 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findByUsernameIn(List<String> usernames);
 
     /**
-     * Returns a paginated list of all non-deleted users, eagerly loading their Role.
+     * Returns a paginated list of all non-deleted, non-SYSTEM_ADMIN users,
+     * eagerly loading their Role.
      * Used by the Admin "Get All Users" endpoint.
      *
      * @param pageable pagination and sorting configuration
-     * @return page of active (non-soft-deleted) users
+     * @return page of active (non-soft-deleted) users excluding SYSTEM_ADMIN
      */
     @EntityGraph(attributePaths = {"role"})
-    Page<User> findAllByDeletedAtIsNull(Pageable pageable);
+    Page<User> findAllByDeletedAtIsNullAndRoleNameNot(String roleName, Pageable pageable);
 
     /**
      * Full-text search across username, email, and fullName with optional role filter.
@@ -89,6 +90,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("""
             SELECT u FROM User u
             WHERE u.deletedAt IS NULL
+              AND u.role.name <> 'SYSTEM_ADMIN'
               AND (:keyword = '' OR
                    LOWER(u.username) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
                    LOWER(u.email)    LIKE LOWER(CONCAT('%', :keyword, '%')) OR
