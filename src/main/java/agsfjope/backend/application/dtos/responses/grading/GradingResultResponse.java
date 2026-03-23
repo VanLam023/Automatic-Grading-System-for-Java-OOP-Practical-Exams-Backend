@@ -23,6 +23,9 @@ public class GradingResultResponse {
     private UUID studentId;
     private String studentName;
     private String studentCode;
+    private String studentEmail;
+    private String semesterName;
+    private String blockName;
 
     private GradingMode gradingMode;
 

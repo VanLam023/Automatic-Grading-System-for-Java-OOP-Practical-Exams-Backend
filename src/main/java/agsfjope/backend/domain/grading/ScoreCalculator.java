@@ -65,11 +65,13 @@ public class ScoreCalculator {
             QuestionScore qScore = scoreQuestion(questionNumber, input, config);
             questionScores.add(qScore);
 
-            // Step 3: accumulate — guard-forced questions contribute 0 to sums
-            sumTcRaw  = sumTcRaw.add(qScore.rawTcScore());
+            // Step 3: accumulate — guard-forced questions contribute 0 to BOTH sums
+            sumTcRaw  = sumTcRaw.add(
+                    qScore.guardRuleTriggered() ? BigDecimal.ZERO : qScore.rawTcScore()
+            );
             sumOopRaw = sumOopRaw.add(
-                    config.getOopCommentOnly() ? BigDecimal.ZERO :
-                    qScore.guardRuleTriggered() ? BigDecimal.ZERO : qScore.rawOopScore()
+                    config.getOopCommentOnly()  ? BigDecimal.ZERO :
+                    qScore.guardRuleTriggered()  ? BigDecimal.ZERO : qScore.rawOopScore()
             );
         }
 
@@ -106,8 +108,19 @@ public class ScoreCalculator {
         BigDecimal tcRaw  = calculateTcRaw(passed, total, maxScore);
         BigDecimal oopRaw = calculateOopRaw(input.aiResult(), maxScore);
 
-        // Step 2: Guard rules
-        // 2a. Tampered files — forced 0 regardless of any config
+        // Step 2: Guard rules (in priority order — first match wins)
+
+        // 2a. FailIfMissingFile (MANDATORY) — 0 if student did not submit .jar or .java src
+        if (input.missingFile()) {
+            String note = "Điểm gốc: TC=0, OOP=0 → 0đ do " +
+                    (input.missingDetail() != null ? input.missingDetail()
+                            : "thiếu file nộp (không có .jar hoặc mã nguồn .java)");
+            return new QuestionScore(questionNumber, maxScore,
+                    BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO, true, note, 0, total);
+        }
+
+        // 2b. Tampered files — forced 0 regardless of any config
         if (input.hasExamFileTampering()) {
             String note = buildTamperNote(tcRaw, oopRaw, input.tamperDetail());
             return new QuestionScore(questionNumber, maxScore,
@@ -126,7 +139,19 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2c. FailIfZeroTestCase — override to 0 if not a single test case passed
+        // 2c. FailIfHardCoded (MANDATORY) — override to 0 if AI detected any hard-coded values.
+        // Hard-coding is academic dishonesty; this rule cannot be disabled by config.
+        if (input.aiResult() != null
+                && !input.aiResult().aiError()
+                && input.aiResult().hardCodedValues() != null
+                && !input.aiResult().hardCodedValues().isEmpty()) {
+            String note = buildHardCodeNote(tcRaw, oopRaw, input.aiResult().hardCodedValues());
+            return new QuestionScore(questionNumber, maxScore,
+                    tcRaw, oopRaw,
+                    BigDecimal.ZERO, true, note, passed, total);
+        }
+
+        // 2d. FailIfZeroTestCase — override to 0 if not a single test case passed
         if (Boolean.TRUE.equals(config.getFailIfZeroTestCase()) && passed == 0 && total > 0) {
             String note = buildGuardNote("FailIfZeroTestCase", tcRaw, oopRaw);
             return new QuestionScore(questionNumber, maxScore,
@@ -134,7 +159,7 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2d. OopCommentOnly — include OOP analysis but score = TC only
+        // 2e. OopCommentOnly — include OOP analysis but score = TC only
         BigDecimal finalQ;
         if (Boolean.TRUE.equals(config.getOopCommentOnly())) {
             finalQ = tcRaw.setScale(SCALE, ROUNDING);
@@ -145,6 +170,7 @@ public class ScoreCalculator {
         return new QuestionScore(questionNumber, maxScore,
                 tcRaw, oopRaw, finalQ, false, null, passed, total);
     }
+
 
     // ─── RAW SCORE HELPERS ────────────────────────────────────────────────────
 
@@ -196,6 +222,16 @@ public class ScoreCalculator {
                         detail != null ? detail : "checksum mismatch");
     }
 
+    private String buildHardCodeNote(BigDecimal tcRaw, BigDecimal oopRaw, List<String> hardCoded) {
+        String values = hardCoded.stream()
+                .limit(5) // cap to avoid overly long notes
+                .map(v -> "`" + v + "`")
+                .collect(java.util.stream.Collectors.joining(", "));
+        return ("Điểm gốc: TC=%s, OOP=%s → 0đ do phát hiện hardcode giá trị trả về " +
+                "(FailIfHardCoded — bắt buộc). Giá trị bị phát hiện: %s")
+                .formatted(tcRaw.toPlainString(), oopRaw.toPlainString(), values);
+    }
+
     // ─── INPUT DATA CLASS ─────────────────────────────────────────────────────
 
     /**
@@ -214,14 +250,16 @@ public class ScoreCalculator {
             int totalTcCount,
             AIReviewResult aiResult,
             boolean hasExamFileTampering,
-            String tamperDetail
+            String tamperDetail,
+            boolean missingFile,
+            String missingDetail
     ) {
-        /** Convenience constructor when no tampering and AI result is ready. */
+        /** Convenience constructor when no tampering, no missing file, and AI result is ready. */
         public static QuestionInput of(BigDecimal maxScore,
                                        int passTcCount, int totalTcCount,
                                        AIReviewResult aiResult) {
             return new QuestionInput(maxScore, passTcCount, totalTcCount,
-                    aiResult, false, null);
+                    aiResult, false, null, false, null);
         }
 
         /** Convenience constructor for tampered submission. */
@@ -229,7 +267,13 @@ public class ScoreCalculator {
                                              int passTcCount, int totalTcCount,
                                              String detail) {
             return new QuestionInput(maxScore, passTcCount, totalTcCount,
-                    null, true, detail);
+                    null, true, detail, false, null);
+        }
+
+        /** Convenience constructor for missing file (no jar or no src). */
+        public static QuestionInput missing(BigDecimal maxScore, int totalTcCount, String detail) {
+            return new QuestionInput(maxScore, 0, totalTcCount,
+                    null, false, null, true, detail);
         }
     }
 }

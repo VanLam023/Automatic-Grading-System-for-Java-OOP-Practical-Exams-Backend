@@ -2,6 +2,7 @@ package agsfjope.backend.infrastructure.grading;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -32,11 +33,18 @@ import java.util.concurrent.*;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class JarSandboxExecutor {
 
     private static final int DEFAULT_TIMEOUT_MS  = 10_000; // 10 seconds
     private static final int MAX_OUTPUT_BYTES    = 64 * 1024; // 64 KB max stdout
+
+    /**
+     * Path to the java executable used to run student JARs.
+     * Configure via 'sandbox.java-executable' in application.yml or SANDBOX_JAVA env var.
+     * Must point to a JDK >= Java version students used to compile (typically Java 21).
+     */
+    @Value("${sandbox.java-executable:java}")
+    private String javaExecutable;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -58,9 +66,11 @@ public class JarSandboxExecutor {
                                int timeLimitMs) {
         long timeout = timeLimitMs > 0 ? timeLimitMs : DEFAULT_TIMEOUT_MS;
 
-        // Step 1: Verify exam .class files were not tampered with
+        // Step 1: Verify exam .class files were not tampered with.
+        // Compares the exam's reference checksums against the same-named .class files
+        // found INSIDE the student JAR (student may have re-compiled / replaced them).
         if (originalChecksums != null && !originalChecksums.isEmpty()) {
-            ExecutionResult tamperResult = verifyExamFiles(examClassDir, originalChecksums);
+            ExecutionResult tamperResult = verifyExamFiles(studentJar, originalChecksums);
             if (tamperResult != null) return tamperResult;
         }
 
@@ -167,40 +177,89 @@ public class JarSandboxExecutor {
     // ─── PRIVATE HELPERS ─────────────────────────────────────────────────────
 
     private List<String> buildCommand(String classpath, Path workDir) {
+        log.debug("[SANDBOX] Using java executable: {}", javaExecutable);
         return List.of(
-                "java",
+                javaExecutable,
                 "-Xmx128m",                         // Memory limit 128 MB
                 "-Xss1m",                            // Stack size 1 MB
                 "-XX:+UseSerialGC",                  // Lightweight GC
                 "-Djava.io.tmpdir=" + workDir,       // Sandbox temp dir
+                "-Duser.language=en",                // Force Locale.US: Scanner.nextDouble() uses '.' not ','
+                "-Duser.country=US",                 // (prevents InputMismatchException on European-locale servers)
                 "-cp", classpath,
                 "Main"                               // Entry point defined by exam
         );
     }
 
-    /** Verifies all exam .class files against stored checksums. Returns tamper result if mismatch. */
-    private ExecutionResult verifyExamFiles(Path examClassDir, Map<String, String> originalChecksums) {
+    /** Verifies exam .class files against stored checksums by inspecting the student's JAR.
+     *
+     * <p>Each entry in {@code originalChecksums} (filename → MD5) represents a file that the
+     * exam provided.  If the student's JAR contains a file with the same name but a different
+     * MD5, we treat it as a tamper attempt (they recompiled or altered the file).</p>
+     *
+     * @param studentJar        path to the student's .jar file
+     * @param originalChecksums map of filename → MD5 computed from exam .class files
+     * @return a tamper {@link ExecutionResult} if mismatch found, or {@code null} if clean
+     */
+    private ExecutionResult verifyExamFiles(Path studentJar,
+                                            Map<String, String> originalChecksums) {
         List<String> tampered = new ArrayList<>();
-        for (Map.Entry<String, String> entry : originalChecksums.entrySet()) {
-            Path classFile = examClassDir.resolve(entry.getKey());
-            if (!Files.exists(classFile)) {
-                tampered.add(entry.getKey() + " (missing)");
-                continue;
-            }
-            try {
-                String actual = md5Hex(Files.readAllBytes(classFile));
-                if (!actual.equals(entry.getValue())) {
-                    tampered.add(entry.getKey() + " (modified)");
+        try {
+            // Extract relevant .class files from student JAR (only those in originalChecksums)
+            Map<String, String> studentChecksums = extractJarClassChecksums(studentJar,
+                    originalChecksums.keySet());
+
+            for (Map.Entry<String, String> entry : originalChecksums.entrySet()) {
+                String filename = entry.getKey();
+                String examChecksum = entry.getValue();
+
+                if (!studentChecksums.containsKey(filename)) {
+                    // File not present in student JAR — student removed an exam class file
+                    tampered.add(filename + " (missing from student submission)");
+                } else if (!studentChecksums.get(filename).equals(examChecksum)) {
+                    // MD5 mismatch — student modified and recompiled the exam class
+                    tampered.add(filename + " (modified)");
                 }
-            } catch (IOException e) {
-                tampered.add(entry.getKey() + " (unreadable)");
             }
+        } catch (IOException e) {
+            log.warn("Could not inspect student JAR for tamper check: {}", e.getMessage());
+            // Fail-safe: do not block grading if JAR inspection itself fails
+            return null;
         }
 
         if (!tampered.isEmpty()) {
             return ExecutionResult.tamperedExamFiles(String.join(", ", tampered));
         }
-        return null; // No tampering
+        return null; // No tampering detected
+    }
+
+    /**
+     * Extracts MD5 checksums for specific .class files found inside a JAR archive.
+     *
+     * @param jarPath   path to the .jar file
+     * @param filenames set of filenames (e.g. "Main.class") to look for inside the JAR
+     * @return map of filename → MD5 hex string for each matching entry found in the JAR
+     */
+    private Map<String, String> extractJarClassChecksums(Path jarPath,
+                                                          java.util.Set<String> filenames)
+            throws IOException {
+        Map<String, String> result = new LinkedHashMap<>();
+        try (var jis = new java.util.jar.JarInputStream(
+                new java.io.BufferedInputStream(Files.newInputStream(jarPath)))) {
+            java.util.jar.JarEntry entry;
+            while ((entry = jis.getNextJarEntry()) != null) {
+                // Match by simple filename only (strip any package path)
+                String entryName = entry.getName();
+                String simpleName = entryName.contains("/")
+                        ? entryName.substring(entryName.lastIndexOf('/') + 1)
+                        : entryName;
+                if (filenames.contains(simpleName) && simpleName.endsWith(".class")) {
+                    byte[] bytes = jis.readAllBytes();
+                    result.put(simpleName, md5Hex(bytes));
+                }
+            }
+        }
+        return result;
     }
 
     /** Reads a stream in a background thread to prevent buffer deadlock. */

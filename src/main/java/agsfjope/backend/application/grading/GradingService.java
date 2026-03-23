@@ -46,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class GradingService {
 
-    /** Blocks currently running GRADE_ALL — prevents double-trigger. */
+    /** Blocks currently running grading — prevents double-trigger on same block. */
     private final Set<UUID> activeBlockGradings = ConcurrentHashMap.newKeySet();
 
     /**
@@ -70,56 +70,72 @@ public class GradingService {
      */
     @Async("gradingTaskExecutor")
     public void triggerGrading(UUID blockId, TriggerGradingRequest request, User triggeredBy) {
+        log.warn("[GRADING] triggerGrading called for block={} by user={}", blockId,
+                triggeredBy != null ? triggeredBy.getUsername() : "unknown");
+
         // Clear any leftover cancel flag from a previous stop
         cancelledBlocks.remove(blockId);
 
-        List<Submission> targets = resolveTargets(blockId, request);
-
-        if (targets.isEmpty()) {
-            log.info("Grading triggered for block {} but no eligible submissions found", blockId);
-            return;
+        // Guard against concurrent trigger on same block (ALL/SELECTED/SINGLE)
+        if (!activeBlockGradings.add(blockId)) {
+            throw new GradingAlreadyInProgressException(
+                    "Hệ thống đang chấm bài cho block này. Vui lòng chờ hoàn tất hoặc dừng tiến trình hiện tại.");
         }
 
-        boolean isGradeAll = request.getSubmissionIds() == null;
-        String modeLabel = isGradeAll ? "GRADE_ALL"
-                : (targets.size() == 1 ? "GRADE_SINGLE" : "GRADE_SELECTED");
-        log.info("Grading triggered: block={}, mode={}, count={}", blockId, modeLabel, targets.size());
+        try {
+            List<Submission> targets = resolveTargets(blockId, request);
 
-        for (Submission submission : targets) {
-            // ── CANCELLATION CHECK (between submissions) ──────────────────────
-            if (cancelledBlocks.contains(blockId)) {
-                log.info("Grading for block {} was stopped. Resetting remaining submissions.", blockId);
-                // The current submission hasn't started yet — nothing to reset
-                break;
+            if (targets.isEmpty()) {
+                log.info("Grading triggered for block {} but no eligible submissions found", blockId);
+                return;
             }
 
-            try {
-                pipelineService.grade(submission, triggeredBy, cancelledBlocks);
-            } catch (GradingCancelledException e) {
-                log.info("Grading cancelled mid-submission {} in block {}",
-                        submission.getSubmissionId(), blockId);
-                // @Transactional on grade() was rolled back, so:
-                //   ✅ partial TC results are gone from DB
-                //   ✅ submission.status in DB is already SUBMITTED (pre-grade value)
-                // The in-memory object is stale (status=GRADING), so re-fetch to confirm.
-                submissionRepository.findById(submission.getSubmissionId())
-                        .filter(s -> s.getStatus() != agsfjope.backend.core.enums.SubmissionStatus.SUBMITTED)
-                        .ifPresent(s -> {
-                            s.setStatus(agsfjope.backend.core.enums.SubmissionStatus.SUBMITTED);
-                            submissionRepository.save(s);
-                        });
-                break;
-            } catch (Exception e) {
-                log.error("Grading failed for submission {}: {}",
-                        submission.getSubmissionId(), e.getMessage(), e);
-                // Reset to SUBMITTED so staff can re-grade
-                submission.setStatus(SubmissionStatus.SUBMITTED);
-                submissionRepository.save(submission);
+            boolean isGradeAll = request.getSubmissionIds() == null;
+            String modeLabel = isGradeAll ? "GRADE_ALL"
+                    : (targets.size() == 1 ? "GRADE_SINGLE" : "GRADE_SELECTED");
+            log.info("Grading triggered: block={}, mode={}, count={}", blockId, modeLabel, targets.size());
+
+            for (Submission submission : targets) {
+                // ── CANCELLATION CHECK (between submissions) ──────────────────────
+                if (cancelledBlocks.contains(blockId)) {
+                    log.info("Grading for block {} was stopped. Resetting remaining submissions.", blockId);
+                    // The current submission hasn't started yet — nothing to reset
+                    break;
+                }
+
+                try {
+                    // Persist GRADING immediately so progress endpoint can reflect in real-time
+                    submission.setStatus(SubmissionStatus.GRADING);
+                    submissionRepository.save(submission);
+
+                    pipelineService.grade(submission, triggeredBy, cancelledBlocks);
+                } catch (GradingCancelledException e) {
+                    log.info("Grading cancelled mid-submission {} in block {}",
+                            submission.getSubmissionId(), blockId);
+                    // @Transactional on grade() was rolled back, so:
+                    //   ✅ partial TC results are gone from DB
+                    //   ✅ submission.status in DB is already SUBMITTED (pre-grade value)
+                    // The in-memory object is stale (status=GRADING), so re-fetch to confirm.
+                    submissionRepository.findById(submission.getSubmissionId())
+                            .filter(s -> s.getStatus() != agsfjope.backend.core.enums.SubmissionStatus.SUBMITTED)
+                            .ifPresent(s -> {
+                                s.setStatus(agsfjope.backend.core.enums.SubmissionStatus.SUBMITTED);
+                                submissionRepository.save(s);
+                            });
+                    break;
+                } catch (Exception e) {
+                    log.error("Grading failed for submission {}: {}",
+                            submission.getSubmissionId(), e.getMessage(), e);
+                    // Reset to SUBMITTED so staff can re-grade
+                    submission.setStatus(SubmissionStatus.SUBMITTED);
+                    submissionRepository.save(submission);
+                }
             }
+
+            log.info("Grading batch ended for block {}", blockId);
+        } finally {
+            cleanup(blockId);
         }
-
-        cleanup(blockId, isGradeAll);
-        log.info("Grading batch ended for block {}", blockId);
     }
 
     /**
@@ -147,6 +163,7 @@ public class GradingService {
      * @param blockId block UUID
      * @return progress snapshot
      */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public GradingProgressResponse getProgress(UUID blockId) {
         long total   = submissionRepository.countByBlock_BlockId(blockId);
         long graded  = submissionRepository.countByBlock_BlockIdAndStatus(
@@ -188,26 +205,37 @@ public class GradingService {
     private List<Submission> resolveTargets(UUID blockId, TriggerGradingRequest request) {
         List<UUID> ids = request.getSubmissionIds();
 
-        // submissionIds == null → GRADE_ALL
-        if (ids == null) {
-            if (activeBlockGradings.contains(blockId)) {
-                throw new GradingAlreadyInProgressException(
-                        "Hệ thống đang chấm bài cho kỳ thi này. Không thể bắt đầu lại ngay lúc này.");
-            }
-            activeBlockGradings.add(blockId);
-            return submissionRepository.findByBlock_BlockIdAndStatus(
+        // submissionIds == null OR empty array → GRADE_ALL
+        // Include GRADING (stuck) and GRADED (re-grade) alongside SUBMITTED.
+        // Two separate queries per status to avoid NAMED_ENUM IN-clause issues.
+        if (ids == null || ids.isEmpty()) {
+            List<Submission> submitted = submissionRepository.findByBlock_BlockIdAndStatus(
                     blockId, SubmissionStatus.SUBMITTED);
+            List<Submission> grading   = submissionRepository.findByBlock_BlockIdAndStatus(
+                    blockId, SubmissionStatus.GRADING);
+            List<Submission> graded    = submissionRepository.findByBlock_BlockIdAndStatus(
+                    blockId, SubmissionStatus.GRADED);
+            log.warn("[GRADING] resolveTargets: found {} SUBMITTED + {} GRADING + {} GRADED for block {}",
+                    submitted.size(), grading.size(), graded.size(), blockId);
+            List<Submission> merged = new java.util.ArrayList<>(submitted);
+            merged.addAll(grading);
+            merged.addAll(graded);
+            return merged;
         }
 
         // submissionIds = [id1, id2, ...] → GRADE_SELECTED or GRADE_SINGLE
-        if (ids.isEmpty()) return List.of();
+        // Accept SUBMITTED, GRADING (stuck), and GRADED (re-grade request).
         return submissionRepository.findAllById(ids).stream()
                 .filter(s -> s.getBlock().getBlockId().equals(blockId))
+                .filter(s -> s.getStatus() == SubmissionStatus.SUBMITTED
+                          || s.getStatus() == SubmissionStatus.GRADING
+                          || s.getStatus() == SubmissionStatus.GRADED)
                 .toList();
     }
 
-    private void cleanup(UUID blockId, boolean wasGradeAll) {
-        if (wasGradeAll) activeBlockGradings.remove(blockId);
+
+    private void cleanup(UUID blockId) {
+        activeBlockGradings.remove(blockId);
         cancelledBlocks.remove(blockId);
     }
 }

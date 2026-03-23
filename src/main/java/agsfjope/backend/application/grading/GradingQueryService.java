@@ -1,4 +1,4 @@
-package agsfjope.backend.application.grading;
+﻿package agsfjope.backend.application.grading;
 
 import agsfjope.backend.application.dtos.responses.grading.*;
 import agsfjope.backend.core.entities.*;
@@ -7,9 +7,14 @@ import agsfjope.backend.core.repositories.grading.AIReviewRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +27,7 @@ import java.util.stream.Collectors;
  * <p>Separated from {@link GradingService} (which handles async write operations)
  * to keep query concerns isolated.</p>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GradingQueryService {
@@ -30,6 +36,7 @@ public class GradingQueryService {
     private final TestCaseResultRepository testCaseResultRepository;
     private final AIReviewRepository       aiReviewRepository;
     private final SubmissionRepository     submissionRepository;
+    private final ObjectMapper             objectMapper;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -93,6 +100,10 @@ public class GradingQueryService {
                 .submissionId(sub.getSubmissionId())
                 .studentId(student.getUserId())
                 .studentName(student.getFullName())
+                .studentCode(student.getMssv())
+                .studentEmail(student.getEmail())
+                .semesterName(sub.getBlock().getExam().getSemester())
+                .blockName(sub.getBlock().getName())
                 .gradingMode(gr.getGradingMode())
                 .status(gr.getStatus())
                 .totalScore(gr.getTotalScore())
@@ -114,6 +125,10 @@ public class GradingQueryService {
                 .submissionId(sub.getSubmissionId())
                 .studentId(student.getUserId())
                 .studentName(student.getFullName())
+                .studentCode(student.getMssv())
+                .studentEmail(student.getEmail())
+                .semesterName(sub.getBlock().getExam().getSemester())
+                .blockName(sub.getBlock().getName())
                 .gradingMode(gr.getGradingMode())
                 .status(gr.getStatus())
                 .totalScore(gr.getTotalScore())
@@ -156,17 +171,41 @@ public class GradingQueryService {
                     List<TestCaseResult> tcrs = tcByAnswer.getOrDefault(aid, List.of());
                     AIReview ai = aiByAnswer.get(aid);
 
+                    // rawTestCaseScore = sum of scoreEarned from all TC results for this answer
+                    BigDecimal rawTcScore = tcrs.stream()
+                            .map(t -> t.getScoreEarned() != null ? t.getScoreEarned() : BigDecimal.ZERO)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                    // rawOopScore = (aiReview.oopScore / 10) * maxScore
+                    BigDecimal rawOopScore = BigDecimal.ZERO;
+                    if (ai != null && ai.getOopScore() != null) {
+                        BigDecimal maxScore = answer.getQuestion().getMaxScore();
+                        if (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0) {
+                            rawOopScore = ai.getOopScore()
+                                    .divide(new BigDecimal("10"), 6, java.math.RoundingMode.HALF_UP)
+                                    .multiply(maxScore)
+                                    .setScale(2, java.math.RoundingMode.HALF_UP);
+                        }
+                    }
+
                     return AnswerGradingDetail.builder()
                             .answerId(aid)
                             .questionNumber(answer.getQuestion().getQuestionNumber())
                             .questionTitle(answer.getQuestion().getTitle())
                             .maxScore(answer.getQuestion().getMaxScore())
+                            // Scores persisted by pipeline in V6 columns (null if not yet re-graded)
+                            .questionScore(answer.getAnswerScore())
+                            .rawTestCaseScore(rawTcScore)
+                            .rawOopScore(rawOopScore)
+                            .guardRuleTriggered(answer.isGuardRuleTriggered())
+                            .guardRuleNote(answer.getGuardRuleNote())
                             .testCaseResults(tcrs.stream().map(this::toTcDetail).toList())
                             .aiReview(ai != null ? toAiDetail(ai) : null)
                             .build();
                 })
                 .toList();
     }
+
 
     private TestCaseResultDetail toTcDetail(TestCaseResult tcr) {
         return TestCaseResultDetail.builder()
@@ -181,11 +220,52 @@ public class GradingQueryService {
     }
 
     private AIReviewDetail toAiDetail(AIReview ai) {
+        // Criteria breakdown is stored in RawResponse JSONB (no dedicated DB columns)
+        BigDecimal encapsulation = null, inheritance = null, polymorphism = null,
+                   designQuality = null, codeIntegrity = null;
+        List<String> violations = null, hardCodedValues = null;
+
+        String raw = ai.getRawResponse();
+        if (raw != null && !raw.isBlank()) {
+            try {
+                JsonNode root = objectMapper.readTree(raw);
+                encapsulation  = toBD(root.get("encapsulation"));
+                inheritance    = toBD(root.get("inheritance"));
+                polymorphism   = toBD(root.get("polymorphism"));
+                designQuality  = toBD(root.get("designQuality"));
+                codeIntegrity  = toBD(root.get("codeIntegrity"));
+                violations     = toStringList(root.get("violations"));
+                hardCodedValues = toStringList(root.get("hardCodedValues"));
+            } catch (Exception e) {
+                log.warn("Could not parse rawResponse for AIReview {}: {}", ai.getAiReviewId(), e.getMessage());
+            }
+        }
+
         return AIReviewDetail.builder()
                 .aiReviewId(ai.getAiReviewId())
                 .oopScore(ai.getOopScore())
+                .encapsulationScore(encapsulation)
+                .inheritanceScore(inheritance)
+                .polymorphismScore(polymorphism)
+                .designQualityScore(designQuality)
+                .codeIntegrityScore(codeIntegrity)
+                .violations(violations)
+                .hardCodedValues(hardCodedValues)
                 .comment(ai.getComment())
                 .oopViolated(Boolean.TRUE.equals(ai.getIsOopViolated()))
                 .build();
+    }
+
+    private static BigDecimal toBD(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        try { return new BigDecimal(node.asText()); } catch (Exception e) { return null; }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> toStringList(JsonNode node) {
+        if (node == null || node.isNull() || !node.isArray()) return new ArrayList<>();
+        List<String> list = new ArrayList<>();
+        node.forEach(n -> { if (!n.isNull()) list.add(n.asText()); });
+        return list;
     }
 }

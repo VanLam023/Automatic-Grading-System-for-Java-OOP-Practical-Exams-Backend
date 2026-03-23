@@ -25,7 +25,7 @@ public class GeminiAdapter implements LLMAdapter {
 
     private static final String BASE_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
-    private static final int TIMEOUT_SECONDS = 60;
+    private static final int TIMEOUT_SECONDS = 120;  // increased for long analysis prompts
 
     private final HttpClient   httpClient;
     private final ObjectMapper objectMapper;
@@ -37,10 +37,20 @@ public class GeminiAdapter implements LLMAdapter {
 
     @Override
     public String chat(String prompt, String apiKey, String model) throws Exception {
+        return doChat(prompt, apiKey, model, false);
+    }
+
+    @Override
+    public String chatJson(String prompt, String apiKey, String model) throws Exception {
+        return doChat(prompt, apiKey, model, true);
+    }
+
+    private String doChat(String prompt, String apiKey, String model, boolean responseJson)
+            throws Exception {
         String encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
         String url = BASE_URL.formatted(model, encodedKey);
 
-        String body = buildRequestBody(prompt);
+        String body = buildRequestBody(prompt, responseJson);
 
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
@@ -60,8 +70,11 @@ public class GeminiAdapter implements LLMAdapter {
         return extractText(response.body());
     }
 
-    private String buildRequestBody(String prompt) {
+    private String buildRequestBody(String prompt, boolean responseJson) {
         String escaped = escapeJson(prompt);
+        String mimeTypePart = responseJson
+                ? ",\n    \"responseMimeType\": \"application/json\""
+                : "";
         return """
                 {
                   "contents": [
@@ -72,10 +85,10 @@ public class GeminiAdapter implements LLMAdapter {
                   ],
                   "generationConfig": {
                     "temperature": 0.2,
-                    "maxOutputTokens": 2048
+                    "maxOutputTokens": 8192%s
                   }
                 }
-                """.formatted(escaped);
+                """.formatted(escaped, mimeTypePart);
     }
 
     private String extractText(String responseBody) throws Exception {

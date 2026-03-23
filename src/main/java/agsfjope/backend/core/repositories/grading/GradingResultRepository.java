@@ -2,9 +2,11 @@ package agsfjope.backend.core.repositories.grading;
 
 import agsfjope.backend.core.entities.GradingResult;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -43,4 +45,17 @@ public interface GradingResultRepository extends JpaRepository<GradingResult, UU
      * @return true if a grading result already exists
      */
     boolean existsBySubmission_SubmissionId(UUID submissionId);
+
+    /**
+     * Deletes the grading result for a submission via a direct JPQL DELETE statement.
+     * Used before re-grading to avoid duplicate key violation on the unique SubmissionID constraint.
+     * Executes immediately (bypasses Hibernate entity lifecycle and batch queue).
+     *
+     * @param submissionId the submission's UUID
+     */
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM GradingResult gr WHERE gr.submission.submissionId = :submissionId")
+    void deleteBySubmission_SubmissionId(@Param("submissionId") UUID submissionId);
 }
+

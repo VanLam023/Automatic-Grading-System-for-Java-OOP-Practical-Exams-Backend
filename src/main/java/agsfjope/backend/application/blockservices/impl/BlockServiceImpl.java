@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -136,6 +137,21 @@ public class BlockServiceImpl implements BlockService {
         }
 
         Exam exam = block.getExam();
+
+        OffsetDateTime now = OffsetDateTime.now();
+
+        // If block already passed, use a dedicated message
+        if (block.getEndTime() != null && now.isAfter(block.getEndTime())) {
+            throw new IllegalArgumentException("Kì thi đã qua không được chỉnh sửa thời gian ca thi");
+        }
+
+        // Otherwise, block update is locked in the 7-day window before start time
+        if (block.getStartTime() != null) {
+            OffsetDateTime lockAt = block.getStartTime().minusDays(7);
+            if (!now.isBefore(lockAt)) {
+                throw new IllegalArgumentException("Không thể chỉnh sửa lịch trong vòng 7 ngày trước khi ca thi bắt đầu.");
+            }
+        }
 
         // Validate block times fall within the parent exam's window
         if (request.getStartTime().isBefore(exam.getStartTime())) {

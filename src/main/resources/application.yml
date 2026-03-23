@@ -11,6 +11,17 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 15         # Đủ cho grading + API requests đồng thời
+      minimum-idle: 1               # Chỉ giữ 1 idle — tránh chiếm quá nhiều connection khi startup
+      connection-timeout: 60000     # Chờ tối đa 60s để lấy connection từ pool
+      max-lifetime: 1500000         # 25 phút — đóng connection cũ trước khi PostgreSQL idle timeout
+      idle-timeout: 300000          # 5 phút — thu hồi connection idle
+      keepalive-time: 60000         # Ping 60s/lần để detect stale connection sớm
+      initialization-fail-timeout: -1  # Không fail khi startup nếu DB tạm thời đầy connection
+      pool-name: OopExamPool
+
+
 
   # Jackson JSON serialization — múi giờ Việt Nam
   jackson:
@@ -22,10 +33,10 @@ spring:
       ddl-auto: validate # Hibernate validates entities match DB — Flyway manages schema
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
           batch_size: 50
@@ -86,3 +97,9 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     operationsSorter: method
+
+# Grading Sandbox Configuration
+# Point java-executable to a JDK that supports the class file version students used (Java 21 = class 65).
+# On Windows: e.g. C:/Program Files/Java/jdk-21/bin/java.exe
+sandbox:
+  java-executable: ${SANDBOX_JAVA:java}

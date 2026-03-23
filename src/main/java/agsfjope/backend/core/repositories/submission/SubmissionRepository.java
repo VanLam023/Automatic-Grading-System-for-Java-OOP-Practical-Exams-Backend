@@ -2,7 +2,11 @@ package agsfjope.backend.core.repositories.submission;
 
 import agsfjope.backend.core.entities.Submission;
 import agsfjope.backend.core.enums.SubmissionStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -49,21 +53,84 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
     List<Submission> findByBlock_BlockIdAndStatus(UUID blockId, SubmissionStatus status);
 
     /**
-     * Counts total submissions for a block.
-     * Used to calculate grading progress.
-     *
-     * @param blockId the block UUID
-     * @return total number of submissions in the block
+     * Finds submissions for a block matching any of the given statuses.
+     * Used by GradingService to include stuck-GRADING submissions in GRADE_ALL.
      */
-    long countByBlock_BlockId(UUID blockId);
+    List<Submission> findByBlock_BlockIdAndStatusIn(UUID blockId, List<SubmissionStatus> statuses);
+
+
+    /**
+     * Counts total submissions for a block.
+     * Uses explicit JPQL to avoid unnecessary JOIN with Blocks table.
+     */
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.blockId = :blockId")
+    long countByBlock_BlockId(@Param("blockId") UUID blockId);
 
     /**
      * Counts submissions for a block with a specific status.
-     * Used to calculate how many submissions have been graded.
+     * Uses explicit JPQL to avoid unnecessary JOIN with Blocks table.
+     */
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.blockId = :blockId AND s.status = :status")
+    long countByBlock_BlockIdAndStatus(@Param("blockId") UUID blockId,
+                                       @Param("status") SubmissionStatus status);
+
+    /**
+     * Finds ALL submissions for a block (any status).
+     * Used by EXAM_STAFF to display the full submission list.
      *
      * @param blockId the block UUID
-     * @param status  the submission status filter
-     * @return count of matching submissions
+     * @return list of all submissions in the block, ordered by submission time desc
      */
-    long countByBlock_BlockIdAndStatus(UUID blockId, SubmissionStatus status);
+    List<Submission> findAllByBlock_BlockIdOrderBySubmittedAtDesc(UUID blockId);
+
+    /**
+     * Pageable search — no status filter, keyword only (or all if keyword blank).
+     */
+    @Query(value = """
+            SELECT s FROM Submission s
+            JOIN FETCH s.student st
+            WHERE s.block.blockId = :blockId
+              AND (:keyword IS NULL OR :keyword = ''
+                   OR LOWER(st.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                   OR LOWER(st.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+            """,
+            countQuery = """
+            SELECT COUNT(s) FROM Submission s
+            JOIN s.student st
+            WHERE s.block.blockId = :blockId
+              AND (:keyword IS NULL OR :keyword = ''
+                   OR LOWER(st.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                   OR LOWER(st.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+            """)
+    Page<Submission> findPageByBlock(
+            @Param("blockId") UUID blockId,
+            @Param("keyword") String keyword,
+            Pageable pageable);
+
+    /**
+     * Pageable search — filtered by a specific status + optional keyword.
+     */
+    @Query(value = """
+            SELECT s FROM Submission s
+            JOIN FETCH s.student st
+            WHERE s.block.blockId = :blockId
+              AND s.status = :status
+              AND (:keyword IS NULL OR :keyword = ''
+                   OR LOWER(st.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                   OR LOWER(st.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+            """,
+            countQuery = """
+            SELECT COUNT(s) FROM Submission s
+            JOIN s.student st
+            WHERE s.block.blockId = :blockId
+              AND s.status = :status
+              AND (:keyword IS NULL OR :keyword = ''
+                   OR LOWER(st.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                   OR LOWER(st.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+            """)
+    Page<Submission> findPageByBlockAndStatus(
+            @Param("blockId") UUID blockId,
+            @Param("status")  SubmissionStatus status,
+            @Param("keyword") String keyword,
+            Pageable pageable);
 }

@@ -1,6 +1,7 @@
 package agsfjope.backend.application.grading;
 
 import agsfjope.backend.core.entities.*;
+import agsfjope.backend.core.enums.GradingMode;
 import agsfjope.backend.core.enums.GradingResultStatus;
 import agsfjope.backend.core.enums.SubmissionStatus;
 import agsfjope.backend.core.enums.TestCaseStatus;
@@ -11,6 +12,9 @@ import agsfjope.backend.core.repositories.grading.AIReviewRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.AnswerRepository;
+import agsfjope.backend.core.repositories.submission.SubmissionRepository;
+import agsfjope.backend.core.repositories.auth.UserRepository;
+import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.domain.grading.FinalGradingScore;
 import agsfjope.backend.domain.grading.QuestionScore;
 import agsfjope.backend.domain.grading.ScoreCalculator;
@@ -26,7 +30,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
@@ -36,6 +42,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Core pipeline that grades a single {@link Submission}.
@@ -70,6 +77,9 @@ public class GradingPipelineService {
     private static final int AI_PARALLELISM = 5;
 
     private final AnswerRepository           answerRepository;
+    private final SubmissionRepository       submissionRepository;
+    private final UserRepository             userRepository;
+    private final SystemConfigRepository     systemConfigRepository;
     private final TestCaseRepository         testCaseRepository;
     private final TestCaseResultRepository   testCaseResultRepository;
     private final AIReviewRepository         aiReviewRepository;
@@ -83,6 +93,7 @@ public class GradingPipelineService {
     private final ScoreCalculator     scoreCalculator;
     private final ObjectMapper        objectMapper;
     private final NotificationService notificationService;
+    private final TransactionTemplate transactionTemplate;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -96,42 +107,94 @@ public class GradingPipelineService {
      *                        checked before each answer — if set, grading stops cooperatively
      * @throws GradingCancelledException if the block was cancelled mid-submission
      */
-    @Transactional
     public void grade(Submission submission, User gradedByUser, Set<UUID> cancelledBlocks) {
         UUID subId = submission.getSubmissionId();
         log.info("Grading submission {} started", subId);
 
-        // Mark as GRADING immediately
-        submission.setStatus(SubmissionStatus.GRADING);
+        // ── Short TX 1: Re-fetch, eager-init lazy associations, mark GRADING ──
+        // All entity fields needed outside this TX must be initialized here
+        // (Hibernate session closes after TX, proxies become detached).
+        final UUID gradedByUserId = gradedByUser.getUserId();
 
-        // Resolve grading mode config  (active config for the block's exam)
-        Block block = submission.getBlock();
-        GradingModeConfig modeConfig = resolveGradingModeConfig(block);
+        // Holder arrays to capture effectively-final references from lambda
+        final Submission[] subHolder    = new Submission[1];
+        final User[]       userHolder   = new User[1];
+        final Block[]      blockHolder  = new Block[1];
+        final ExamPaper[]  paperHolder  = new ExamPaper[1];
+        final List<?>[]    answerHolder = new List[1];
+        final GradingModeConfig[] modeHolder = new GradingModeConfig[1];
 
-        // Find exam paper for the block
-        ExamPaper examPaper = examPaperRepository.findByBlock_BlockId(block.getBlockId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "No exam paper found for block " + block.getBlockId()));
+        transactionTemplate.executeWithoutResult(tx -> {
+            Submission sub = submissionRepository.findById(subId)
+                    .orElseThrow(() -> new IllegalStateException("Submission not found: " + subId));
+            User user = userRepository.findById(gradedByUserId).orElse(gradedByUser);
 
-        // Load all answers for this submission
-        List<Answer> answers = answerRepository
-                .findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(subId);
+            sub.setStatus(SubmissionStatus.GRADING);
+
+            Block block = sub.getBlock();
+            // Force-initialize Block proxy (accessing any field triggers initialization)
+            block.getBlockId();
+
+            GradingModeConfig modeConfig = resolveGradingModeConfig(block);
+
+            ExamPaper examPaper = examPaperRepository.findByBlock_BlockId(block.getBlockId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No exam paper found for block " + block.getBlockId()));
+            // Force-init ExamPaper fields
+            examPaper.getFilePath();
+
+            List<Answer> answers = answerRepository
+                    .findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(subId);
+            // Force-initialize lazy Question associations for every answer
+            for (Answer a : answers) {
+                Question q = a.getQuestion();
+                q.getQuestionNumber();
+                q.getQuestionId();
+                q.getTitle();
+                q.getDescription();
+                q.getMaxScore();
+                q.getRemoveSpaces();
+                q.getCaseSensitive();
+            }
+
+            subHolder[0]    = sub;
+            userHolder[0]   = user;
+            blockHolder[0]  = block;
+            paperHolder[0]  = examPaper;
+            answerHolder[0] = answers;
+            modeHolder[0]   = modeConfig;
+        }); // TX 1 commits here — all locks released
+
+        final Submission finalSubmission = subHolder[0];
+        final User finalGradedBy        = userHolder[0];
+        final Block block               = blockHolder[0];
+        final ExamPaper examPaper       = paperHolder[0];
+        @SuppressWarnings("unchecked")
+        final List<Answer> answers      = (List<Answer>) answerHolder[0];
+        final GradingModeConfig modeConfig = modeHolder[0];
 
         if (answers.isEmpty()) {
             log.warn("Submission {} has no answers — marking GRADED with 0", subId);
-            saveGradingResult(submission, gradedByUser, modeConfig,
-                    new FinalGradingScore(List.of(), BigDecimal.ZERO,
-                            BigDecimal.ZERO, BigDecimal.ZERO, false,
-                            "No answers found in submission"));
-            sendGradingCompleteNotification(submission, BigDecimal.ZERO, false);
+            transactionTemplate.executeWithoutResult(tx ->
+                saveGradingResult(finalSubmission, finalGradedBy, modeConfig,
+                        new FinalGradingScore(List.of(), BigDecimal.ZERO,
+                                BigDecimal.ZERO, BigDecimal.ZERO, false,
+                                "No answers found in submission")));
+            sendGradingCompleteNotification(finalSubmission, BigDecimal.ZERO, false);
             return;
         }
 
-        // ── Per-question grading (AI in parallel, TC sequential per question) ──
-        String subExt = getFileExtension(submission.getFilePath());
-        String examExt = getFileExtension(examPaper.getFilePath());
+        // ── Short TX 2: Delete old results (commits immediately, releases locks) ──
+        transactionTemplate.executeWithoutResult(tx -> {
+            testCaseResultRepository.deleteByAnswer_Submission_SubmissionId(subId);
+            aiReviewRepository.deleteByAnswer_Submission_SubmissionId(subId);
+        }); // TX 2 commits — AIReviews table unlocked before async INSERTs begin
 
-        // BUG FIX: ConcurrentHashMap because multiple CompletableFuture tasks write to this map
+        String subExt  = getFileExtension(finalSubmission.getFilePath());
+        String examExt = getFileExtension(examPaper.getFilePath());
+        log.warn("[GRADING] Submission {} — filePath='{}' ext='{}' | exam filePath='{}' ext='{}'",
+                subId, finalSubmission.getFilePath(), subExt, examPaper.getFilePath(), examExt);
+
         Map<Integer, QuestionInput> questionInputs = new java.util.concurrent.ConcurrentHashMap<>();
         List<CompletableFuture<Void>> aiTasks = new ArrayList<>();
         ExecutorService aiExecutor = Executors.newFixedThreadPool(
@@ -142,6 +205,7 @@ public class GradingPipelineService {
             subWorkDir = archiveExtractor.createWorkDir("sub_" + subId.toString().replace("-", ""));
 
             for (Answer answer : answers) {
+
                 // ── CANCELLATION CHECK (before each question) ────────────────
                 if (cancelledBlocks != null && cancelledBlocks.contains(block.getBlockId())) {
                     log.info("Grading of submission {} cancelled before Q{}",
@@ -157,33 +221,87 @@ public class GradingPipelineService {
                 Path qWorkDir       = archiveExtractor.createWorkDir(
                         "sub_" + subId.toString().replace("-", "") + "_q" + qNum);
 
-                // ── Step A: Run test cases ──────────────────────────────────
-                QuestionTcResult tcResult = runTestCases(
-                        submission, examPaper, answer, question, qWorkDir, subExt, examExt);
+                // ── Pre-check: extract JAR and src upfront ────────────────────
+                // Both are needed; if either is missing, fail the question
+                // immediately without running executor or AI.
+                Path preJar    = null;
+                Path preSrcDir = null;
+                try {
+                    preJar = archiveExtractor.extractStudentJar(
+                            "submissions", finalSubmission.getFilePath(),
+                            qNum, subExt, qWorkDir);
+                } catch (Exception e) {
+                    log.warn("[PRE-CHECK] Q{}: JAR extraction failed: {}", qNum, e.getMessage());
+                }
+                try {
+                    preSrcDir = archiveExtractor.extractStudentSources(
+                            "submissions", finalSubmission.getFilePath(),
+                            qNum, subExt, qWorkDir);
+                } catch (Exception e) {
+                    log.warn("[PRE-CHECK] Q{}: src extraction failed: {}", qNum, e.getMessage());
+                }
 
-                // Save TestCaseResult entities
+                // ── Early fail if JAR or src is missing ───────────────────────
+                if (preJar == null || preSrcDir == null) {
+                    String missingNote;
+                    if (preJar == null && preSrcDir == null) {
+                        missingNote = "Sinh viên không nộp file .jar và mã nguồn .java cho câu " + qNum;
+                    } else if (preJar == null) {
+                        missingNote = "Sinh viên không có file .jar cho câu " + qNum;
+                    } else {
+                        missingNote = "Sinh viên không có mã nguồn .java cho câu " + qNum;
+                    }
+                    log.warn("[MISSING-FILE] Q{}: {} — skipping TC + AI", qNum, missingNote);
+
+                    List<TestCase> tcList = testCaseRepository
+                            .findByQuestion_QuestionIdOrderByTestCaseNumberAsc(question.getQuestionId());
+                    List<TestCaseResult> errorResults = tcList.stream()
+                            .map(tc -> buildErrorResult(answer, tc, missingNote))
+                            .toList();
+                    testCaseResultRepository.saveAll(errorResults);
+
+                    final int totalTc      = tcList.size();
+                    final BigDecimal maxSc = question.getMaxScore();
+                    final String note      = missingNote;
+
+                    // Use QuestionInput.missing() so ScoreCalculator applies mandatory FailIfMissingFile rule
+                    questionInputs.put(qNum, QuestionInput.missing(maxSc, totalTc, note));
+                    continue;
+
+                }
+
+                // ── Step A: Run test cases (JAR + src both exist) ─────────────
+                QuestionTcResult tcResult = runTestCases(
+                        finalSubmission, examPaper, answer, question, qWorkDir, examExt, preJar);
+
                 testCaseResultRepository.saveAll(tcResult.results());
 
-                // ── Step B: AI Review (parallel, in background) ─────────────
-                final Path finalQWorkDir = qWorkDir;
-                final String finalSubExt = subExt;
+                // ── Step B: AI Review (parallel, in background) ───────────────
+                final Path finalSrcDir      = preSrcDir;
+                final QuestionTcResult finalTcResult = tcResult;
                 CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
                     AIReviewResult aiResult = runAIReview(
-                            submission, examPaper, answer, question, finalQWorkDir, finalSubExt);
-                    saveAIReview(answer, modeConfig.getMode().name(), aiResult);
+                            finalSubmission, answer, question, finalSrcDir);
 
-                    // Build QuestionInput
-                    questionInputs.put(qNum, tcResult.isTampered()
-                            ? QuestionInput.tampered(question.getMaxScore(),
-                                    tcResult.passCount(), tcResult.totalCount(),
-                                    tcResult.tamperDetail())
-                            : QuestionInput.of(question.getMaxScore(),
-                                    tcResult.passCount(), tcResult.totalCount(),
-                                    aiResult));
+                    transactionTemplate.executeWithoutResult(tx -> {
+                        saveAIReview(answer, modeConfig.getMode().name(), aiResult);
+
+                        log.warn("[AI-SCORE] Q{}: oopScore={} aiError={} oopViolated={}",
+                                qNum, aiResult.oopScore(), aiResult.aiError(), aiResult.oopViolated());
+
+                        questionInputs.put(qNum, finalTcResult.isTampered()
+                                ? QuestionInput.tampered(question.getMaxScore(),
+                                        finalTcResult.passCount(), finalTcResult.totalCount(),
+                                        finalTcResult.tamperDetail())
+                                : QuestionInput.of(question.getMaxScore(),
+                                        finalTcResult.passCount(), finalTcResult.totalCount(),
+                                        aiResult));
+                    });
                 }, aiExecutor);
 
                 aiTasks.add(aiTask);
             }
+
 
             // Wait for all AI tasks to complete
             CompletableFuture.allOf(aiTasks.toArray(CompletableFuture[]::new)).join();
@@ -203,20 +321,46 @@ public class GradingPipelineService {
         }
 
         // ── Step C: Score calculation ─────────────────────────────────────────
-        FinalGradingScore finalScore = scoreCalculator.calculate(modeConfig, questionInputs);
+        FinalGradingScore finalScore;
+        try {
+            finalScore = scoreCalculator.calculate(modeConfig, questionInputs);
+        } catch (Exception e) {
+            log.error("Score calculation failed for submission {}: {}", subId, e.getMessage(), e);
+            // Fallback to zero score so we still persist a result
+            finalScore = new FinalGradingScore(List.of(), BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO, false,
+                    "Lỗi tính điểm: " + e.getMessage());
+        }
 
-        // ── Step D: Persist ───────────────────────────────────────────────────
-        saveGradingResult(submission, gradedByUser, modeConfig, finalScore);
-        sendGradingCompleteNotification(submission, finalScore.totalScore(), finalScore.passed());
-        log.info("Grading submission {} complete. Score={}, Passed={}",
-                subId, finalScore.totalScore(), finalScore.passed());
+        // ── Step D: Persist GradingResult ─────────────────────────────────────
+        final FinalGradingScore finalScoreRef = finalScore;
+        try {
+            transactionTemplate.executeWithoutResult(tx ->
+                saveGradingResult(finalSubmission, finalGradedBy, modeConfig, finalScoreRef));
+            log.info("Grading submission {} complete. Score={}, Passed={}",
+                    subId, finalScore.totalScore(), finalScore.passed());
+        } catch (Exception e) {
+            log.error("Failed to save grading result for submission {}: {}", subId, e.getMessage(), e);
+            throw e;
+        }
+
+        // ── Step E: Persist per-question scores to Answer rows ─────────────────
+        try {
+            transactionTemplate.executeWithoutResult(tx ->
+                saveAnswerScores(answers, finalScoreRef));
+        } catch (Exception e) {
+            log.warn("Failed to persist answer scores for submission {} (non-fatal): {}", subId, e.getMessage());
+        }
+
+        sendGradingCompleteNotification(finalSubmission, finalScore.totalScore(), finalScore.passed());
+        log.info("Grading submission {} done.", subId);
     }
 
     // ─── TEST CASE EXECUTION ─────────────────────────────────────────────────
 
     private QuestionTcResult runTestCases(Submission submission, ExamPaper examPaper,
                                           Answer answer, Question question,
-                                          Path workDir, String subExt, String examExt) {
+                                          Path workDir, String examExt, Path studentJar) {
         List<TestCase> testCases = testCaseRepository
                 .findByQuestion_QuestionIdOrderByTestCaseNumberAsc(question.getQuestionId());
 
@@ -225,70 +369,88 @@ public class GradingPipelineService {
         boolean tampered = false;
         String tamperDetail = null;
 
-        // Extract student JAR once per question
-        Path studentJar = null;
+        // Extract exam classes (exam-side only; student JAR already extracted by caller)
         Path examClassDir = null;
-
+        Map<String, String> examChecksums = null;
         try {
-            studentJar = archiveExtractor.extractStudentJar(
-                    "submissions", submission.getFilePath(),
-                    question.getQuestionNumber(), subExt, workDir);
-
             examClassDir = archiveExtractor.extractExamClasses(
                     "exam-papers", examPaper.getFilePath(),
                     question.getQuestionNumber(), examExt, workDir);
+            // Compute checksums of exam .class files — used to detect tampered/modified files
+            if (examClassDir != null) {
+                examChecksums = jarSandboxExecutor.computeChecksums(examClassDir);
+                log.debug("[TAMPER] Q{}: computed {} exam class checksums",
+                        question.getQuestionNumber(), examChecksums.size());
+            }
         } catch (Exception e) {
-            log.error("Failed to extract archives for submission {} Q{}: {}",
-                    submission.getSubmissionId(), question.getQuestionNumber(), e.getMessage());
+            log.error("Failed to extract exam classes for Q{}: {}",
+                    question.getQuestionNumber(), e.getMessage());
         }
+
+        final Map<String, String> finalChecksums = examChecksums;
 
         for (TestCase tc : testCases) {
             TestCaseResult result;
 
-            if (studentJar == null) {
-                result = buildErrorResult(answer, tc, "Failed to extract student JAR");
+            // studentJar always non-null here (pre-check in grade() ensures this)
+            String inputData = prepareInput(tc.getInputData(), question.getRemoveSpaces());
+            log.warn("[TC] Q{} TC#{}: raw='{}' → prepared='{}'",
+                    question.getQuestionNumber(), tc.getTestCaseNumber(),
+                    tc.getInputData() != null
+                        ? tc.getInputData().replace("\r", "\\r").replace("\n", "\\n")
+                        : "NULL",
+                    inputData.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t"));
+
+            ExecutionResult execResult = jarSandboxExecutor.run(
+                    studentJar, examClassDir != null ? examClassDir : studentJar.getParent(),
+                    finalChecksums,  // pass real checksums — null only if exam extraction failed
+                    inputData, tc.getTimeLimitMs());
+
+
+            if (execResult.tamperedFiles()) {
+                tampered = true;
+                tamperDetail = execResult.errorMessage();
+                result = buildTamperedResult(answer, tc, execResult.errorMessage());
+            } else if (execResult.timeout()) {
+                result = buildTimeoutResult(answer, tc, tc.getTimeLimitMs());
+            } else if (execResult.exitCode() != 0) {
+                result = buildErrorResult(answer, tc, execResult.errorMessage());
             } else {
-                String inputData = prepareInput(tc.getInputData(), question.getRemoveSpaces());
-
-                ExecutionResult execResult = jarSandboxExecutor.run(
-                        studentJar, examClassDir != null ? examClassDir : studentJar.getParent(),
-                        null,   // checksums: optional, handled in executor
-                        inputData, tc.getTimeLimitMs());
-
-                // Handle tampered file detection
-                if (execResult.tamperedFiles()) {
-                    tampered = true;
-                    tamperDetail = execResult.errorMessage();
-                    result = buildTamperedResult(answer, tc, execResult.errorMessage());
-                } else if (execResult.timeout()) {
-                    result = buildTimeoutResult(answer, tc, tc.getTimeLimitMs());
-                } else if (execResult.exitCode() != 0) {
-                    result = buildErrorResult(answer, tc, execResult.errorMessage());
-                } else {
-                    boolean passed = compareOutput(
-                            execResult.stdout(), tc.getExpectedOutput(), question.getCaseSensitive());
-                    result = buildTcResult(answer, tc, execResult, passed);
-                    if (passed) passCount++;
-                }
+                String extracted = extractOutputSection(execResult.stdout());
+                boolean passed = compareOutput(
+                        extracted, tc.getExpectedOutput(), question.getCaseSensitive());
+                result = buildTcResult(answer, tc, execResult, extracted, passed);
+                if (passed) passCount++;
             }
+
+            log.warn("[TC-RESULT] Q{} TC#{}: status={} stdout='{}' err='{}'",
+                    question.getQuestionNumber(), tc.getTestCaseNumber(),
+                    result.getStatus(),
+                    result.getActualOutput() != null
+                        ? result.getActualOutput().replace("\n", "\\n").replace("\r", "").strip()
+                        : "",
+                    result.getErrorMessage() != null ? result.getErrorMessage().substring(
+                        0, Math.min(120, result.getErrorMessage().length())) : "");
 
             results.add(result);
         }
+
 
         return new QuestionTcResult(results, passCount, testCases.size(), tampered, tamperDetail);
     }
 
     // ─── AI REVIEW ───────────────────────────────────────────────────────────
 
-    private AIReviewResult runAIReview(Submission submission, ExamPaper examPaper,
-                                       Answer answer, Question question,
-                                       Path workDir, String subExt) {
+    private AIReviewResult runAIReview(Submission submission, Answer answer,
+                                       Question question, Path srcDir) {
         try {
-            Path srcDir = archiveExtractor.extractStudentSources(
-                    "submissions", submission.getFilePath(),
-                    question.getQuestionNumber(), subExt, workDir);
+            log.warn("[AI-SRC] sub={} Q{}: srcDir={}",
+                    submission.getSubmissionId(), question.getQuestionNumber(),
+                    srcDir != null ? srcDir.toAbsolutePath() : "NULL");
 
             String sourceCode = readSourceFiles(srcDir);
+            log.warn("[AI-SRC] sourceCode length={}, blank={}",
+                    sourceCode.length(), sourceCode.isBlank());
 
             AIReviewRequest aiRequest = new AIReviewRequest(
                     question.getTitle(),
@@ -327,15 +489,24 @@ public class GradingPipelineService {
 
     // ─── SAVE HELPERS ────────────────────────────────────────────────────────
 
-    private AIReview saveAIReview(Answer answer, String modelName, AIReviewResult ai) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    AIReview saveAIReview(Answer answer, String modelName, AIReviewResult ai) {
         try {
-            String rawJson = objectMapper.writeValueAsString(Map.of(
-                    "oopScore",         ai.oopScore() != null ? ai.oopScore() : "null",
-                    "violations",       ai.violations(),
-                    "hardCodedValues",  ai.hardCodedValues(),
-                    "isOopViolated",    ai.oopViolated(),
-                    "aiError",          ai.aiError()
-            ));
+            // Store the full evaluation in RawResponse (JSONB) — this is the source of truth
+            // for criteria breakdown since AIReviews table has no dedicated columns for them.
+            Map<String, Object> rawMap = new java.util.LinkedHashMap<>();
+            rawMap.put("oopScore",          ai.oopScore());
+            rawMap.put("encapsulation",     ai.encapsulation());
+            rawMap.put("inheritance",       ai.inheritance());
+            rawMap.put("polymorphism",      ai.polymorphism());
+            rawMap.put("designQuality",     ai.designQuality());
+            rawMap.put("codeIntegrity",     ai.codeIntegrity());
+            rawMap.put("violations",        ai.violations());
+            rawMap.put("hardCodedValues",   ai.hardCodedValues());
+            rawMap.put("isOopViolated",     ai.oopViolated());
+            rawMap.put("aiError",           ai.aiError());
+            rawMap.put("errorMessage",      ai.errorMessage());
+            String rawJson = objectMapper.writeValueAsString(rawMap);
 
             AIReview review = AIReview.builder()
                     .answer(answer)
@@ -353,11 +524,13 @@ public class GradingPipelineService {
         }
     }
 
-    private void saveGradingResult(Submission submission, User gradedBy,
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void saveGradingResult(Submission submission, User gradedBy,
                                    GradingModeConfig modeConfig, FinalGradingScore score) {
-        // Delete old result if re-grading
-        gradingResultRepository.findBySubmission_SubmissionId(submission.getSubmissionId())
-                .ifPresent(gradingResultRepository::delete);
+        // Delete old result using direct JPQL DELETE (bypasses Hibernate batch queue).
+        // Entity-based delete (find + delete) causes batch ordering issues when
+        // order_inserts=true: the INSERT runs before the DELETE → duplicate key violation.
+        gradingResultRepository.deleteBySubmission_SubmissionId(submission.getSubmissionId());
 
         // Compute max score from question scores
         BigDecimal maxScore = score.questionScores().stream()
@@ -367,25 +540,57 @@ public class GradingPipelineService {
         // Build notes from guard-triggered questions
         String note = buildNotes(score);
 
+        log.warn("[SAVE-RESULT] sub={} totalScore={} tcScore={} oopScore={}",
+                submission.getSubmissionId(), score.totalScore(),
+                score.testCaseScore(), score.oopScore());
+
         GradingResult result = GradingResult.builder()
                 .submission(submission)
                 .gradingMode(modeConfig.getMode())
                 .status(score.passed()
                         ? GradingResultStatus.PASS
                         : GradingResultStatus.FAIL)
-                .totalScore(score.totalScore())
+                .totalScore(score.totalScore() != null ? score.totalScore() : BigDecimal.ZERO)
                 .maxScore(maxScore)
-                .testCaseScore(score.testCaseScore())
-                .oopScore(score.oopScore())
+                .testCaseScore(score.testCaseScore() != null ? score.testCaseScore() : BigDecimal.ZERO)
+                .oopScore(score.oopScore() != null ? score.oopScore() : BigDecimal.ZERO)
                 .gradedBy(gradedBy)
                 .note(note)
                 .build();
 
         gradingResultRepository.save(result);
 
-        // Update submission status
+        // Update submission status (explicit save — JPA dirty tracking may not fire in async context)
         submission.setStatus(SubmissionStatus.GRADED);
         submission.setGradedAt(OffsetDateTime.now());
+        submissionRepository.save(submission);
+        log.info("Submission {} status updated to GRADED", submission.getSubmissionId());
+    }
+
+    /**
+     * Persists per-question scores (AnswerScore, GuardRuleTriggered, GuardRuleNote)
+     * into the Answers table rows after the main GradingResult has been saved.
+     *
+     * <p>Matching is done by questionNumber — both the Answer entity (via its linked
+     * Question) and the QuestionScore record carry a 1-based questionNumber.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void saveAnswerScores(List<Answer> answers, FinalGradingScore score) {
+        // Build a lookup: questionNumber → QuestionScore
+        Map<Integer, QuestionScore> scoreByQ = score.questionScores().stream()
+                .collect(Collectors.toMap(QuestionScore::questionNumber, qs -> qs, (a, b) -> a));
+
+        for (Answer answer : answers) {
+            int qNum = answer.getQuestion().getQuestionNumber();
+            QuestionScore qs = scoreByQ.get(qNum);
+            if (qs == null) continue; // no score calculated for this question
+
+            answer.setAnswerScore(qs.finalQuestionScore());
+            answer.setGuardRuleTriggered(qs.guardRuleTriggered());
+            answer.setGuardRuleNote(qs.note());
+            answerRepository.save(answer);
+        }
+        log.debug("[ANSWER-SCORE] Saved per-question scores for {} answers", answers.size());
     }
 
     // ─── NOTIFICATION ─────────────────────────────────────────────────────────
@@ -435,6 +640,23 @@ public class GradingPipelineService {
 
     // ─── OUTPUT COMPARISON ───────────────────────────────────────────────────
 
+    /**
+     * Extracts only the portion of stdout that appears after the last "OUTPUT:" marker.
+     * Student programs often print UI prompts before the actual answer. The exam spec
+     * requires students to print "OUTPUT:" before the result, so we extract only that part.
+     * If no "OUTPUT:" marker is found, the full stdout is returned as-is.
+     */
+    private String extractOutputSection(String stdout) {
+        if (stdout == null) return "";
+        // Find last occurrence of OUTPUT: (case-insensitive) to handle multi-run outputs
+        String upper = stdout.toUpperCase();
+        int idx = upper.lastIndexOf("OUTPUT:");
+        if (idx < 0) return stdout.stripTrailing();
+        String afterMarker = stdout.substring(idx + "OUTPUT:".length());
+        // Strip leading newline/spaces after the marker itself
+        return afterMarker.stripLeading().stripTrailing();
+    }
+
     private boolean compareOutput(String actual, String expected, boolean caseSensitive) {
         if (actual == null || expected == null) return false;
         String a = actual.stripTrailing();
@@ -443,19 +665,33 @@ public class GradingPipelineService {
     }
 
     private String prepareInput(String input, boolean removeSpaces) {
-        if (input == null) return "";
-        return removeSpaces ? input.replaceAll("\\s+", "") : input;
+        if (input == null) return "\n";
+        // Convert CRLF to LF
+        String normalized = input.replace("\r\n", "\n").replace("\r", "\n");
+        if (!removeSpaces) {
+            return normalized.endsWith("\n") ? normalized : normalized + "\n";
+        }
+        // REMOVE_SPACES mode: Tokenize everything and put one token per line.
+        // This makes Scanner's nextInt/nextDouble completely foolproof regardless of
+        // whether the original DB input used spaces or newlines as separators.
+        return normalized.lines()
+                         .map(String::strip)
+                         .filter(line -> !line.isEmpty())
+                         // Replace spaces inside the line with newlines so each token is isolated
+                         .map(line -> line.replaceAll("\\s+", "\n"))
+                         .collect(java.util.stream.Collectors.joining("\n")) + "\n";
     }
+
 
     // ─── RESULT BUILDERS ─────────────────────────────────────────────────────
 
     private TestCaseResult buildTcResult(Answer answer, TestCase tc,
-                                         ExecutionResult exec, boolean passed) {
+                                         ExecutionResult exec, String extractedOutput, boolean passed) {
         return TestCaseResult.builder()
                 .answer(answer)
                 .testCase(tc)
                 .status(passed ? TestCaseStatus.PASS_TESTCASE : TestCaseStatus.FAIL_TESTCASE)
-                .actualOutput(exec.stdout())
+                .actualOutput(extractedOutput)   // store only the extracted answer, not the full stdout
                 .executionTimeMs((int) exec.executionTimeMs())
                 .scoreEarned(passed ? tc.getScore() : BigDecimal.ZERO)
                 .build();
@@ -492,11 +728,38 @@ public class GradingPipelineService {
     // ─── UTILITY ─────────────────────────────────────────────────────────────
 
     private GradingModeConfig resolveGradingModeConfig(Block block) {
-        // Use the first active grading mode config (system-wide mode set by admin)
-        return gradingModeConfigRepository.findAllByOrderByModeAsc().stream()
-                .filter(GradingModeConfig::getIsActive)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("No active GradingModeConfig found"));
+        // 1. Read active grading mode from SystemConfigs (configKey = "DEFAULT_GRADING_MODE")
+        GradingMode activeMode = systemConfigRepository
+                .findByConfigKey("DEFAULT_GRADING_MODE")
+                .map(cfg -> {
+                    try {
+                        return GradingMode.valueOf(cfg.getConfigValue().trim());
+                    } catch (IllegalArgumentException e) {
+                        log.warn("Invalid DEFAULT_GRADING_MODE value '{}', falling back to MODE_1",
+                                cfg.getConfigValue());
+                        return GradingMode.MODE_1;
+                    }
+                })
+                .orElseGet(() -> {
+                    log.warn("DEFAULT_GRADING_MODE not found in SystemConfigs, falling back to MODE_1");
+                    return GradingMode.MODE_1;
+                });
+
+        // 2. Look up GradingModeConfig by mode
+        return gradingModeConfigRepository.findByMode(activeMode)
+                .orElseGet(() -> {
+                    log.warn("No GradingModeConfig found for mode {} — using built-in MODE_1 default", activeMode);
+                    return GradingModeConfig.builder()
+                            .mode(GradingMode.MODE_1)
+                            .displayName("Default (100% Test Cases)")
+                            .testCaseWeight(BigDecimal.ONE)
+                            .oopWeight(BigDecimal.ZERO)
+                            .oopCommentOnly(false)
+                            .failIfZeroTestCase(false)
+                            .failIfOopViolated(false)
+                            .isActive(true)
+                            .build();
+                });
     }
 
     private String getFileExtension(String filePath) {

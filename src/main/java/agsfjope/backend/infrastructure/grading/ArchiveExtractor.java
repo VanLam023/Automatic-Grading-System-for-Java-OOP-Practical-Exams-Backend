@@ -45,16 +45,91 @@ public class ArchiveExtractor {
      * @return path to the extracted .jar file, or null if not found in archive
      */
     public Path extractStudentJar(String bucketName, String objectPath,
-                                  int questionNumber, String extension, Path workDir) throws IOException {
+                                   int questionNumber, String extension, Path workDir) throws IOException {
         Path archivePath = downloadToTemp(bucketName, objectPath, workDir, "submission" + extension);
+        String destName  = "student_q" + questionNumber + ".jar";
+        int    q         = questionNumber;
 
-        String jarEntryPrefix = questionNumber + "/run/";
-        String jarEntryAlt    = "Q" + questionNumber + "/run/";
+        // Tier 1 — exact root with /run/: {n}/run/*.jar | Q{n}/run/*.jar | q{n}/run/*.jar
+        Path result = extractFirstMatchingEntry(archivePath, extension, workDir, destName,
+                entry -> (entry.startsWith(q + "/run/")
+                       || entry.startsWith("Q" + q + "/run/")
+                       || entry.startsWith("q" + q + "/run/"))
+                       && entry.toLowerCase().endsWith(".jar"));
+        if (result != null) return result;
 
-        return extractFirstMatchingEntry(archivePath, extension, workDir, "student_q" + questionNumber + ".jar",
-                entry -> (entry.startsWith(jarEntryPrefix) || entry.startsWith(jarEntryAlt))
-                        && entry.toLowerCase().endsWith(".jar"));
+        // Tier 1b — outer-folder-wrapped WITH /run/: AnythingFolder/{n}/run/*.jar
+        // Handles: StudentName/1/run/Q1.jar or BaiNop/Q1/run/Q1.jar
+        result = extractFirstMatchingEntry(archivePath, extension, workDir, destName,
+                entry -> (entry.contains("/" + q + "/run/")
+                       || entry.toLowerCase().contains("/q" + q + "/run/"))
+                       && entry.toLowerCase().endsWith(".jar"));
+        if (result != null) {
+            log.warn("[EXTRACT] Q{}: JAR found via outer-folder-wrapped path (with /run/): {}",
+                     q, result.getFileName());
+            return result;
+        }
+
+        // Tier 2 — exact root WITHOUT /run/: any *.jar directly under {n}/ | Q{n}/
+        result = extractFirstMatchingEntry(archivePath, extension, workDir, destName,
+                entry -> (entry.startsWith(q + "/")
+                       || entry.startsWith("Q" + q + "/")
+                       || entry.startsWith("q" + q + "/"))
+                       && entry.toLowerCase().endsWith(".jar"));
+        if (result != null) {
+            log.warn("[EXTRACT] Q{}: JAR found at question root (no /run/ subfolder).", q);
+            return result;
+        }
+
+        // Tier 2b — outer-folder-wrapped WITHOUT /run/: AnythingFolder/{n}/*.jar
+        result = extractFirstMatchingEntry(archivePath, extension, workDir, destName,
+                entry -> (entry.contains("/" + q + "/")
+                       || entry.toLowerCase().contains("/q" + q + "/"))
+                       && entry.toLowerCase().endsWith(".jar"));
+        if (result != null) {
+            log.warn("[EXTRACT] Q{}: JAR found via outer-folder-wrapped path (no /run/).", q);
+            return result;
+        }
+
+        // Tier 3 — last resort: root-level *.jar OR filename is Q{n}.jar / {n}.jar
+        result = extractFirstMatchingEntry(archivePath, extension, workDir, destName,
+                entry -> entry.toLowerCase().endsWith(".jar")
+                       && (!entry.contains("/")
+                          || entry.toLowerCase().endsWith("/q" + q + ".jar")
+                          || entry.toLowerCase().endsWith("/" + q + ".jar")));
+        if (result != null) {
+            log.warn("[EXTRACT] Q{}: JAR found via last-resort filename match.", q);
+            return result;
+        }
+
+        // All tiers exhausted — log archive structure to help diagnose
+        logAllJarEntries(archivePath, extension, q);
+        return null;
     }
+
+    /**
+     * Logs every .jar file found in the archive — called when extraction fails so
+     * an admin can see the actual structure of the student's submission.
+     */
+    private void logAllJarEntries(Path archivePath, String extension, int questionNumber) {
+        log.warn("[EXTRACT] Q{}: No JAR found. Listing all .jar entries in archive:", questionNumber);
+        try {
+            if (".zip".equalsIgnoreCase(extension)) {
+                try (ZipFile zip = new ZipFile(archivePath.toFile())) {
+                    zip.stream()
+                       .filter(e -> !e.isDirectory() && e.getName().toLowerCase().endsWith(".jar"))
+                       .forEach(e -> log.warn("[EXTRACT]   jar entry: {}", e.getName()));
+                    if (zip.stream().noneMatch(e -> e.getName().toLowerCase().endsWith(".jar"))) {
+                        log.warn("[EXTRACT]   (no .jar files found at all — listing first 20 entries)");
+                        zip.stream().limit(20).forEach(e -> log.warn("[EXTRACT]   entry: {}", e.getName()));
+                    }
+                }
+            }
+        } catch (IOException ex) {
+            log.warn("[EXTRACT] Q{}: Could not list archive entries: {}", questionNumber, ex.getMessage());
+        }
+    }
+
 
     /**
      * Downloads the exam paper archive from MinIO and extracts all .class files
@@ -104,15 +179,53 @@ public class ArchiveExtractor {
         Path srcDir = workDir.resolve("src_q" + questionNumber);
         Files.createDirectories(srcDir);
 
-        String srcPrefix1 = questionNumber + "/src/";
-        String srcPrefix2 = "Q" + questionNumber + "/src/";
+        int q = questionNumber;
 
+        // [DEBUG] Dump ZIP entry paths to see actual structure for diagnosis
+        logArchiveEntries(archivePath, extension, q);
+
+        // Single-pass: collect every .java that belongs to this question,
+        // regardless of how deep or how the student structured their zip.
+        //
+        // Covers (all applied simultaneously):
+        //   Tier 1 — exact root   : {n}/src/*.java  |  Q{n}/src/*.java
+        //   Tier 2 — outer-wrapped: .../n/src/*.java |  .../Q{n}/src/*.java
+        //   Tier 3 — last-resort  : any .java anywhere under {n}/ or Q{n}/
+        //                           handles src/src/, double-zip, full NetBeans project dump, etc.
         int extracted = extractAllMatchingEntries(archivePath, extension, srcDir,
-                entry -> (entry.startsWith(srcPrefix1) || entry.startsWith(srcPrefix2))
-                        && entry.toLowerCase().endsWith(".java"));
+                entry -> entry.toLowerCase().endsWith(".java")
+                        && (entry.startsWith(q + "/")
+                           || entry.startsWith("Q" + q + "/")
+                           || entry.contains("/" + q + "/")
+                           || entry.toLowerCase().contains("/q" + q + "/")));
 
-        return extracted > 0 ? srcDir : null;
+        if (extracted > 0) {
+            log.warn("[EXTRACT-SRC] Q{}: extracted {} .java file(s).", q, extracted);
+            return srcDir;
+        }
+
+        log.warn("[EXTRACT-SRC] Q{}: no .java files found in archive.", q);
+        return null;
     }
+
+    /** Logs the first 30 entry names in the archive for diagnosis. */
+    private void logArchiveEntries(Path archivePath, String extension, int q) {
+        try {
+            if (".zip".equalsIgnoreCase(extension)) {
+                try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(archivePath.toFile())) {
+                    log.warn("[ARCHIVE-ENTRIES] Q{} — listing entries in {}:", q, archivePath.getFileName());
+                    zf.stream()
+                      .filter(e -> !e.isDirectory())
+                      .limit(30)
+                      .forEach(e -> log.warn("  entry: '{}'", e.getName()));
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[ARCHIVE-ENTRIES] Could not list archive: {}", ex.getMessage());
+        }
+    }
+
+
 
     /**
      * Creates a fresh temporary working directory for a single grading job.

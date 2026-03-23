@@ -35,15 +35,17 @@ import java.util.UUID;
  *
  * <p>Endpoints:</p>
  * <ul>
- *   <li>{@code POST   /api/exams/{examId}/blocks/{blockId}/submission}          — Nộp bài (.zip/.rar)</li>
- *   <li>{@code GET    /api/exams/{examId}/blocks/{blockId}/submission}          — Xem bài nộp của mình</li>
- *   <li>{@code GET    /api/exams/{examId}/blocks/{blockId}/submission/download} — Download file bài nộp</li>
+ *   <li>{@code POST   /api/exams/{examId}/blocks/{blockId}/submission}           — Nộp bài (.zip/.rar)</li>
+ *   <li>{@code GET    /api/exams/{examId}/blocks/{blockId}/submission}           — Xem bài nộp của mình</li>
+ *   <li>{@code GET    /api/exams/{examId}/blocks/{blockId}/submission/download}  — Download file bài nộp</li>
+ *   <li>{@code GET    /api/exams/{examId}/blocks/{blockId}/submissions}          — Danh sách toàn bộ (EXAM_STAFF)</li>
  * </ul>
  *
  * <p>Authorization:</p>
  * <ul>
  *   <li>POST: {@code STUDENT} only.</li>
  *   <li>GET / Download: {@code STUDENT}, {@code EXAM_STAFF}, {@code SYSTEM_ADMIN}.</li>
+ *   <li>List all (submissions): {@code EXAM_STAFF}, {@code SYSTEM_ADMIN}.</li>
  * </ul>
  */
 @RestController

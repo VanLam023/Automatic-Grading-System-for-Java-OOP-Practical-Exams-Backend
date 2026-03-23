@@ -75,6 +75,13 @@ public class LLMReviewService {
 
         LLMAdapter adapter = adapterFactory.getAdapter(config.provider());
 
+        // Guard: cannot review without source code
+        if (request.sourceCode() == null || request.sourceCode().isBlank()) {
+            log.warn("AI review skipped for question '{}' — no student source code available.",
+                    request.questionTitle());
+            return AIReviewResult.failure("AI review skipped: no student Java source files found in submission.");
+        }
+
         try {
             log.debug("AI review: provider={}, model={}, question={}",
                     config.provider(), config.model(), request.questionTitle());
@@ -83,8 +90,9 @@ public class LLMReviewService {
             String analysis = adapter.chat(
                     buildAnalysisPrompt(request), config.apiKey(), config.model());
 
-            // Prompt 2: Return structured JSON result from the analysis
-            String resultJson = adapter.chat(
+            // Prompt 2: Return structured JSON — use chatJson() for providers that support
+            // JSON mode (responseMimeType) to avoid markdown wrapping and truncation
+            String resultJson = adapter.chatJson(
                     buildResultPrompt(analysis, config.language()), config.apiKey(), config.model());
 
             return parseResult(resultJson);
@@ -153,11 +161,22 @@ public class LLMReviewService {
                    • Does the code follow Single Responsibility per the diagram?
                    • Is the naming consistent and structure clean?
 
-                E. CODE INTEGRITY / ANTI-CHEAT (0–2):
-                   • Hard-coded output strings: e.g., return "Student[S001, John, 3.5]"
-                   • Hard-coded numeric values: e.g., return 3.5 instead of return this.gpa
-                   • Misplaced logic: ALL meaningful logic placed in main() instead of proper classes
-                   • Code designed to bypass tests rather than implement correctly
+                 E. CODE INTEGRITY / ANTI-CHEAT (0–2):
+                    Hardcode means the student DELIBERATELY returns a fixed value to pass a test
+                    instead of implementing the correct algorithm.
+                 
+                    ✅ NOT hardcode (LEGITIMATE constants — do NOT flag):
+                    • Error/format messages required by the problem: e.g., wrong format, Invalid
+                    • String prefixes/suffixes from the spec: e.g., New_, DATA_
+                    • File extensions or filenames: e.g., .txt, data.txt, New_DATA.txt
+                    • Status labels from the problem: e.g., PASS, FAIL, ACTIVE
+                    • toString() format strings matching the required output format in the spec
+                 
+                    ❌ TRUE hardcode (flag ONLY these):
+                    • Returning exact expected output without computation: e.g., return Student[S001, John, 3.5]
+                    • Returning a fixed number instead of computing it: e.g., return 8.5 instead of return this.score
+                    • Checking specific input to return specific answer: e.g., if (id.equals(S001)) return 3.5
+                    • All meaningful logic placed inside main() to bypass class structure
 
                 Perform a thorough analysis. Note ALL violations with specific examples from the code.
                 """.formatted(
@@ -183,6 +202,7 @@ public class LLMReviewService {
                 3. oopScore = sum of all 5 criteria scores (max 10)
                 4. isOopViolated = true if oopScore <= 4 OR any criterion E violation found
                 5. Criterion scores: 0 = wrong, 1 = partially correct, 2 = fully correct
+                6. The "comment" field MUST be structured with exactly 5 numbered bullets corresponding to each criterion (A. Encapsulation, B. Inheritance & Relationships, C. Polymorphism, D. Design Quality, E. Code Integrity/Anti-Cheat). Do NOT write a single block of text.
 
                 Return exactly this JSON:
                 {
@@ -195,8 +215,8 @@ public class LLMReviewService {
                     "codeIntegrity": <0|1|2>
                   },
                   "violations": ["<specific violation with code example>"],
-                  "hardCodedValues": ["<exact hard-coded literal found>"],
-                  "comment": "<comprehensive review in %s — be specific, cite class/method names>",
+                  "hardCodedValues": ["<only TRUE cheat values: fixed returns that bypass logic — NOT error messages, prefixes, or format strings required by the problem>"],
+                  "comment": "<comprehensive review in %s — MUST follow the 5-point structure (A, B, C, D, E). Be specific, cite class/method names>",
                   "isOopViolated": <true|false>
                 }
                 """.formatted(analysis, language, language);
@@ -277,11 +297,30 @@ public class LLMReviewService {
         String provider = Optional.ofNullable(map.get("AI_PROVIDER")).filter(s -> !s.isBlank())
                                   .orElse("gemini");
         String model    = Optional.ofNullable(map.get("AI_MODEL")).filter(s -> !s.isBlank())
-                                  .orElse("gemini-2.0-flash");
-        String language = Optional.ofNullable(map.get("AI_LANGUAGE")).filter(s -> !s.isBlank())
-                                  .orElse("Vietnamese");
+                                  .orElse("gemini-2.5-flash");
+        String language = resolveLanguageName(
+                Optional.ofNullable(map.get("AI_LANGUAGE")).filter(s -> !s.isBlank())
+                        .orElse("vi"));
 
         return new AIConfig(provider, apiKey, model, language);
+    }
+
+    /**
+     * Maps an ISO language code or full language name to the full English name used
+     * in AI prompts (e.g. {@code "vi"} → {@code "Vietnamese"}).
+     *
+     * <p>New languages can be added here without changing DB schema or frontend.</p>
+     *
+     * @param code value stored in {@code SystemConfigs.AI_LANGUAGE}
+     * @return full language name safe to embed directly in the prompt
+     */
+    private String resolveLanguageName(String code) {
+        if (code == null) return "Vietnamese";
+        return switch (code.toLowerCase().strip()) {
+            case "vi", "vie", "vietnamese" -> "Vietnamese";
+            case "en", "eng", "english"    -> "English";
+            default -> code; // admin entered full name directly (e.g. "Japanese")
+        };
     }
 
     private record AIConfig(String provider, String apiKey, String model, String language) {}

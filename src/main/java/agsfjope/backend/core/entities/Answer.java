@@ -3,6 +3,7 @@ package agsfjope.backend.core.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -34,6 +35,16 @@ public class Answer {
 
     @Column(name = "SourceCodePath", columnDefinition = "TEXT")
     private String sourceCodePath;
+
+    @Column(name = "AnswerScore", precision = 6, scale = 2)
+    private BigDecimal answerScore;
+
+    @Column(name = "GuardRuleTriggered", nullable = false)
+    @Builder.Default
+    private boolean guardRuleTriggered = false;
+
+    @Column(name = "GuardRuleNote", columnDefinition = "TEXT")
+    private String guardRuleNote;
 
     @Column(name = "CreatedAt", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
