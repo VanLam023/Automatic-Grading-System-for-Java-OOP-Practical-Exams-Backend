@@ -1,4 +1,4 @@
-package agsfjope.backend.application.grading;
+package agsfjope.backend.application.gradingservices;
 
 /**
  * Thrown by {@link GradingPipelineService} when a stop signal is detected

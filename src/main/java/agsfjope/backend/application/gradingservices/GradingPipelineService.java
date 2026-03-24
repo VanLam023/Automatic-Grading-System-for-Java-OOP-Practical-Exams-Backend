@@ -1,4 +1,4 @@
-package agsfjope.backend.application.grading;
+package agsfjope.backend.application.gradingservices;
 
 import agsfjope.backend.core.entities.*;
 import agsfjope.backend.core.enums.GradingMode;
