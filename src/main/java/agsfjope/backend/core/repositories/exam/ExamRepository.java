@@ -1,12 +1,14 @@
 package agsfjope.backend.core.repositories.exam;
 
 import agsfjope.backend.core.entities.Exam;
+import agsfjope.backend.core.enums.ExamStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -112,4 +114,24 @@ public interface ExamRepository extends JpaRepository<Exam, UUID> {
      */
     @Query("SELECT COUNT(s) > 0 FROM Submission s WHERE s.block.exam.examId = :examId")
     boolean existsSubmissionsByExamId(@Param("examId") UUID examId);
+
+    /**
+     * Counts active (non-deleted) exams with the specified status.
+     * Used by the Admin Dashboard to display the number of currently active (ONGOING) exams.
+     *
+     * @param status    the exam status to filter by (e.g. ONGOING)
+     * @return number of non-soft-deleted exams matching the status
+     */
+    long countByStatusAndDeletedAtIsNull(ExamStatus status);
+
+    /**
+     * Counts active (non-deleted) exams with the specified status, created within a date range.
+     * Used by the Admin Dashboard date-filtered overview.
+     *
+     * @param status the exam status to filter by (e.g. ONGOING)
+     * @param from   start of date range (inclusive)
+     * @param to     end of date range (inclusive)
+     * @return number of non-soft-deleted exams matching the status and date range
+     */
+    long countByStatusAndDeletedAtIsNullAndCreatedAtBetween(ExamStatus status, OffsetDateTime from, OffsetDateTime to);
 }

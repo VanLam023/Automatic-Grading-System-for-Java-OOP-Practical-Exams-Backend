@@ -11,6 +11,8 @@ import agsfjope.backend.core.entities.User;
 import agsfjope.backend.core.repositories.auth.PasswordResetTokenRepository;
 import agsfjope.backend.core.repositories.auth.RoleRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 import agsfjope.backend.infrastructure.excel.ExcelStudentParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +77,7 @@ public class UserManagementServiceImpl implements UserManagementService {
      */
     @Override
     @Transactional
+    @Auditable(action = AuditAction.CREATE, entityType = "USER")
     public ImportStudentResponse importStudentsFromExcel(MultipartFile file) {
         // Accumulate skipped rows across all validation stages
         List<ImportStudentResponse.SkippedRow> skippedDetails = new ArrayList<>();
@@ -275,6 +278,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.CREATE, entityType = "USER")
     public agsfjope.backend.application.dtos.responses.user.CreateUserResponse createUser(
             agsfjope.backend.application.dtos.requests.user.CreateUserRequest request) {
 
@@ -372,6 +376,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.DELETE, entityType = "USER")
     public void deleteUser(java.util.UUID userId) {
         // ── 1. Find user ────────────────────────────────────────────────────
         User user = userRepository.findById(userId)
@@ -405,6 +410,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "USER")
     public void activateUser(java.util.UUID userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException(
@@ -484,6 +490,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "USER")
     public UserDetailResponse updateUser(java.util.UUID userId,
             agsfjope.backend.application.dtos.requests.user.UpdateUserRequest request) {
 

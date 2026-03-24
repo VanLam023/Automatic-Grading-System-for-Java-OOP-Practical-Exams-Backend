@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -133,4 +134,14 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             @Param("status")  SubmissionStatus status,
             @Param("keyword") String keyword,
             Pageable pageable);
+
+    /**
+     * Counts submissions submitted within the given date range.
+     * Used by the Admin Dashboard date-filtered overview.
+     *
+     * @param from start of date range (inclusive)
+     * @param to   end of date range (inclusive)
+     * @return number of submissions with submittedAt between from and to
+     */
+    long countBySubmittedAtBetween(OffsetDateTime from, OffsetDateTime to);
 }

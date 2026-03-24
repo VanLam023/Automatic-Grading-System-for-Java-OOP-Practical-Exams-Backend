@@ -20,6 +20,8 @@ spring:
       keepalive-time: 60000         # Ping 60s/lần để detect stale connection sớm
       initialization-fail-timeout: -1  # Không fail khi startup nếu DB tạm thời đầy connection
       pool-name: OopExamPool
+      data-source-properties:
+        stringtype: unspecified     # Cho phép PostgreSQL tự cast varchar → custom enum types
 
 
 
