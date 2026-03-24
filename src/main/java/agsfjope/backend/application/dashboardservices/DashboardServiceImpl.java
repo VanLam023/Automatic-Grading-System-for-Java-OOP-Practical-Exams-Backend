@@ -65,8 +65,8 @@ public class DashboardServiceImpl implements DashboardService {
                 ? submissionRepository.countBySubmittedAtBetween(from, to)
                 : submissionRepository.count();
         long pendingAppeals   = filtered
-                ? appealRepository.countByStatusAndCreatedAtBetween(AppealStatus.PENDING, from, to)
-                : appealRepository.countByStatus(AppealStatus.PENDING);
+                ? appealRepository.countByStatusAndCreatedAtBetween(AppealStatus.PENDING.name(), from, to)
+                : appealRepository.countByStatus(AppealStatus.PENDING.name());
 
         return DashboardOverviewResponse.builder()
                 .totalUsers(totalUsers)

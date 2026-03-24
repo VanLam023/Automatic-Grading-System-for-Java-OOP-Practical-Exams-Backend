@@ -1,7 +1,6 @@
 package agsfjope.backend.core.repositories.appeal;
 
 import agsfjope.backend.core.entities.Appeal;
-import agsfjope.backend.core.enums.AppealStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

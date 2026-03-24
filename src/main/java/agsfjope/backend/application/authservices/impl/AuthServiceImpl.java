@@ -23,8 +23,6 @@ import agsfjope.backend.core.repositories.auth.RefreshTokenRepository;
 import agsfjope.backend.core.repositories.auth.RoleRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.infrastructure.security.jwt.JwtTokenProvider;
-import agsfjope.backend.infrastructure.audit.Auditable;
-import agsfjope.backend.core.enums.AuditAction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -65,7 +63,6 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional
-    @Auditable(action = AuditAction.LOGIN, entityType = "SESSION")
     public LoginResponse login(LoginRequest request) {
 
         // === STEP 1: Find user by username ===
@@ -209,7 +206,6 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional
-    @Auditable(action = AuditAction.LOGOUT, entityType = "SESSION")
     public void logout(String username) {
 
         // === STEP 1: Load the User entity from DB ===
@@ -337,7 +333,6 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional
-    @Auditable(action = AuditAction.UPDATE, entityType = "USER")
     public void resetPassword(ResetPasswordRequest request) {
 
         // === STEP 1: Re-validate the token (same logic as verifyResetToken) ===
@@ -398,7 +393,6 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional
-    @Auditable(action = AuditAction.CREATE, entityType = "USER")
     public void register(RegisterRequest request) {
 
         // === STEP 2: Cross-check username against the FPT email alias ===
