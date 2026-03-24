@@ -1,4 +1,4 @@
-package agsfjope.backend.application.grading;
+package agsfjope.backend.application.gradingservices;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;

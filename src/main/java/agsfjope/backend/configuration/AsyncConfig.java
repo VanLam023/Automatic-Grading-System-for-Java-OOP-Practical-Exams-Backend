@@ -40,7 +40,7 @@ public class AsyncConfig {
     /**
      * Dedicated thread pool for the grading pipeline.
      *
-     * <p>Used by {@link agsfjope.backend.application.grading.GradingService}'s
+     * <p>Used by {@link agsfjope.backend.application.gradingservices.GradingService}'s
      * {@code @Async("gradingTaskExecutor")} methods.</p>
      *
      * <h3>Sizing rationale:</h3>

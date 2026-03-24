@@ -1,4 +1,4 @@
-package agsfjope.backend.application.grading;
+package agsfjope.backend.application.gradingservices;
 
 import agsfjope.backend.application.dtos.requests.grading.TriggerGradingRequest;
 import agsfjope.backend.application.dtos.responses.grading.GradingProgressResponse;

@@ -13,7 +13,7 @@ import agsfjope.backend.core.exceptions.exampaper.ExamPaperHasSubmissionsExcepti
 import agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException;
 import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
 import agsfjope.backend.core.exceptions.submission.ExamNotOngoingException;
-import agsfjope.backend.application.grading.GradingAlreadyInProgressException;
+import agsfjope.backend.application.gradingservices.GradingAlreadyInProgressException;
 import jakarta.persistence.EntityNotFoundException;
 
 import org.springframework.http.HttpStatus;
