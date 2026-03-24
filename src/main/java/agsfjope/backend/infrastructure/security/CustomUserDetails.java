@@ -17,9 +17,13 @@ public class CustomUserDetails implements UserDetails {
 
     /** The actual User entity from the database */
     private final User user;
+    private final String authority;
 
     public CustomUserDetails(User user) {
         this.user = user;
+        // Resolve role name immediately to avoid LazyInitialization issues later in the security filter chain.
+        String roleName = (user.getRole() != null) ? user.getRole().getName() : "";
+        this.authority = "ROLE_" + roleName;
     }
 
     /**
@@ -30,7 +34,7 @@ public class CustomUserDetails implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         // Wrap the single role name into a GrantedAuthority list
-        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().getName()));
+        return List.of(new SimpleGrantedAuthority(authority));
     }
 
     /** Returns the hashed password stored in the DB for Spring Security to compare against */

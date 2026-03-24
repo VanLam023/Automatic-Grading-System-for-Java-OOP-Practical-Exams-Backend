@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.TestCaseStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -32,7 +34,8 @@ public class TestCaseResult {
     private TestCase testCase;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "Status", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Status", nullable = false, columnDefinition = "test_case_status")
     private TestCaseStatus status;
 
     @Column(name = "ActualOutput", columnDefinition = "TEXT")

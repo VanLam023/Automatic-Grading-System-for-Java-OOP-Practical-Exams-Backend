@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.NotificationType;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -31,7 +33,8 @@ public class Notification {
     private String body;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "Type", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Type", nullable = false, columnDefinition = "notification_type")
     @Builder.Default
     private NotificationType type = NotificationType.IN_APP;
 

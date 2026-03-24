@@ -3,6 +3,7 @@ package agsfjope.backend.core.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -30,6 +31,18 @@ public class Block {
 
     @Column(name = "Description", columnDefinition = "TEXT")
     private String description;
+
+    /** Ngày diễn ra thi của block này (null nếu chưa lên lịch) */
+    @Column(name = "ExamDate", nullable = true)
+    private LocalDate examDate;
+
+    /** Thời gian bắt đầu làm bài thi (null nếu chưa lên lịch) */
+    @Column(name = "StartTime", nullable = true)
+    private OffsetDateTime startTime;
+
+    /** Thời gian kết thúc làm bài thi (null nếu chưa lên lịch). CHK_BlockTime: EndTime > StartTime khi cả hai đều được set */
+    @Column(name = "EndTime", nullable = true)
+    private OffsetDateTime endTime;
 
     @Column(name = "CreatedAt", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

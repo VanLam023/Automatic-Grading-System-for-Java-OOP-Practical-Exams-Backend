@@ -1,8 +1,11 @@
 package agsfjope.backend.core.entities;
 
 import agsfjope.backend.core.enums.GradingMode;
+import agsfjope.backend.core.enums.GradingResultStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -26,8 +29,19 @@ public class GradingResult {
     private Submission submission;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "GradingMode", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "GradingMode", nullable = false, columnDefinition = "grading_mode")
     private GradingMode gradingMode;
+
+    /**
+     * Trạng thái tổng thể bài thi.
+     * PASS = totalScore >= 4.0, FAIL = totalScore < 4.0.
+     */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Status", nullable = false, columnDefinition = "grading_result_status")
+    @Builder.Default
+    private GradingResultStatus status = GradingResultStatus.FAIL;
 
     @Column(name = "TotalScore", nullable = false, precision = 6, scale = 2)
     @Builder.Default
@@ -70,3 +84,4 @@ public class GradingResult {
         updatedAt = OffsetDateTime.now();
     }
 }
+

@@ -121,9 +121,13 @@ CREATE TABLE Blocks (
     ExamID          UUID            NOT NULL REFERENCES Exams(ExamID) ON DELETE CASCADE,
     Name            VARCHAR(50)     NOT NULL,
     Description     TEXT,
+    ExamDate        DATE            NOT NULL,
+    StartTime       TIMESTAMPTZ     NOT NULL,
+    EndTime         TIMESTAMPTZ     NOT NULL,
     CreatedAt       TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT UQ_ExamBlock UNIQUE (ExamID, Name)
+    CONSTRAINT UQ_ExamBlock UNIQUE (ExamID, Name),
+    CONSTRAINT CHK_BlockTime CHECK (EndTime > StartTime)
 );
 
 -- 7. ExamPapers
