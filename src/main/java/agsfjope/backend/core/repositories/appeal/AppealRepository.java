@@ -152,5 +152,147 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
            nativeQuery = true)
     long countByStatusAndSemester(@Param("status") String status,
                                   @Param("semester") String semester);
+
+    // ─── Lecturer Dashboard ─────────────────────────────────────────────────
+
+    /**
+     * Counts appeals assigned to a specific lecturer with the given status.
+     * Uses native SQL with explicit CAST for PostgreSQL custom enum type.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @param status     the appeal status string (e.g. "PROCESSING")
+     * @return count of matching appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status = CAST(:status AS appeal_status)
+            """,
+           nativeQuery = true)
+    long countByAssignedLecturerAndStatus(@Param("lecturerId") UUID lecturerId,
+                                          @Param("status") String status);
+
+    /**
+     * Counts appeals assigned to a lecturer with status PROCESSING whose deadline has passed.
+     * Used for the "Overdue Appeals" card on the Lecturer Dashboard.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @param now        current timestamp
+     * @return count of overdue appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status = CAST('PROCESSING' AS appeal_status)
+              AND a.DeadlineAt < :now
+            """,
+           nativeQuery = true)
+    long countOverdueByAssignedLecturer(@Param("lecturerId") UUID lecturerId,
+                                        @Param("now") OffsetDateTime now);
+
+    /**
+     * Counts completed reviews for a lecturer (COMPLETED, APPROVED, or DENIED).
+     * Used for the "Completed Reviews" card on the Lecturer Dashboard.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @return count of completed reviews
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status IN (
+                CAST('COMPLETED' AS appeal_status),
+                CAST('APPROVED'  AS appeal_status),
+                CAST('DENIED'    AS appeal_status)
+              )
+            """,
+           nativeQuery = true)
+    long countCompletedReviewsByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
+
+    /**
+     * Finds all appeals assigned to a specific lecturer, ordered by assignedAt descending.
+     * Used for the "Đơn phúc khảo được phân công" table on the Lecturer Dashboard.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @param pageable   paging parameters
+     * @return list of assigned appeals
+     */
+    @Query("""
+        SELECT a FROM Appeal a
+        WHERE a.assignedLecturer.userId = :lecturerId
+        ORDER BY a.assignedAt DESC
+    """)
+    List<Appeal> findByAssignedLecturerOrderByAssignedAtDesc(
+            @Param("lecturerId") UUID lecturerId,
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Finds appeals assigned to a specific lecturer filtered by status, ordered by assignedAt descending.
+     * Uses native SQL with explicit CAST for PostgreSQL custom enum type.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @param status     the appeal status string to filter by
+     * @param pageable   paging parameters
+     * @return list of assigned appeals matching the given status
+     */
+    @Query(value = """
+            SELECT * FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status = CAST(:status AS appeal_status)
+            ORDER BY a.AssignedAt DESC
+            """,
+           nativeQuery = true)
+    List<Appeal> findByAssignedLecturerAndStatusOrderByAssignedAtDesc(
+            @Param("lecturerId") UUID lecturerId,
+            @Param("status") String status,
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Finds PROCESSING appeals assigned to a lecturer, ordered by deadlineAt ascending.
+     * Used for the "Deadline sắp tới" section on the Lecturer Dashboard.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @param pageable   paging parameters
+     * @return list of appeals sorted by deadline
+     */
+    @Query("""
+        SELECT a FROM Appeal a
+        WHERE a.assignedLecturer.userId = :lecturerId
+          AND a.status = agsfjope.backend.core.enums.AppealStatus.PROCESSING
+        ORDER BY a.deadlineAt ASC
+    """)
+    List<Appeal> findProcessingByAssignedLecturerOrderByDeadlineAsc(
+            @Param("lecturerId") UUID lecturerId,
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Counts approved appeals for a lecturer.
+     * Uses native SQL with explicit CAST for PostgreSQL custom enum type.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @return count of approved appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status = CAST('APPROVED' AS appeal_status)
+            """,
+           nativeQuery = true)
+    long countApprovedByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
+
+    /**
+     * Counts denied appeals for a lecturer.
+     * Uses native SQL with explicit CAST for PostgreSQL custom enum type.
+     *
+     * @param lecturerId the lecturer's user UUID
+     * @return count of denied appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status = CAST('DENIED' AS appeal_status)
+            """,
+           nativeQuery = true)
+    long countDeniedByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
 }
 
