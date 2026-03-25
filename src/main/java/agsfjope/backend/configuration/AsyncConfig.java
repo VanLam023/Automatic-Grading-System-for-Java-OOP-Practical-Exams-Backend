@@ -67,4 +67,34 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * [PERF-STEP3] Dedicated thread pool for parallel submission grading within a block.
+     *
+     * <p>Each thread in this pool grades one submission concurrently. The number of
+     * concurrent submissions is further controlled by a {@code Semaphore} inside
+     * {@link agsfjope.backend.application.gradingservices.GradingService} to prevent
+     * flooding the Gemini API with too many simultaneous AI calls.
+     *
+     * <h3>Sizing rationale:</h3>
+     * <ul>
+     *   <li>{@code corePoolSize=4}  — up to 4 submissions graded in parallel</li>
+     *   <li>{@code maxPoolSize=8}   — burst room for large blocks</li>
+     *   <li>{@code queueCapacity=50}— holds remaining submissions while threads are busy</li>
+     * </ul>
+     */
+    @Bean(name = "submissionExecutor")
+    public Executor submissionExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        // [PERF-STEP3] Sized to allow parallel submission grading
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("SubGrading-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(180);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

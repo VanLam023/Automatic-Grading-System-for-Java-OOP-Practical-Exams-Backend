@@ -25,7 +25,8 @@ public class GeminiAdapter implements LLMAdapter {
 
     private static final String BASE_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
-    private static final int TIMEOUT_SECONDS = 120;  // increased for long analysis prompts
+    // [PERF-STEP1] Increased timeout for long analysis prompts
+    private static final int TIMEOUT_SECONDS = 120;
 
     private final HttpClient   httpClient;
     private final ObjectMapper objectMapper;
@@ -85,7 +86,10 @@ public class GeminiAdapter implements LLMAdapter {
                   ],
                   "generationConfig": {
                     "temperature": 0.2,
-                    "maxOutputTokens": 8192%s
+                    // [PERF-STEP1] Increased from 8192 → 16384 to prevent JSON truncation
+                    // when analysis prompt is long (many .java files, large codebase).
+                    // gemini-3-flash-preview supports up to 65536 output tokens.
+                    "maxOutputTokens": 16384%s
                   }
                 }
                 """.formatted(escaped, mimeTypePart);
