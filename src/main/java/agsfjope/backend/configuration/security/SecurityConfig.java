@@ -95,6 +95,7 @@ public class SecurityConfig {
                 ).permitAll()
                     .requestMatchers("/api/admin/**").hasAnyRole("SYSTEM_ADMIN", "ADMIN")
                     .requestMatchers("/api/staff/**").hasRole("EXAM_STAFF")
+                    .requestMatchers("/api/lecturer/**").hasRole("LECTURER")
                 // /api/auth/logout requires a valid Bearer JWT (JwtAuthenticationFilter must pass first)
                 .requestMatchers("/api/auth/logout").authenticated()
                 // All other endpoints require authentication (valid JWT token)
