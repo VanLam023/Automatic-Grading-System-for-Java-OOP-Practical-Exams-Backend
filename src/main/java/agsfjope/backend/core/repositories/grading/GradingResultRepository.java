@@ -57,5 +57,67 @@ public interface GradingResultRepository extends JpaRepository<GradingResult, UU
     @Transactional
     @Query("DELETE FROM GradingResult gr WHERE gr.submission.submissionId = :submissionId")
     void deleteBySubmission_SubmissionId(@Param("submissionId") UUID submissionId);
+
+    // ─── Staff Dashboard — Grade Distribution ────────────────────────────────
+
+    /**
+     * Counts grading results whose totalScore falls within [minScore, maxScore).
+     * The upper bound is exclusive except for the topmost bucket (9-10) which is inclusive.
+     *
+     * @param minScore lower bound (inclusive)
+     * @param maxScore upper bound (exclusive, caller handles 10.00 case)
+     * @return count of matching grading results
+     */
+    @Query(value = "SELECT COUNT(*) FROM GradingResults gr WHERE gr.TotalScore >= :minScore AND gr.TotalScore < :maxScore",
+           nativeQuery = true)
+    long countByScoreRange(@Param("minScore") java.math.BigDecimal minScore,
+                           @Param("maxScore") java.math.BigDecimal maxScore);
+
+    /**
+     * Counts grading results whose totalScore falls within [minScore, maxScore)
+     * and belong to a submission in the given semester.
+     *
+     * @param minScore lower bound (inclusive)
+     * @param maxScore upper bound (exclusive)
+     * @param semester semester code to filter by
+     * @return count of matching grading results
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM GradingResults gr
+            JOIN Submissions s ON gr.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE gr.TotalScore >= :minScore AND gr.TotalScore < :maxScore
+              AND e.Semester = :semester
+            """,
+           nativeQuery = true)
+    long countByScoreRangeAndSemester(@Param("minScore") java.math.BigDecimal minScore,
+                                      @Param("maxScore") java.math.BigDecimal maxScore,
+                                      @Param("semester") String semester);
+
+    /**
+     * Counts all grading results (total graded submissions).
+     * Used by Staff Dashboard grade distribution total.
+     *
+     * @return total number of grading results
+     */
+    @Query("SELECT COUNT(gr) FROM GradingResult gr")
+    long countAll();
+
+    /**
+     * Counts all grading results for submissions in the given semester.
+     *
+     * @param semester semester code to filter by
+     * @return total number of grading results for the semester
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM GradingResults gr
+            JOIN Submissions s ON gr.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE e.Semester = :semester
+            """,
+           nativeQuery = true)
+    long countAllBySemester(@Param("semester") String semester);
 }
 

@@ -144,4 +144,36 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
      * @return number of submissions with submittedAt between from and to
      */
     long countBySubmittedAtBetween(OffsetDateTime from, OffsetDateTime to);
+
+    // ─── Staff Dashboard ────────────────────────────────────────────────────
+
+    /**
+     * Counts submissions with the given status.
+     * Used by Staff Dashboard to count graded submissions.
+     *
+     * @param status the submission status to filter by
+     * @return number of submissions matching the status
+     */
+    long countByStatus(SubmissionStatus status);
+
+    /**
+     * Counts all submissions belonging to exams in the given semester.
+     * Navigates Submission → Block → Exam to check the semester field.
+     *
+     * @param semester the semester code to filter by
+     * @return total submission count for the semester
+     */
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.exam.semester = :semester")
+    long countBySemester(@Param("semester") String semester);
+
+    /**
+     * Counts submissions with the given status belonging to exams in the given semester.
+     *
+     * @param status   the submission status to filter by
+     * @param semester the semester code to filter by
+     * @return number of matching submissions
+     */
+    @Query("SELECT COUNT(s) FROM Submission s WHERE s.status = :status AND s.block.exam.semester = :semester")
+    long countByStatusAndSemester(@Param("status") SubmissionStatus status,
+                                  @Param("semester") String semester);
 }

@@ -134,4 +134,33 @@ public interface ExamRepository extends JpaRepository<Exam, UUID> {
      * @return number of non-soft-deleted exams matching the status and date range
      */
     long countByStatusAndDeletedAtIsNullAndCreatedAtBetween(ExamStatus status, OffsetDateTime from, OffsetDateTime to);
+
+    // ─── Staff Dashboard ────────────────────────────────────────────────────
+
+    /**
+     * Returns the most recent non-deleted exams, ordered by creation date descending.
+     * Used by the Staff Dashboard "Kỳ thi gần đây" table.
+     *
+     * @return list of recent exams (limited by Pageable)
+     */
+    List<Exam> findAllByDeletedAtIsNullOrderByCreatedAtDesc(org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Returns the most recent non-deleted exams for a specific semester.
+     * Used by the Staff Dashboard with semester filter.
+     *
+     * @param semester semester code to filter by
+     * @return list of recent exams for the semester (limited by Pageable)
+     */
+    List<Exam> findAllBySemesterAndDeletedAtIsNullOrderByCreatedAtDesc(String semester, org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Counts active (non-deleted) exams with the specified status for a given semester.
+     * Used by the Staff Dashboard overview with semester filter.
+     *
+     * @param status   the exam status to filter by
+     * @param semester the semester code to filter by
+     * @return number of matching exams
+     */
+    long countByStatusAndDeletedAtIsNullAndSemester(ExamStatus status, String semester);
 }
