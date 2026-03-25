@@ -90,4 +90,67 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
     long countByStatusAndCreatedAtBetween(@Param("status") String status,
                                           @Param("from") OffsetDateTime from,
                                           @Param("to") OffsetDateTime to);
+
+    // ─── Staff Dashboard ────────────────────────────────────────────────────
+
+    /**
+     * Finds appeals with PENDING or PROCESSING status, ordered by creation date descending.
+     * Uses native SQL with explicit CAST to handle PostgreSQL custom enum type (appeal_status).
+     * Used by Staff Dashboard "Đơn phúc khảo cần xử lý" table.
+     *
+     * @param pageable paging parameters (limit)
+     * @return list of matching appeals
+     */
+    @Query(value = """
+            SELECT * FROM Appeals a
+            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+            ORDER BY a.CreatedAt DESC
+            """,
+           nativeQuery = true)
+    List<Appeal> findPendingAndProcessingOrderByCreatedAtDesc(
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Finds appeals with PENDING or PROCESSING status for a specific semester.
+     * Navigates Appeal → Submission → Block → Exam to check semester.
+     * Uses native SQL with explicit CAST for PostgreSQL custom enum type.
+     *
+     * @param semester semester code to filter by
+     * @param pageable paging parameters (limit)
+     * @return list of matching appeals
+     */
+    @Query(value = """
+            SELECT a.* FROM Appeals a
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+              AND e.Semester = :semester
+            ORDER BY a.CreatedAt DESC
+            """,
+           nativeQuery = true)
+    List<Appeal> findPendingAndProcessingBySemesterOrderByCreatedAtDesc(
+            @Param("semester") String semester,
+            org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Counts appeals with the given status for a specific semester.
+     * Navigates Appeal → Submission → Block → Exam to check semester.
+     *
+     * @param status   the appeal status string
+     * @param semester semester code to filter by
+     * @return number of matching appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.Status = CAST(:status AS appeal_status)
+              AND e.Semester = :semester
+            """,
+           nativeQuery = true)
+    long countByStatusAndSemester(@Param("status") String status,
+                                  @Param("semester") String semester);
 }
+
