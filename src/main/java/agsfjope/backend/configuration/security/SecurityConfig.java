@@ -86,6 +86,7 @@ public class SecurityConfig {
                     "/api/auth/forgot-password",    // Forgot Password — send reset email
                     "/api/auth/verify-reset-token", // Verify reset token validity
                     "/api/auth/reset-password",     // Confirm new password
+                    "/api/v1/payments/webhook",     // PayOS webhook callback (no JWT — PayOS server calls this)
                     "/swagger-ui/**",               // Swagger UI
                     "/swagger-ui.html",
                     "/v3/api-docs/**",              // OpenAPI JSON spec
