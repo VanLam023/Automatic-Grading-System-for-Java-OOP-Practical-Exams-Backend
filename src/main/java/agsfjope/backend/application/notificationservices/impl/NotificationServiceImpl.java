@@ -10,6 +10,8 @@ import agsfjope.backend.core.repositories.notification.NotificationRepository;
 import agsfjope.backend.infrastructure.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,12 +47,11 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     @Transactional(readOnly = true)
     public List<NotificationResponse> getMyNotifications(String filter) {
-        // Get the currently authenticated user
         User currentUser = SecurityUtils.getCurrentUser();
         UUID userId = currentUser.getUserId();
+        String normalizedFilter = normalizeFilter(filter);
 
-        // Fetch based on filter param
-        List<Notification> notifications = switch (filter.toLowerCase()) {
+        List<Notification> notifications = switch (normalizedFilter) {
             case "unread" -> notificationRepository
                     .findByUser_UserIdAndIsReadOrderByCreatedAtDesc(userId, false);
             case "read" -> notificationRepository
@@ -59,10 +60,34 @@ public class NotificationServiceImpl implements NotificationService {
                     .findByUser_UserIdOrderByCreatedAtDesc(userId);
         };
 
-        // Map entities to response DTOs
         return notifications.stream()
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    /**
+     * DEV NOTE:
+     * New paged version to support production-friendly notification center UI.
+     * This method is added in parallel with the old List-based method to avoid
+     * forcing an immediate frontend rewrite.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<NotificationResponse> getMyNotificationsPaged(String filter, Pageable pageable) {
+        User currentUser = SecurityUtils.getCurrentUser();
+        UUID userId = currentUser.getUserId();
+        String normalizedFilter = normalizeFilter(filter);
+
+        Page<Notification> notifications = switch (normalizedFilter) {
+            case "unread" -> notificationRepository
+                    .findByUser_UserIdAndIsRead(userId, false, pageable);
+            case "read" -> notificationRepository
+                    .findByUser_UserIdAndIsRead(userId, true, pageable);
+            default -> notificationRepository
+                    .findByUser_UserId(userId, pageable);
+        };
+
+        return notifications.map(this::mapToResponse);
     }
 
     /**
@@ -105,30 +130,23 @@ public class NotificationServiceImpl implements NotificationService {
 
     /**
      * NOTI-003: Marks all unread notifications of the current user as read.
-     * Batch-updates isRead and readAt in a single transaction for efficiency.
+     *
+     * DEV NOTE:
+     * Old implementation fetched all unread rows and saveAll(...) them back.
+     * New implementation uses one bulk UPDATE query for much better efficiency.
      */
     @Override
     @Transactional
     public void markAllAsRead() {
         User currentUser = SecurityUtils.getCurrentUser();
         UUID userId = currentUser.getUserId();
-
-        // Fetch only unread notifications — no point touching already-read ones
-        List<Notification> unreadNotifications = notificationRepository
-                .findByUser_UserIdAndIsReadOrderByCreatedAtDesc(userId, false);
-
-        if (unreadNotifications.isEmpty()) {
-            return; // Nothing to do
-        }
-
         OffsetDateTime now = OffsetDateTime.now();
-        unreadNotifications.forEach(n -> {
-            n.setIsRead(true);
-            n.setReadAt(now);
-        });
 
-        notificationRepository.saveAll(unreadNotifications);
-        log.debug("Marked {} notifications as read for user {}", unreadNotifications.size(), userId);
+        int updatedRows = notificationRepository.markAllAsReadByUserId(userId, now);
+
+        if (updatedRows > 0) {
+            log.debug("Marked {} notifications as read for user {}", updatedRows, userId);
+        }
     }
 
     // ─── Internal Creation ─────────────────────────────────────────────────────
@@ -198,5 +216,16 @@ public class NotificationServiceImpl implements NotificationService {
                 .isRead(notification.getIsRead())
                 .createdAt(notification.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * DEV NOTE:
+     * Normalize filter once so both old and new APIs behave the same way.
+     */
+    private String normalizeFilter(String filter) {
+        if (filter == null || filter.isBlank()) {
+            return "all";
+        }
+        return filter.trim().toLowerCase();
     }
 }

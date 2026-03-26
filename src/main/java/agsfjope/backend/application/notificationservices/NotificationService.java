@@ -2,6 +2,8 @@ package agsfjope.backend.application.notificationservices;
 
 import agsfjope.backend.application.dtos.responses.notification.NotificationResponse;
 import agsfjope.backend.application.dtos.responses.notification.UnreadCountResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +25,18 @@ public interface NotificationService {
      * @return list of matching notifications, newest first
      */
     List<NotificationResponse> getMyNotifications(String filter);
+
+    /**
+     * DEV NOTE:
+     * New paged version for Notification Center.
+     * Added without removing the old List-based method to avoid breaking
+     * existing frontend code immediately.
+     *
+     * @param filter   "all" — all notifications, "unread" — only unread, "read" — only read
+     * @param pageable page/size/sort info
+     * @return paged notifications, newest first by requested sort
+     */
+    Page<NotificationResponse> getMyNotificationsPaged(String filter, Pageable pageable);
 
     /**
      * NOTI-003: Returns the count of unread notifications for the current user.

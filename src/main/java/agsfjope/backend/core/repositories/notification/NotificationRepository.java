@@ -1,6 +1,8 @@
 package agsfjope.backend.core.repositories.notification;
 
 import agsfjope.backend.core.entities.Notification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -43,6 +45,20 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     List<Notification> findByUser_UserIdAndIsReadOrderByCreatedAtDesc(UUID userId, Boolean isRead);
 
     /**
+     * DEV NOTE:
+     * New paged query for Notification Center.
+     * We keep the old List-based methods above for backward compatibility
+     * with any existing frontend code that still expects a full list.
+     */
+    Page<Notification> findByUser_UserId(UUID userId, Pageable pageable);
+
+    /**
+     * DEV NOTE:
+     * New paged query for read/unread tabs.
+     */
+    Page<Notification> findByUser_UserIdAndIsRead(UUID userId, Boolean isRead, Pageable pageable);
+
+    /**
      * Counts the number of unread notifications for a user.
      * Used to render the badge count on the notification bell icon.
      *
@@ -61,6 +77,27 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      * @return Optional containing the notification if found and owned by the user
      */
     Optional<Notification> findByNotificationIdAndUser_UserId(UUID notificationId, UUID userId);
+
+    /**
+     * DEV NOTE:
+     * Bulk update for "mark all as read".
+     * This avoids:
+     *  - loading all unread rows into memory
+     *  - looping in Java
+     *  - calling saveAll(...)
+     *
+     * Much better for users with many notifications.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+           UPDATE Notification n
+              SET n.isRead = true,
+                  n.readAt = :readAt
+            WHERE n.user.userId = :userId
+              AND n.isRead = false
+           """)
+    int markAllAsReadByUserId(@Param("userId") UUID userId,
+                              @Param("readAt") OffsetDateTime readAt);
 
     /**
      * SCH-005: Deletes all read notifications that were created before the cutoff date.
