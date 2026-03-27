@@ -3,6 +3,7 @@ package agsfjope.backend.application.configservices;
 import agsfjope.backend.application.dtos.requests.config.TestAiConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
+import agsfjope.backend.application.dtos.requests.config.UpdateEmailConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
 import agsfjope.backend.application.dtos.responses.config.AiConfigResponse;
@@ -76,4 +77,12 @@ public interface SystemConfigService {
      * @param updatedByUsername username performing the update
      */
     void updateSystemSettings(UpdateSystemSettingsRequest request, String updatedByUsername);
+
+    /**
+     * Update SMTP email configuration.
+     *
+     * @param request           new SMTP email config values
+     * @param updatedByUsername username performing the update
+     */
+    void updateEmailConfig(UpdateEmailConfigRequest request, String updatedByUsername);
 }
