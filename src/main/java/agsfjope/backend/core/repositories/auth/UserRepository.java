@@ -141,4 +141,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * @return number of matching non-soft-deleted users
      */
     long countByRole_NameAndDeletedAtIsNullAndCreatedAtBetween(String roleName, OffsetDateTime from, OffsetDateTime to);
+
+    /**
+     * Finds all active (non-soft-deleted) users with the specified role name.
+     * Used to populate the lecturer dropdown on the Assign Appeal screen.
+     *
+     * @param roleName role name (e.g. "LECTURER")
+     * @return list of matching active users
+     */
+    List<User> findByRole_NameAndDeletedAtIsNull(String roleName);
 }

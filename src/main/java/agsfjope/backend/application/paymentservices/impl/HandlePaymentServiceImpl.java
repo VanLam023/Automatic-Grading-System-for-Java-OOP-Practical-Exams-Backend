@@ -5,7 +5,9 @@ import agsfjope.backend.application.dtos.responses.payment.PaymentResponse;
 import agsfjope.backend.application.paymentservices.HandlePaymentService;
 import agsfjope.backend.application.ports.out.PaymentGatewayPort;
 import agsfjope.backend.core.entities.Payment;
+import agsfjope.backend.core.enums.AppealStatus;
 import agsfjope.backend.core.enums.PaymentStatus;
+import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +41,7 @@ public class HandlePaymentServiceImpl implements HandlePaymentService {
     private final PaymentGatewayPort paymentGatewayPort;
     /** Xử lý async nội dung webhook sau khi đã verify checksum. */
     private final PaymentWebhookProcessor webhookProcessor;
+    private final AppealRepository appealRepository;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Webhook Handler
@@ -151,8 +154,12 @@ public class HandlePaymentServiceImpl implements HandlePaymentService {
                 paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.FAILED);
                 log.info("[Payment] Expired payment cancelled: {}", payment.getPaymentId());
 
-                // TODO: APPEAL_INTEGRATION — khi có AppealRepository:
-                // appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.CANCELLED);
+                // Cập nhật Appeal status → CANCELLED khi payment hết hạn
+                if (payment.getAppeal() != null) {
+                    appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.CANCELLED);
+                    log.info("[Payment] Appeal {} hết hạn thanh toán, chuyển sang CANCELLED",
+                            payment.getAppeal().getAppealId());
+                }
 
             } catch (Exception e) {
                 log.error("[Payment] Error cancelling expired payment {}: {}",

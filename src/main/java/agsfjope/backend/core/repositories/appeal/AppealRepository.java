@@ -3,10 +3,13 @@ package agsfjope.backend.core.repositories.appeal;
 import agsfjope.backend.core.entities.Appeal;
 import agsfjope.backend.core.enums.AppealStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -27,6 +30,59 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
      * @return the appeal if it exists
      */
     Optional<Appeal> findBySubmission_SubmissionId(UUID submissionId);
+
+    /**
+     * Checks whether an appeal already exists for the given submission.
+     * Used to enforce BR-01: each submission can only have one appeal.
+     *
+     * @param submissionId the submission UUID
+     * @return true if an appeal already exists for this submission
+     */
+    boolean existsBySubmission_SubmissionId(UUID submissionId);
+
+    /**
+     * Updates the status of an appeal by its ID.
+     * Used by {@code PaymentWebhookProcessor} (SUCCESS → PENDING, FAILED → CANCELLED)
+     * and by the payment timeout scheduler.
+     *
+     * @param appealId the appeal UUID
+     * @param status   the new status to set
+     */
+    @Modifying
+    @Query("UPDATE Appeal a SET a.status = :status WHERE a.appealId = :appealId")
+    void updateStatus(@Param("appealId") UUID appealId,
+                      @Param("status") AppealStatus status);
+
+    // ─── Student — My Appeals ────────────────────────────────────────────────
+
+    /**
+     * Finds all appeals submitted by a specific student, ordered by creation date descending.
+     *
+     * @param studentId the student's user UUID
+     * @return list of appeals
+     */
+    @Query("""
+        SELECT a FROM Appeal a
+        WHERE a.student.userId = :studentId
+        ORDER BY a.createdAt DESC
+    """)
+    List<Appeal> findByStudentOrderByCreatedAtDesc(@Param("studentId") UUID studentId);
+
+    /**
+     * Counts appeals by student and status using native SQL with CAST for PostgreSQL enum.
+     *
+     * @param studentId the student's user UUID
+     * @param status    the appeal status string
+     * @return count of matching appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.StudentID = :studentId
+              AND a.Status = CAST(:status AS appeal_status)
+            """,
+           nativeQuery = true)
+    long countByStudentAndStatus(@Param("studentId") UUID studentId,
+                                 @Param("status") String status);
 
     /**
      * Finds all appeals in PROCESSING status whose deadline falls exactly on
@@ -91,7 +147,65 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
                                           @Param("from") OffsetDateTime from,
                                           @Param("to") OffsetDateTime to);
 
+    // ─── Staff — Appeal Management ────────────────────────────────────────────
+
+    /**
+     * Paged + filtered list of appeals for Exam Staff Appeal Management screen.
+     * Filters by status (optional) and keyword (student name, MSSV, exam name).
+     * Uses native SQL with CAST for PostgreSQL enum type.
+     */
+    @Query(value = """
+            SELECT a.* FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
+              AND (:keyword = '' OR
+                   LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+              AND (:semester IS NULL OR e.Semester = :semester)
+              AND (:examName IS NULL OR e.Name = :examName)
+            ORDER BY a.CreatedAt DESC
+            """,
+           countQuery = """
+            SELECT COUNT(*) FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
+              AND (:keyword = '' OR
+                   LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+              AND (:semester IS NULL OR e.Semester = :semester)
+              AND (:examName IS NULL OR e.Name = :examName)
+            """,
+           nativeQuery = true)
+    Page<Appeal> searchAppealsForStaff(
+            @Param("status")  String status,
+            @Param("keyword") String keyword,
+            @Param("semester") String semester,
+            @Param("examName") String examName,
+            Pageable pageable);
+
+    /**
+     * Counts active appeals (PROCESSING) assigned to a specific lecturer.
+     * Used to show workload in the lecturer dropdown on Assign Appeal screen.
+     *
+     * @param lecturerId the lecturer's UUID
+     * @return number of PROCESSING appeals currently assigned
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status = CAST('PROCESSING' AS appeal_status)
+            """,
+           nativeQuery = true)
+    long countActiveAppealsByLecturer(@Param("lecturerId") UUID lecturerId);
+
     // ─── Staff Dashboard ────────────────────────────────────────────────────
+
 
     /**
      * Finds appeals with PENDING or PROCESSING status, ordered by creation date descending.
@@ -152,6 +266,46 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
            nativeQuery = true)
     long countByStatusAndSemester(@Param("status") String status,
                                   @Param("semester") String semester);
+
+    // ─── Lecturer — Appeal Management ─────────────────────────────────────────
+
+    /**
+     * Paged + filtered list of appeals for Lecturer Appeal List screen.
+     * Only shows appeals assigned to the specific lecturer.
+     */
+    @Query(value = """
+            SELECT a.* FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
+              AND (:keyword = '' OR
+                   LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+            ORDER BY a.CreatedAt DESC
+            """,
+           countQuery = """
+            SELECT COUNT(*) FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.AssignedLecturerID = :lecturerId
+              AND (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
+              AND (:keyword = '' OR
+                   LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+            """,
+           nativeQuery = true)
+    Page<Appeal> searchAppealsForLecturer(
+            @Param("lecturerId") UUID lecturerId,
+            @Param("status")  String status,
+            @Param("keyword") String keyword,
+            Pageable pageable);
 
     // ─── Lecturer Dashboard ─────────────────────────────────────────────────
 

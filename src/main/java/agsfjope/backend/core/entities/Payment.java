@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -37,7 +39,8 @@ public class Payment {
     private String currency = "VND";
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "Status", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Status", nullable = false, columnDefinition = "payment_status")
     @Builder.Default
     private PaymentStatus status = PaymentStatus.PENDING;
 
@@ -62,6 +65,7 @@ public class Payment {
     @Column(name = "RefundedAt")
     private OffsetDateTime refundedAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "PayosWebhookData", columnDefinition = "JSONB")
     private String payosWebhookData;
 

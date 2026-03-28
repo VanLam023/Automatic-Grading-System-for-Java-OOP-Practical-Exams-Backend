@@ -199,7 +199,7 @@ public class PayOSAdapter implements PaymentGatewayPort {
                 .stream()
                 .collect(Collectors.toMap(SystemConfig::getConfigKey, Function.identity()));
 
-        String clientId    = getConfig(configMap, KEY_CLIENT_ID);
+        String clientId    = decryptIfNeeded(configMap.get(KEY_CLIENT_ID));
         String apiKey      = decryptIfNeeded(configMap.get(KEY_API_KEY));
         String checksumKey = decryptIfNeeded(configMap.get(KEY_CHECKSUM_KEY));
 

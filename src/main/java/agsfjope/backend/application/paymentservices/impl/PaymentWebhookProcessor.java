@@ -5,7 +5,9 @@ import agsfjope.backend.application.ports.out.EmailService;
 
 import agsfjope.backend.core.entities.Payment;
 import agsfjope.backend.core.entities.User;
+import agsfjope.backend.core.enums.AppealStatus;
 import agsfjope.backend.core.enums.PaymentStatus;
+import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,9 +41,7 @@ public class PaymentWebhookProcessor {
     private final PaymentRepository paymentRepository;
     private final EmailService emailService;
     private final ObjectMapper objectMapper;
-
-    // TODO: APPEAL_INTEGRATION — inject AppealRepository khi implement luồng Appeal
-    // private final AppealRepository appealRepository;
+    private final AppealRepository appealRepository;
 
     /**
      * Xử lý nội dung webhook bất đồng bộ sau khi đã verify checksum.
@@ -109,11 +109,17 @@ public class PaymentWebhookProcessor {
         payment.setPaidAt(java.time.OffsetDateTime.now());
         paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.SUCCESS);
 
+        // Lấy examName thực tế từ Appeal → Submission → Block → Exam
+        String examName = "OOP Exam";
+        try {
+            examName = payment.getAppeal().getSubmission().getBlock().getExam().getName();
+        } catch (Exception e) {
+            log.warn("[Payment] Không thể lấy examName, dùng default");
+        }
+
         // Gửi email xác nhận (TRG-003)
         User student = payment.getStudent();
         if (student != null && student.getEmail() != null) {
-            // TODO: APPEAL_INTEGRATION — lấy examName từ Appeal.getSubmission().getBlock().getExam()
-            String examName = "OOP Exam";
             emailService.sendPaymentSuccessEmail(
                     student.getEmail(),
                     student.getFullName(),
@@ -123,8 +129,11 @@ public class PaymentWebhookProcessor {
             );
         }
 
-        // TODO: APPEAL_INTEGRATION — cập nhật Appeal status → PENDING:
-        // appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.PENDING);
+        // Cập nhật Appeal status → PENDING (sinh viên đã thanh toán, chờ Staff phân công)
+        if (payment.getAppeal() != null) {
+            appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.PENDING);
+            log.info("[Payment] Appeal {} chuyển sang PENDING", payment.getAppeal().getAppealId());
+        }
     }
 
     /**
@@ -135,7 +144,10 @@ public class PaymentWebhookProcessor {
 
         paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.FAILED);
 
-        // TODO: APPEAL_INTEGRATION — cập nhật Appeal status → CANCELLED:
-        // appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.CANCELLED);
+        // Cập nhật Appeal status → CANCELLED (thanh toán thất bại)
+        if (payment.getAppeal() != null) {
+            appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.CANCELLED);
+            log.info("[Payment] Appeal {} chuyển sang CANCELLED", payment.getAppeal().getAppealId());
+        }
     }
 }
