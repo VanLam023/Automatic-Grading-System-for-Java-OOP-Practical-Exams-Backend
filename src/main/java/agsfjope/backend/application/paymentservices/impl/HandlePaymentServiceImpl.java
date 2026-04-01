@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -42,6 +43,7 @@ public class HandlePaymentServiceImpl implements HandlePaymentService {
     /** Xử lý async nội dung webhook sau khi đã verify checksum. */
     private final PaymentWebhookProcessor webhookProcessor;
     private final AppealRepository appealRepository;
+    private final ObjectMapper objectMapper;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Webhook Handler
@@ -59,18 +61,57 @@ public class HandlePaymentServiceImpl implements HandlePaymentService {
      * @throws IllegalArgumentException khi checksum không hợp lệ
      */
     @Override
-    public void handleWebhook(PayOSWebhookRequest webhookRequest) {
-        log.info("[Payment] Received PayOS webhook callback");
+    public void handleWebhook(String rawBody) {
+        log.info("[Payment] Received PayOS raw webhook callback");
 
-        // Verify checksum ngay — từ chối trước khi return 200 nếu sai (BR-45)
-        boolean isValid = paymentGatewayPort.verifyWebhookChecksum(webhookRequest);
+        // Verify checksum bằng raw body string (giữ nguyên JSON gốc)
+        boolean isValid = paymentGatewayPort.verifyWebhookChecksum(rawBody);
         if (!isValid) {
-            log.warn("[Payment] Webhook checksum invalid — request rejected");
-            throw new IllegalArgumentException("PayOS webhook signature is invalid");
+            log.warn("[Payment] Webhook checksum invalid — skipping processing");
+            return;
         }
 
-        // Delegate toàn bộ DB writes sang async bean để trả 200 ngay (skill: Quick Response)
+        // Parse raw body sang DTO để xử lý tiếp
+        PayOSWebhookRequest webhookRequest;
+        try {
+            webhookRequest = objectMapper.readValue(rawBody, PayOSWebhookRequest.class);
+        } catch (Exception e) {
+            log.error("[Payment] Failed to parse webhook body: {}", e.getMessage());
+            return;
+        }
+
+        // Check test webhook
+        if (isTestWebhook(webhookRequest)) {
+            log.info("[Payment] Test/confirmation webhook from PayOS — accepted");
+            return;
+        }
+
+        // Delegate sang async processor
         webhookProcessor.process(webhookRequest);
+    }
+
+    @Override
+    public void handleWebhook(PayOSWebhookRequest webhookRequest) {
+        // Delegate sang bản String
+        try {
+            handleWebhook(objectMapper.writeValueAsString(webhookRequest));
+        } catch (Exception e) {
+            log.error("[Payment] Failed to serialize webhook request: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Kiểm tra xem đây có phải test webhook PayOS gửi khi verify URL không.
+     * Mở rộng điều kiện để cover nhiều trường hợp test của PayOS.
+     */
+    private boolean isTestWebhook(PayOSWebhookRequest request) {
+        if (request == null) return true;
+        if (request.getData() == null) return true;
+        // PayOS test webhook thường gửi orderCode = 0
+        if (request.getData().getOrderCode() == 0) return true;
+        // Hoặc code = "00" mà không có orderCode thật
+        if ("00".equals(request.getCode()) && request.getData().getOrderCode() <= 0) return true;
+        return false;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

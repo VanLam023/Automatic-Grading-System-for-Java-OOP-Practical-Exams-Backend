@@ -34,6 +34,14 @@ public interface HandlePaymentService {
      *
      * @param webhookRequest dữ liệu webhook nhận từ PayOS
      */
+    /**
+     * Xử lý webhook callback từ PayOS sau khi giao dịch hoàn tất (Dùng rawBody string để verify checksum chính xác nhất).
+     */
+    void handleWebhook(String rawBody);
+
+    /**
+     * Bản dùng DTO (để tương thích).
+     */
     void handleWebhook(PayOSWebhookRequest webhookRequest);
 
     /**

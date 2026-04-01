@@ -6,14 +6,13 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
  * Response trả về sau khi sinh viên tạo đơn phúc khảo thành công.
  *
- * <p>Bao gồm thông tin appeal và link thanh toán PayOS để Frontend
- * hiển thị QR code / checkout URL ngay lập tức (màn hình Payment(Student)).</p>
+ * <p>Luồng mới: sinh viên dùng tiền trong ví để thanh toán.
+ * Không cần QR code / PayOS nữa — appeal chuyển thẳng sang PENDING.</p>
  */
 @Data
 @NoArgsConstructor
@@ -33,39 +32,13 @@ public class CreateAppealResponse {
     private String examName;
 
     /** Điểm gốc của bài nộp (trước phúc khảo). */
-    private java.math.BigDecimal originalScore;
+    private BigDecimal originalScore;
 
-    // ─── Payment Info ─────────────────────────────────────────────────────────
+    // ─── Payment Info (Wallet) ────────────────────────────────────────────────
 
-    /** UUID giao dịch thanh toán trong hệ thống. */
-    private UUID paymentId;
-
-    /** Phí phúc khảo (VND). */
+    /** Phí phúc khảo đã bị trừ từ ví (VND). */
     private BigDecimal amount;
 
-    /** Loại tiền tệ (mặc định "VND"). */
-    private String currency;
-
-    /**
-     * Mã đơn hàng PayOS (epoch seconds) — dùng để tra cứu khi webhook callback.
-     */
-    private String payosOrderId;
-
-    /**
-     * URL hình ảnh QR code do PayOS cấp.
-     * Frontend hiển thị để sinh viên quét thanh toán.
-     */
-    private String qrCodeUrl;
-
-    /**
-     * URL trang thanh toán PayOS.
-     * Dùng thay thế khi không quét được QR.
-     */
-    private String checkoutUrl;
-
-    /**
-     * Thời điểm hết hạn thanh toán (15 phút kể từ lúc tạo).
-     * Sau thời điểm này, Scheduler tự động hủy đơn.
-     */
-    private OffsetDateTime expiresAt;
+    /** Số dư ví còn lại sau khi thanh toán. */
+    private BigDecimal walletBalanceAfter;
 }

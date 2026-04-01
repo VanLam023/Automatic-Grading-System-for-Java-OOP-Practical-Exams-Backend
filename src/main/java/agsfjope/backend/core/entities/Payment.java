@@ -23,8 +23,9 @@ public class Payment {
     @Column(name = "PaymentID")
     private UUID paymentId;
 
+    /** Appeal liên quan. Null khi PaymentPurpose = WALLET_DEPOSIT. */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "AppealID", nullable = false)
+    @JoinColumn(name = "AppealID", nullable = true)
     private Appeal appeal;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -55,6 +56,21 @@ public class Payment {
 
     @Column(name = "CheckoutUrl", columnDefinition = "TEXT")
     private String checkoutUrl;
+
+    /**
+     * Mục đích payment: "APPEAL" (thanh toán phúc khảo) hoặc "WALLET_DEPOSIT" (nạp tiền ví).
+     * Mặc định là APPEAL để tương thích với code cũ.
+     */
+    @Column(name = "PaymentPurpose", nullable = false, length = 20)
+    @Builder.Default
+    private String paymentPurpose = "APPEAL";
+
+    /**
+     * Khi paymentPurpose = WALLET_DEPOSIT, đây là student được cộng tiền vào ví.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "DepositForStudentID")
+    private User depositForStudent;
 
     @Column(name = "ExpiresAt", nullable = false)
     private OffsetDateTime expiresAt;

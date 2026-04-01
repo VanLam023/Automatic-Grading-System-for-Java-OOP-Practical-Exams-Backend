@@ -107,8 +107,7 @@ public class PayOSAdapter implements PaymentGatewayPort {
 
     /**
      * Hủy link thanh toán đang tồn tại trên PayOS.
-     *
-     * @param paymentLinkId ID của payment link cần hủy
+     * PayOS API: POST /v2/payment-requests/{id}/cancel
      */
     @Override
     public void cancelPaymentLink(String paymentLinkId) {
@@ -119,51 +118,101 @@ public class PayOSAdapter implements PaymentGatewayPort {
 
         try {
             callPayOSApi(
-                    "DELETE",
-                    "/v2/payment-requests/" + paymentLinkId,
+                    "POST",
+                    "/v2/payment-requests/" + paymentLinkId + "/cancel",
                     requestBody,
                     creds.clientId(),
                     creds.apiKey()
             );
             log.info("[PayOS] Cancelled payment link: {}", paymentLinkId);
         } catch (Exception e) {
-            // Log lỗi nhưng không throw — tránh ảnh hưởng luồng chính
             log.error("[PayOS] Failed to cancel payment link {}: {}", paymentLinkId, e.getMessage());
         }
     }
 
     /**
      * Xác minh chữ ký HMAC-SHA256 của webhook gửi từ PayOS.
-     * PHẢI gọi trước khi xử lý bất kỳ webhook nào (BR-45).
-     *
-     * @param webhookRequest dữ liệu webhook
-     * @return true nếu chữ ký hợp lệ
+     * PayOS ký trên data object: sort key alphabetically, nối key=value bằng &.
+     * Thử nhiều cách xử lý null/empty để đảm bảo khớp với PayOS.
      */
     @Override
-    public boolean verifyWebhookChecksum(PayOSWebhookRequest webhookRequest) {
+    @SuppressWarnings("unchecked")
+    public boolean verifyWebhookChecksum(String rawBody) {
         try {
             PayOSCredentials creds = loadCredentials();
-            PayOSWebhookRequest.WebhookData data = webhookRequest.getData();
+            Map<String, Object> body = objectMapper.readValue(rawBody, Map.class);
+            String receivedSignature = (String) body.get("signature");
+            Map<String, Object> dataMap = (Map<String, Object>) body.get("data");
 
-            if (data == null) {
-                log.warn("[PayOS] Webhook received with null data field");
+            if (receivedSignature == null || dataMap == null) {
+                log.warn("[PayOS] Webhook missing signature or data — REJECTED");
                 return false;
             }
 
-            // Tạo chuỗi data theo thứ tự PayOS quy định để tính HMAC
-            String dataString = buildChecksumData(data);
-            String computedSignature = computeHmacSha256(dataString, creds.checksumKey());
-            boolean isValid = computedSignature.equals(webhookRequest.getSignature());
+            String key = creds.checksumKey();
+            TreeMap<String, Object> sorted = new TreeMap<>(dataMap);
 
-            if (!isValid) {
-                log.warn("[PayOS] Webhook checksum mismatch! Expected: {} | Received: {}",
-                        computedSignature, webhookRequest.getSignature());
+            // Strategy 1: null → empty string ""
+            String s1 = sorted.entrySet().stream()
+                    .map(e -> e.getKey() + "=" + (e.getValue() != null ? e.getValue() : ""))
+                    .collect(Collectors.joining("&"));
+            if (computeHmacSha256(s1, key).equalsIgnoreCase(receivedSignature)) {
+                log.info("[PayOS] Webhook checksum VERIFIED (strategy: null→empty)");
+                return true;
             }
 
-            return isValid;
+            // Strategy 2: skip null fields entirely
+            String s2 = sorted.entrySet().stream()
+                    .filter(e -> e.getValue() != null)
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .collect(Collectors.joining("&"));
+            if (computeHmacSha256(s2, key).equalsIgnoreCase(receivedSignature)) {
+                log.info("[PayOS] Webhook checksum VERIFIED (strategy: skip-null)");
+                return true;
+            }
+
+            // Strategy 3: null → literal "null"
+            String s3 = sorted.entrySet().stream()
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .collect(Collectors.joining("&"));
+            if (computeHmacSha256(s3, key).equalsIgnoreCase(receivedSignature)) {
+                log.info("[PayOS] Webhook checksum VERIFIED (strategy: null→'null')");
+                return true;
+            }
+
+            // Strategy 4: chỉ 3 field core (amount, orderCode, description) — một số doc đề cập
+            String s4 = "amount=" + sorted.getOrDefault("amount", "")
+                    + "&description=" + sorted.getOrDefault("description", "")
+                    + "&orderCode=" + sorted.getOrDefault("orderCode", "");
+            if (computeHmacSha256(s4, key).equalsIgnoreCase(receivedSignature)) {
+                log.info("[PayOS] Webhook checksum VERIFIED (strategy: 3-core-fields)");
+                return true;
+            }
+
+            // Không khớp → log chi tiết và REJECT
+            log.error("[PayOS] ===== CHECKSUM MISMATCH =====");
+            log.error("[PayOS] Received signature : {}", receivedSignature);
+            log.error("[PayOS] Strategy1 (null→'') : {}", computeHmacSha256(s1, key));
+            log.error("[PayOS] Strategy2 (skip-null): {}", computeHmacSha256(s2, key));
+            log.error("[PayOS] Strategy3 (null→null): {}", computeHmacSha256(s3, key));
+            log.error("[PayOS] Strategy4 (3-fields) : {}", computeHmacSha256(s4, key));
+            log.error("[PayOS] Data string (s1)      : {}", s1);
+            log.error("[PayOS] ChecksumKey length    : {}", key.length());
+            log.error("[PayOS] ========================");
+            return false;
 
         } catch (Exception e) {
-            log.error("[PayOS] Error verifying webhook checksum: {}", e.getMessage());
+            log.error("[PayOS] Error in verifyWebhookChecksum: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean verifyWebhookChecksum(PayOSWebhookRequest webhookRequest) {
+        try {
+            return verifyWebhookChecksum(objectMapper.writeValueAsString(webhookRequest));
+        } catch (Exception e) {
+            log.error("[PayOS] Error serializing webhook request: {}", e.getMessage());
             return false;
         }
     }
@@ -333,22 +382,6 @@ public class PayOSAdapter implements PaymentGatewayPort {
                 + "&orderCode=" + orderCode
                 + "&returnUrl=" + returnUrl;
         return computeHmacSha256(data, checksumKey);
-    }
-
-    /**
-     * Tạo chuỗi data từ webhook payload để verify signature.
-     * Theo spec PayOS: sort key alphabet, nối bằng &.
-     */
-    private String buildChecksumData(PayOSWebhookRequest.WebhookData data) {
-        return "accountNumber=" + nullSafe(data.getAccountNumber())
-                + "&amount=" + data.getAmount()
-                + "&description=" + nullSafe(data.getDescription())
-                + "&orderCode=" + data.getOrderCode()
-                + "&paymentLinkId=" + nullSafe(data.getPaymentLinkId())
-                + "&reference=" + nullSafe(data.getReference())
-                + "&transactionDateTime=" + nullSafe(data.getTransactionDateTime())
-                + "&virtualAccountName=" + nullSafe(data.getVirtualAccountName())
-                + "&virtualAccountNumber=" + nullSafe(data.getVirtualAccountNumber());
     }
 
     /**

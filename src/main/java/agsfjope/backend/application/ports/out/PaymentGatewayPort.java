@@ -42,14 +42,12 @@ public interface PaymentGatewayPort {
     void cancelPaymentLink(String paymentLinkId);
 
     /**
-     * Xác minh chữ ký HMAC-SHA256 của webhook gửi từ PayOS.
-     * <p>
-     * Phải gọi method này trước khi xử lý bất kỳ webhook nào để
-     * đảm bảo request thực sự đến từ PayOS, không phải giả mạo (BR-45).
-     * </p>
-     *
-     * @param webhookRequest dữ liệu webhook nhận được từ PayOS
-     * @return true nếu chữ ký hợp lệ, false nếu không hợp lệ
+     * Xác minh chữ ký HMAC-SHA256 của webhook gửi từ PayOS bằng chuỗi JSON thô (raw JSON body).
+     */
+    boolean verifyWebhookChecksum(String rawBody);
+
+    /**
+     * Bản dùng DTO.
      */
     boolean verifyWebhookChecksum(PayOSWebhookRequest webhookRequest);
 

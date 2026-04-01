@@ -5,18 +5,17 @@ import agsfjope.backend.application.dtos.requests.appeal.CreateAppealRequest;
 import agsfjope.backend.application.dtos.responses.appeal.CreateAppealResponse;
 import agsfjope.backend.application.dtos.responses.appeal.MyAppealItemResponse;
 import agsfjope.backend.application.dtos.responses.appeal.MyAppealsPageResponse;
-import agsfjope.backend.application.ports.out.PaymentGatewayPort;
+import agsfjope.backend.application.walletservices.WalletService;
 import agsfjope.backend.core.entities.Appeal;
-import agsfjope.backend.core.entities.Payment;
 import agsfjope.backend.core.entities.Submission;
 import agsfjope.backend.core.entities.User;
+import agsfjope.backend.core.entities.Wallet;
 import agsfjope.backend.core.enums.AppealStatus;
 import agsfjope.backend.core.enums.SubmissionStatus;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
-import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +23,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,20 +39,15 @@ public class AppealServiceImpl implements AppealService {
 
     // Keys đọc từ SystemConfigs
     private static final String KEY_APPEAL_FEE              = "APPEAL_FEE";
-    private static final String KEY_PAYMENT_TIMEOUT_MINUTES = "APPEAL_PAYMENT_TIMEOUT_MINUTES";
-    private static final String KEY_RETURN_URL              = "APPEAL_PAYMENT_RETURN_URL";
-    private static final String KEY_CANCEL_URL              = "APPEAL_PAYMENT_CANCEL_URL";
 
-    private static final BigDecimal DEFAULT_FEE         = new BigDecimal("200000");
-    private static final int        DEFAULT_TIMEOUT_MIN = 15;
+    private static final BigDecimal DEFAULT_FEE = new BigDecimal("200000");
 
     private final AppealRepository        appealRepository;
     private final SubmissionRepository    submissionRepository;
     private final UserRepository          userRepository;
-    private final PaymentRepository       paymentRepository;
     private final GradingResultRepository gradingResultRepository;
     private final SystemConfigRepository  systemConfigRepository;
-    private final PaymentGatewayPort      paymentGatewayPort;
+    private final WalletService           walletService;
 
     /**
      * Tạo đơn phúc khảo mới.
@@ -106,9 +99,6 @@ public class AppealServiceImpl implements AppealService {
 
         // 6. Đọc phí phúc khảo từ SystemConfigs (default 200,000 VND)
         BigDecimal fee = loadFee();
-        int timeoutMinutes = loadTimeoutMinutes();
-        String returnUrl = loadConfig(KEY_RETURN_URL, "https://oop-exam.com/payment/success");
-        String cancelUrl = loadConfig(KEY_CANCEL_URL, "https://oop-exam.com/payment/cancel");
 
         // 7. Lấy tên bài thi từ Submission → Block → Exam
         String examName = submission.getBlock().getExam().getName();
@@ -119,7 +109,7 @@ public class AppealServiceImpl implements AppealService {
                 .map(gr -> gr.getTotalScore())
                 .orElse(BigDecimal.ZERO);
 
-        // 9. Tạo Appeal với status PENDING_PAYMENT
+        // 9. Tạo Appeal với status PENDING_PAYMENT tạm thời
         Appeal appeal = Appeal.builder()
                 .submission(submission)
                 .student(student)
@@ -127,51 +117,23 @@ public class AppealServiceImpl implements AppealService {
                 .reason(request.getReason())
                 .build();
         appeal = appealRepository.save(appeal);
-        log.info("[Appeal] Tạo appeal thành công, appealId={}", appeal.getAppealId());
+        log.info("[Appeal] Tạo appeal tạm thời, appealId={}", appeal.getAppealId());
 
-        // 10. Tạo orderCode = epoch seconds (unique, fit vào long của PayOS)
-        long orderCode = System.currentTimeMillis() / 1000L;
+        // 10. Trừ tiền từ ví — nếu không đủ sẽ throw và rollback toàn bộ transaction
+        Wallet wallet = walletService.debitWalletForAppeal(studentId, fee, appeal.getAppealId());
 
-        // 11. Gọi PayOS tạo link thanh toán
-        String description = "Phuc khao " + examName;
-        // PayOS giới hạn description 25 ký tự
-        if (description.length() > 25) {
-            description = description.substring(0, 25);
-        }
+        // 11. Cập nhật Appeal → PENDING (đã thanh toán bằng ví)
+        appealRepository.updateStatus(appeal.getAppealId(), AppealStatus.PENDING);
+        log.info("[Appeal] Appeal {} chuyển sang PENDING sau khi trừ ví thành công", appeal.getAppealId());
 
-        PaymentGatewayPort.PaymentLinkResult payosResult = paymentGatewayPort.createPaymentLink(
-                orderCode, fee, description, returnUrl, cancelUrl);
-        log.info("[Appeal] PayOS link tạo thành công, orderCode={}", orderCode);
-
-        // 12. Lưu Payment
-        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(timeoutMinutes);
-        Payment payment = Payment.builder()
-                .appeal(appeal)
-                .student(student)
-                .amount(fee)
-                .currency("VND")
-                .payosOrderId(String.valueOf(orderCode))
-                .payosPaymentLinkId(payosResult.paymentLinkId())
-                .qrCodeUrl(payosResult.qrCodeUrl())
-                .checkoutUrl(payosResult.checkoutUrl())
-                .expiresAt(expiresAt)
-                .build();
-        payment = paymentRepository.save(payment);
-        log.info("[Appeal] Lưu payment thành công, paymentId={}", payment.getPaymentId());
-
-        // 13. Build response
+        // 12. Build response
         return CreateAppealResponse.builder()
                 .appealId(appeal.getAppealId())
                 .submissionId(submission.getSubmissionId())
                 .examName(examName)
                 .originalScore(originalScore)
-                .paymentId(payment.getPaymentId())
                 .amount(fee)
-                .currency("VND")
-                .payosOrderId(String.valueOf(orderCode))
-                .qrCodeUrl(payosResult.qrCodeUrl())
-                .checkoutUrl(payosResult.checkoutUrl())
-                .expiresAt(expiresAt)
+                .walletBalanceAfter(wallet.getBalance())
                 .build();
     }
 
@@ -268,35 +230,8 @@ public class AppealServiceImpl implements AppealService {
     }
 
     /**
-     * Đọc timeout thanh toán (phút) từ SystemConfigs.
-     * Nếu chưa config → dùng default 15 phút.
+     * Xóa bỏ loadTimeoutMinutes và loadConfig vì không còn dùng PayOS trong createAppeal.
+     * WalletService tự quản lý timeout riêng khi xử lý deposit.
      */
-    private int loadTimeoutMinutes() {
-        return systemConfigRepository.findByConfigKey(KEY_PAYMENT_TIMEOUT_MINUTES)
-                .map(c -> {
-                    try {
-                        return Integer.parseInt(c.getConfigValue());
-                    } catch (NumberFormatException e) {
-                        log.warn("[Appeal] Config {} không hợp lệ, dùng default {}p", KEY_PAYMENT_TIMEOUT_MINUTES, DEFAULT_TIMEOUT_MIN);
-                        return DEFAULT_TIMEOUT_MIN;
-                    }
-                })
-                .orElse(DEFAULT_TIMEOUT_MIN);
-    }
 
-    /**
-     * Đọc giá trị config từ SystemConfigs, trả về {@code defaultValue} nếu không tìm thấy.
-     *
-     * @param key          config key
-     * @param defaultValue giá trị mặc định nếu chưa config
-     * @return giá trị config hoặc default
-     */
-    private String loadConfig(String key, String defaultValue) {
-        return systemConfigRepository.findByConfigKey(key)
-                .map(c -> c.getConfigValue())
-                .orElseGet(() -> {
-                    log.warn("[Appeal] Config {} chưa được cài đặt, dùng default: {}", key, defaultValue);
-                    return defaultValue;
-                });
-    }
 }

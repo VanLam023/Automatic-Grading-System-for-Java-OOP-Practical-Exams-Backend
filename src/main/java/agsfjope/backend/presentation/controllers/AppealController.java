@@ -64,7 +64,7 @@ public class AppealController {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(buildResponse(true, "Tạo đơn phúc khảo thành công. Vui lòng thanh toán trong thời gian quy định.", response));
+                .body(buildResponse(true, "Tạo đơn phúc khảo thành công. Vui lòng chờ kết quả trong thời gian quy định.", response));
     }
 
     /**

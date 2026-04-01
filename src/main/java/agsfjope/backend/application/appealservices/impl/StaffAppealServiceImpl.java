@@ -8,6 +8,8 @@ import agsfjope.backend.application.dtos.responses.appeal.StaffAppealDetailRespo
 import agsfjope.backend.application.dtos.responses.appeal.StaffAppealListItemResponse;
 import agsfjope.backend.application.dtos.responses.appeal.StaffAppealOverviewResponse;
 import agsfjope.backend.application.dtos.responses.appeal.StaffAppealPageResponse;
+import agsfjope.backend.application.notificationservices.NotificationService;
+import agsfjope.backend.application.walletservices.WalletService;
 import agsfjope.backend.core.entities.Appeal;
 import agsfjope.backend.core.entities.GradingResult;
 import agsfjope.backend.core.entities.User;
@@ -43,15 +45,19 @@ import java.util.UUID;
 public class StaffAppealServiceImpl implements StaffAppealService {
 
     private static final String KEY_DEADLINE_DAYS = "APPEAL_DEADLINE_DAYS";
-    private static final int    DEFAULT_DEADLINE_DAYS = 7;
+    private static final int DEFAULT_DEADLINE_DAYS = 7;
+    private static final String KEY_APPEAL_FEE = "APPEAL_FEE";
+    private static final java.math.BigDecimal DEFAULT_APPEAL_FEE = new java.math.BigDecimal("200000");
 
-    private final AppealRepository        appealRepository;
-    private final UserRepository          userRepository;
-    private final PaymentRepository       paymentRepository;
+    private final AppealRepository appealRepository;
+    private final UserRepository userRepository;
+    private final PaymentRepository paymentRepository;
     private final GradingResultRepository gradingResultRepository;
-    private final SystemConfigRepository  systemConfigRepository;
-    private final MinioService            minioService;
-    private final MinioConfig             minioConfig;
+    private final SystemConfigRepository systemConfigRepository;
+    private final MinioService minioService;
+    private final MinioConfig minioConfig;
+    private final WalletService walletService;
+    private final NotificationService notificationService;
 
     // ─────────────────────────────────────────────────────────────────────────
     // 1. Danh sách + stats
@@ -59,11 +65,13 @@ public class StaffAppealServiceImpl implements StaffAppealService {
 
     @Override
     @Transactional(readOnly = true)
-    public StaffAppealPageResponse getAppeals(String status, String keyword, String semester, String examName, int page, int size) {
-        log.info("[Staff] Lấy danh sách appeals: status={}, keyword={}, semester={}, examName={}, page={}", status, keyword, semester, examName, page);
+    public StaffAppealPageResponse getAppeals(String status, String keyword, String semester, String examName, int page,
+            int size) {
+        log.info("[Staff] Lấy danh sách appeals: status={}, keyword={}, semester={}, examName={}, page={}", status,
+                keyword, semester, examName, page);
 
         // Normalize params
-        String statusParam  = (status == null || status.isBlank()) ? null : status.toUpperCase();
+        String statusParam = (status == null || status.isBlank()) ? null : status.toUpperCase();
         String keywordParam = (keyword == null) ? "" : keyword.trim();
         String semesterParam = (semester == null || semester.isBlank()) ? null : semester.trim();
         String examNameParam = (examName == null || examName.isBlank()) ? null : examName.trim();
@@ -117,7 +125,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         if (appeal.getStatus() != AppealStatus.PENDING) {
             throw new IllegalStateException(
                     "Chỉ có thể phân công đơn phúc khảo ở trạng thái PENDING. " +
-                    "Trạng thái hiện tại: " + appeal.getStatus());
+                            "Trạng thái hiện tại: " + appeal.getStatus());
         }
 
         // Load lecturer
@@ -165,8 +173,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .fullName(u.getFullName())
                 .email(u.getEmail())
                 .activeAppealCount(appealRepository.countActiveAppealsByLecturer(u.getUserId()))
-                .build()
-        ).toList();
+                .build()).toList();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -183,7 +190,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         if (appeal.getStatus() != AppealStatus.COMPLETED) {
             throw new IllegalStateException(
                     "Theo quy trình, chỉ có thể phê duyệt đơn phúc khảo khi giảng viên đã chấm (COMPLETED). " +
-                    "Trạng thái hiện tại: " + appeal.getStatus());
+                            "Trạng thái hiện tại: " + appeal.getStatus());
         }
 
         if (Boolean.TRUE.equals(request.getIsApprove())) {
@@ -193,7 +200,8 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                     .findBySubmission_SubmissionId(appeal.getSubmission().getSubmissionId())
                     .orElseThrow(() -> new IllegalStateException("Không tìm thấy kết quả chấm của bài thi này"));
 
-            // Cập nhật điểm mới, nếu newScore null (chưa có điểm mới) thì giữ nguyên điểm gốc
+            // Cập nhật điểm mới, nếu newScore null (chưa có điểm mới) thì giữ nguyên điểm
+            // gốc
             BigDecimal finalScore = appeal.getNewScore() != null ? appeal.getNewScore() : gradingResult.getTotalScore();
             gradingResult.setTotalScore(finalScore);
 
@@ -206,9 +214,27 @@ public class StaffAppealServiceImpl implements StaffAppealService {
 
             gradingResultRepository.save(gradingResult);
             log.info("[Staff] Đã cập nhật điểm mới = {}", finalScore);
+
+            // Hoàn tiền ví cho sinh viên khi APPROVED
+            // WalletService tự gửi notification cho student
+            java.math.BigDecimal refundAmount = loadAppealFee();
+            walletService.refundToWallet(
+                    appeal.getStudent().getUserId(),
+                    refundAmount,
+                    appeal.getAppealId());
+            log.info("[Staff] Hoàn {} VND vào ví student {} cho appeal {}",
+                    refundAmount, appeal.getStudent().getUserId(), appealId);
+
         } else {
             appeal.setStatus(AppealStatus.DENIED);
             log.info("[Staff] Từ chối cập nhật điểm");
+
+            // Gửi notification cho student khi DENIED
+            notificationService.createNotification(
+                    appeal.getStudent().getUserId(),
+                    "Phúc khảo bị từ chối",
+                    "Phúc khảo của bạn đã bị từ chối. Phí phúc khảo sẽ không được hoàn lại.",
+                    "APPEAL", appeal.getAppealId());
         }
 
         // Cập nhật thời gian hoàn thành toàn bộ
@@ -226,15 +252,14 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     public InputStream downloadSubmission(UUID appealId) {
         log.info("[Staff] Download submission cho appeal: {}", appealId);
         Appeal appeal = findAppealOrThrow(appealId);
-        
+
         if (appeal.getSubmission() == null || appeal.getSubmission().getFilePath() == null) {
             throw new IllegalStateException("Không tìm thấy file bài làm đính kèm trong cơ sở dữ liệu");
         }
-        
+
         return minioService.downloadFile(
                 minioConfig.getBucket().getSubmissions(),
-                appeal.getSubmission().getFilePath()
-        );
+                appeal.getSubmission().getFilePath());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -261,9 +286,10 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     private StaffAppealListItemResponse toListItem(Appeal a) {
         String examName = "", blockName = "";
         try {
-            examName  = a.getSubmission().getBlock().getExam().getName();
+            examName = a.getSubmission().getBlock().getExam().getName();
             blockName = a.getSubmission().getBlock().getName();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         BigDecimal originalScore = gradingResultRepository
                 .findBySubmission_SubmissionId(a.getSubmission().getSubmissionId())
@@ -295,12 +321,13 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         String submissionFileName = "";
         UUID submissionId = null;
         try {
-            examName          = a.getSubmission().getBlock().getExam().getName();
-            semester          = a.getSubmission().getBlock().getExam().getSemester();
-            blockName         = a.getSubmission().getBlock().getName();
+            examName = a.getSubmission().getBlock().getExam().getName();
+            semester = a.getSubmission().getBlock().getExam().getSemester();
+            blockName = a.getSubmission().getBlock().getName();
             submissionFileName = a.getSubmission().getFileName();
-            submissionId      = a.getSubmission().getSubmissionId();
-        } catch (Exception ignored) {}
+            submissionId = a.getSubmission().getSubmissionId();
+        } catch (Exception ignored) {
+        }
 
         BigDecimal originalScore = gradingResultRepository
                 .findBySubmission_SubmissionId(submissionId)
@@ -353,9 +380,27 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     private int loadDeadlineDays() {
         return systemConfigRepository.findByConfigKey(KEY_DEADLINE_DAYS)
                 .map(c -> {
-                    try { return Integer.parseInt(c.getConfigValue()); }
-                    catch (NumberFormatException e) { return DEFAULT_DEADLINE_DAYS; }
+                    try {
+                        return Integer.parseInt(c.getConfigValue());
+                    } catch (NumberFormatException e) {
+                        return DEFAULT_DEADLINE_DAYS;
+                    }
                 })
                 .orElse(DEFAULT_DEADLINE_DAYS);
+    }
+
+    /**
+     * Đọc phí phúc khảo từ SystemConfigs (dùng khi hoàn tiền).
+     */
+    private java.math.BigDecimal loadAppealFee() {
+        return systemConfigRepository.findByConfigKey(KEY_APPEAL_FEE)
+                .map(c -> {
+                    try {
+                        return new java.math.BigDecimal(c.getConfigValue());
+                    } catch (NumberFormatException e) {
+                        return DEFAULT_APPEAL_FEE;
+                    }
+                })
+                .orElse(DEFAULT_APPEAL_FEE);
     }
 }

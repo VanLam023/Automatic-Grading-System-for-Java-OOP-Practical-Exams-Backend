@@ -2,6 +2,7 @@ package agsfjope.backend.application.paymentservices.impl;
 
 import agsfjope.backend.application.dtos.requests.payment.PayOSWebhookRequest;
 import agsfjope.backend.application.ports.out.EmailService;
+import agsfjope.backend.application.walletservices.WalletService;
 
 import agsfjope.backend.core.entities.Payment;
 import agsfjope.backend.core.entities.User;
@@ -42,6 +43,7 @@ public class PaymentWebhookProcessor {
     private final EmailService emailService;
     private final ObjectMapper objectMapper;
     private final AppealRepository appealRepository;
+    private final WalletService walletService;
 
     /**
      * Xử lý nội dung webhook bất đồng bộ sau khi đã verify checksum.
@@ -101,7 +103,9 @@ public class PaymentWebhookProcessor {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Cập nhật Payment → SUCCESS, lưu thời điểm thanh toán, gửi email xác nhận.
+     * Cập nhật Payment → SUCCESS, lưu thời điểm thanh toán, xử lý theo mục đích payment.
+     * - WALLET_DEPOSIT: cộng tiền vào ví sinh viên
+     * - APPEAL: chuyển appeal sang PENDING (luồng cũ nếu còn dùng)
      */
     private void onPaymentSuccess(Payment payment, PayOSWebhookRequest.WebhookData data) {
         log.info("[Payment] SUCCESS for orderCode: {}", data.getOrderCode());
@@ -109,30 +113,46 @@ public class PaymentWebhookProcessor {
         payment.setPaidAt(java.time.OffsetDateTime.now());
         paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.SUCCESS);
 
-        // Lấy examName thực tế từ Appeal → Submission → Block → Exam
-        String examName = "OOP Exam";
-        try {
-            examName = payment.getAppeal().getSubmission().getBlock().getExam().getName();
-        } catch (Exception e) {
-            log.warn("[Payment] Không thể lấy examName, dùng default");
-        }
+        // Phân nánh theo mục đích payment
+        if ("WALLET_DEPOSIT".equals(payment.getPaymentPurpose())) {
+            // Nạp tiền ví: cộng số dư ví cho student
+            User depositStudent = payment.getDepositForStudent();
+            if (depositStudent != null) {
+                walletService.creditWallet(
+                        depositStudent.getUserId(),
+                        payment.getAmount(),
+                        payment.getPaymentId());
+                log.info("[Payment] WALLET_DEPOSIT: đã cộng {} VND vào ví student {}",
+                        payment.getAmount(), depositStudent.getUserId());
+            } else {
+                log.warn("[Payment] WALLET_DEPOSIT nhưng depositForStudent IS NULL, paymentId={}",
+                        payment.getPaymentId());
+            }
+        } else {
+            // Luồng APPEAL cũ (payment gắn với appeal): gửi email xác nhận
+            String examName = "OOP Exam";
+            try {
+                examName = payment.getAppeal().getSubmission().getBlock().getExam().getName();
+            } catch (Exception e) {
+                log.warn("[Payment] Không thể lấy examName, dùng default");
+            }
 
-        // Gửi email xác nhận (TRG-003)
-        User student = payment.getStudent();
-        if (student != null && student.getEmail() != null) {
-            emailService.sendPaymentSuccessEmail(
-                    student.getEmail(),
-                    student.getFullName(),
-                    examName,
-                    payment.getAmount().longValue(),
-                    String.valueOf(data.getOrderCode())
-            );
-        }
+            User student = payment.getStudent();
+            if (student != null && student.getEmail() != null) {
+                emailService.sendPaymentSuccessEmail(
+                        student.getEmail(),
+                        student.getFullName(),
+                        examName,
+                        payment.getAmount().longValue(),
+                        String.valueOf(data.getOrderCode())
+                );
+            }
 
-        // Cập nhật Appeal status → PENDING (sinh viên đã thanh toán, chờ Staff phân công)
-        if (payment.getAppeal() != null) {
-            appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.PENDING);
-            log.info("[Payment] Appeal {} chuyển sang PENDING", payment.getAppeal().getAppealId());
+            // Cập nhật Appeal status → PENDING
+            if (payment.getAppeal() != null) {
+                appealRepository.updateStatus(payment.getAppeal().getAppealId(), AppealStatus.PENDING);
+                log.info("[Payment] Appeal {} chuyển sang PENDING", payment.getAppeal().getAppealId());
+            }
         }
     }
 

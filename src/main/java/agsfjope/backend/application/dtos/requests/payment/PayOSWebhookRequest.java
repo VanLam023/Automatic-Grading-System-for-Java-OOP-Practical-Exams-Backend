@@ -58,6 +58,12 @@ public class PayOSWebhookRequest {
         /** Thời điểm giao dịch (ISO 8601). */
         private String transactionDateTime;
 
+        /** Trạng thái giao dịch. */
+        private String code;
+
+        /** Mô tả trạng thái giao dịch. */
+        private String desc;
+
         /** Loại tiền tệ (mặc định "VND"). */
         private String currency;
 
