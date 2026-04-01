@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -102,4 +103,51 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             @Param("keyword")  String keyword,
             @Param("roleName") String roleName,
             Pageable pageable);
+
+    /**
+     * Counts all non-deleted users.
+     * Used by the Admin Dashboard to display the total user count.
+     *
+     * @return total number of active (non-soft-deleted) users
+     */
+    long countByDeletedAtIsNull();
+
+    /**
+     * Counts non-deleted users that belong to a specific role.
+     * Used by the Admin Dashboard to build the user-by-role donut chart.
+     *
+     * @param roleName the role name to filter by (e.g. "STUDENT", "LECTURER")
+     * @return number of non-soft-deleted users with the given role
+     */
+    long countByRole_NameAndDeletedAtIsNull(String roleName);
+
+    /**
+     * Counts non-deleted users created within the given date range.
+     * Used by the Admin Dashboard date-filtered overview.
+     *
+     * @param from start of date range (inclusive)
+     * @param to   end of date range (inclusive)
+     * @return number of non-soft-deleted users created between from and to
+     */
+    long countByDeletedAtIsNullAndCreatedAtBetween(OffsetDateTime from, OffsetDateTime to);
+
+    /**
+     * Counts non-deleted users of a specific role created within the given date range.
+     * Used by the Admin Dashboard date-filtered user-by-role donut chart.
+     *
+     * @param roleName role name to filter by
+     * @param from     start of date range (inclusive)
+     * @param to       end of date range (inclusive)
+     * @return number of matching non-soft-deleted users
+     */
+    long countByRole_NameAndDeletedAtIsNullAndCreatedAtBetween(String roleName, OffsetDateTime from, OffsetDateTime to);
+
+    /**
+     * Finds all active (non-soft-deleted) users with the specified role name.
+     * Used to populate the lecturer dropdown on the Assign Appeal screen.
+     *
+     * @param roleName role name (e.g. "LECTURER")
+     * @return list of matching active users
+     */
+    List<User> findByRole_NameAndDeletedAtIsNull(String roleName);
 }

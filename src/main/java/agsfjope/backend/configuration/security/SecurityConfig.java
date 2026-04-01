@@ -86,6 +86,7 @@ public class SecurityConfig {
                     "/api/auth/forgot-password",    // Forgot Password — send reset email
                     "/api/auth/verify-reset-token", // Verify reset token validity
                     "/api/auth/reset-password",     // Confirm new password
+                    "/api/v1/payments/webhook",     // PayOS webhook callback (no JWT — PayOS server calls this)
                     "/swagger-ui/**",               // Swagger UI
                     "/swagger-ui.html",
                     "/v3/api-docs/**",              // OpenAPI JSON spec
@@ -93,6 +94,8 @@ public class SecurityConfig {
                     "/error"                        // Spring Boot default error routing
                 ).permitAll()
                     .requestMatchers("/api/admin/**").hasAnyRole("SYSTEM_ADMIN", "ADMIN")
+                    .requestMatchers("/api/staff/**").hasRole("EXAM_STAFF")
+                    .requestMatchers("/api/lecturer/**").hasRole("LECTURER")
                 // /api/auth/logout requires a valid Bearer JWT (JwtAuthenticationFilter must pass first)
                 .requestMatchers("/api/auth/logout").authenticated()
                 // All other endpoints require authentication (valid JWT token)

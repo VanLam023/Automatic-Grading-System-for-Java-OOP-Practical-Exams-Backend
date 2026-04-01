@@ -102,4 +102,4 @@ springdoc:
 # Point java-executable to a JDK that supports the class file version students used (Java 21 = class 65).
 # On Windows: e.g. C:/Program Files/Java/jdk-21/bin/java.exe
 sandbox:
-  java-executable: ${SANDBOX_JAVA:java}
+  java-executable: ${SANDBOX_JAVA:java}

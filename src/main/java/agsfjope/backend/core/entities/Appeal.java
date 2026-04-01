@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.AppealStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -38,7 +40,8 @@ public class Appeal {
     private User assignedBy;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "Status", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Status", nullable = false, columnDefinition = "appeal_status")
     @Builder.Default
     private AppealStatus status = AppealStatus.PENDING_PAYMENT;
 
@@ -50,6 +53,10 @@ public class Appeal {
 
     @Column(name = "NewScore", precision = 6, scale = 2)
     private BigDecimal newScore;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "NewQuestionScores", columnDefinition = "jsonb")
+    private java.util.Map<String, BigDecimal> newQuestionScores;
 
     @Column(name = "DeadlineAt")
     private OffsetDateTime deadlineAt;

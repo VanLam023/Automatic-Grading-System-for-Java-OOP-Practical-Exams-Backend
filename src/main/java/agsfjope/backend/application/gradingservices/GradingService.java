@@ -6,15 +6,19 @@ import agsfjope.backend.core.entities.Submission;
 import agsfjope.backend.core.entities.User;
 import agsfjope.backend.core.enums.SubmissionStatus;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Semaphore;
 
 /**
  * Public-facing grading orchestrator.
@@ -43,8 +47,17 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
+// [Old] @RequiredArgsConstructor
 public class GradingService {
+
+    /**
+     * [PERF-STEP3] Semaphore that caps the number of submissions being graded in parallel.
+     * With 3 permits: max 3 submissions × 5 questions × 2 AI calls = 30 AI calls at once,
+     * which stays within Gemini's RPM limits on paid tier.
+     * Reduce to 2 if rate-limit errors occur; increase to 4 if API quota allows.
+     */
+    private static final int MAX_PARALLEL_SUBMISSIONS = 3;
+    private final Semaphore submissionSemaphore = new Semaphore(MAX_PARALLEL_SUBMISSIONS, true);
 
     /** Blocks currently running grading — prevents double-trigger on same block. */
     private final Set<UUID> activeBlockGradings = ConcurrentHashMap.newKeySet();
@@ -57,6 +70,18 @@ public class GradingService {
 
     private final GradingPipelineService pipelineService;
     private final SubmissionRepository   submissionRepository;
+
+    // [PERF-STEP3] Thread pool injected for running each submission in parallel
+    private final Executor submissionExecutor;
+
+    // [PERF-STEP3] Constructor injection (replaces @RequiredArgsConstructor) to support @Qualifier
+    public GradingService(GradingPipelineService pipelineService,
+                          SubmissionRepository submissionRepository,
+                          @Qualifier("submissionExecutor") Executor submissionExecutor) {
+        this.pipelineService      = pipelineService;
+        this.submissionRepository = submissionRepository;
+        this.submissionExecutor   = submissionExecutor;
+    }
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -73,9 +98,12 @@ public class GradingService {
         log.warn("[GRADING] triggerGrading called for block={} by user={}", blockId,
                 triggeredBy != null ? triggeredBy.getUsername() : "unknown");
 
+        // Xoá cờ huỷ còn sót lại từ lần chấm trước (nếu có)
         // Clear any leftover cancel flag from a previous stop
         cancelledBlocks.remove(blockId);
 
+        // Kiểm tra xem block này có đang được chấm không — nếu có thì ném lỗi ngay
+        // (ConcurrentHashMap.newKeySet().add() trả về false nếu phần tử đã tồn tại)
         // Guard against concurrent trigger on same block (ALL/SELECTED/SINGLE)
         if (!activeBlockGradings.add(blockId)) {
             throw new GradingAlreadyInProgressException(
@@ -95,44 +123,93 @@ public class GradingService {
                     : (targets.size() == 1 ? "GRADE_SINGLE" : "GRADE_SELECTED");
             log.info("Grading triggered: block={}, mode={}, count={}", blockId, modeLabel, targets.size());
 
+            // [PERF-STEP3] Grade submissions in PARALLEL using CompletableFuture + Semaphore.
+            // Phương pháp MỚI: chấm song song nhiều bài cùng lúc thay vì tuần tự từng bài.
+            // Semaphore giới hạn số bài chạy đồng thời để tránh vượt rate limit của Gemini API.
+            // Old sequential for loop (kept for reference):
+            // [OLD] for (Submission submission : targets) {
+            // [OLD]     if (cancelledBlocks.contains(blockId)) { break; }
+            // [OLD]     submission.setStatus(SubmissionStatus.GRADING);
+            // [OLD]     submissionRepository.save(submission);
+            // [OLD]     pipelineService.grade(submission, triggeredBy, cancelledBlocks);
+            // [OLD] }
+            //
+            // New: each submission runs on its own thread (submissionExecutor).
+            // Semaphore(3) ensures at most MAX_PARALLEL_SUBMISSIONS run concurrently
+            // to avoid Gemini rate limits (max 3 × 5 questions × 2 AI calls = 30 calls).
+
+            // Danh sách các tác vụ chấm bài đang chạy bất đồng bộ
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+
             for (Submission submission : targets) {
                 // ── CANCELLATION CHECK (between submissions) ──────────────────────
+                // Dừng sớm: nếu admin đã bấm Stop thì không gửi thêm tác vụ mới
                 if (cancelledBlocks.contains(blockId)) {
-                    log.info("Grading for block {} was stopped. Resetting remaining submissions.", blockId);
-                    // The current submission hasn't started yet — nothing to reset
+                    log.info("Grading for block {} stopped before submitting all tasks.", blockId);
                     break;
                 }
 
-                try {
-                    // Persist GRADING immediately so progress endpoint can reflect in real-time
-                    submission.setStatus(SubmissionStatus.GRADING);
-                    submissionRepository.save(submission);
+                // Cần dùng biến final để lambda có thể capture
+                final Submission sub = submission;
+                // Mỗi bài được giao cho một thread riêng trong submissionExecutor
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    try {
+                        // Chờ lấy permit từ Semaphore — nếu đã có MAX_PARALLEL_SUBMISSIONS bài đang chạy
+                        // thì thread này sẽ TỰ ĐỘNG CHỜ cho đến khi có slot trống
+                        // Block until a permit is available (max MAX_PARALLEL_SUBMISSIONS running)
+                        submissionSemaphore.acquire();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        log.warn("Semaphore acquire interrupted for submission {}", sub.getSubmissionId());
+                        return;
+                    }
+                    try {
+                        // Kiểm tra lại sau khi chờ permit — có thể block đã bị huỷ trong thời gian chờ
+                        // Re-check cancellation after potentially waiting for a permit
+                        if (cancelledBlocks.contains(blockId)) {
+                            log.info("Skipping submission {} — block {} cancelled while waiting.",
+                                    sub.getSubmissionId(), blockId);
+                            return;
+                        }
+                        // Cập nhật trạng thái sang GRADING ngay để màn hình tiến độ phản ánh real-time
+                        // Persist GRADING status so progress endpoint reflects real-time state
+                        sub.setStatus(SubmissionStatus.GRADING);
+                        submissionRepository.save(sub);
 
-                    pipelineService.grade(submission, triggeredBy, cancelledBlocks);
-                } catch (GradingCancelledException e) {
-                    log.info("Grading cancelled mid-submission {} in block {}",
-                            submission.getSubmissionId(), blockId);
-                    // @Transactional on grade() was rolled back, so:
-                    //   ✅ partial TC results are gone from DB
-                    //   ✅ submission.status in DB is already SUBMITTED (pre-grade value)
-                    // The in-memory object is stale (status=GRADING), so re-fetch to confirm.
-                    submissionRepository.findById(submission.getSubmissionId())
-                            .filter(s -> s.getStatus() != agsfjope.backend.core.enums.SubmissionStatus.SUBMITTED)
-                            .ifPresent(s -> {
-                                s.setStatus(agsfjope.backend.core.enums.SubmissionStatus.SUBMITTED);
-                                submissionRepository.save(s);
-                            });
-                    break;
-                } catch (Exception e) {
-                    log.error("Grading failed for submission {}: {}",
-                            submission.getSubmissionId(), e.getMessage(), e);
-                    // Reset to SUBMITTED so staff can re-grade
-                    submission.setStatus(SubmissionStatus.SUBMITTED);
-                    submissionRepository.save(submission);
-                }
+                        // [Old]pipelineService.grade(submission, triggeredBy, cancelledBlocks);
+                        // Gọi pipeline chấm bài cho submission này (toàn bộ câu hỏi + AI review)
+                        pipelineService.grade(sub, triggeredBy, cancelledBlocks);
+
+                    } catch (GradingCancelledException e) {
+                        log.info("Grading cancelled mid-submission {} in block {}",
+                                sub.getSubmissionId(), blockId);
+                        // @Transactional on grade() was rolled back — partial TC results gone from DB.
+                        submissionRepository.findById(sub.getSubmissionId())
+                                .filter(s -> s.getStatus() != SubmissionStatus.SUBMITTED)
+                                .ifPresent(s -> {
+                                    s.setStatus(SubmissionStatus.SUBMITTED);
+                                    submissionRepository.save(s);
+                                });
+                    } catch (Exception e) {
+                        log.error("Grading failed for submission {}: {}",
+                                sub.getSubmissionId(), e.getMessage(), e);
+                        sub.setStatus(SubmissionStatus.SUBMITTED);
+                        submissionRepository.save(sub);
+                    } finally {
+                        submissionSemaphore.release(); // always release, even on error
+                    }
+                }, submissionExecutor);
+
+                futures.add(future);
             }
 
+            // Chờ TẤT CẢ các tác vụ chấm bài hoàn thành trước khi giải phóng block lock
+            // Nếu không có dòng này, cleanup() sẽ chạy ngay trong khi các bài vẫn đang chấm
+            // Wait for ALL in-flight submissions to finish before releasing the block lock
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
             log.info("Grading batch ended for block {}", blockId);
+
         } finally {
             cleanup(blockId);
         }

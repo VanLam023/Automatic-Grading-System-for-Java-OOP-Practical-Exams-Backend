@@ -5,6 +5,7 @@ import agsfjope.backend.application.configservices.SystemConfigService;
 import agsfjope.backend.application.dtos.requests.config.TestAiConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
+import agsfjope.backend.application.dtos.requests.config.UpdateEmailConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateGradingModeRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
@@ -216,7 +217,7 @@ public class SystemAdminConfigController {
     }
 
     /**
-     * Cập nhật System Settings.
+     * Cập nhật System Settings (giới hạn upload và grading mode mặc định).
      * <p>
      * Cách nhập dữ liệu để chạy đúng:
      * <ul>
@@ -229,23 +230,9 @@ public class SystemAdminConfigController {
      * {
      *   "maxUploadSizeMb": 50,
      *   "maxExamPaperMb": 100,
-     *   "smtpHost": "smtp.gmail.com",
-     *   "smtpPort": 587,
-     *   "smtpUsername": "system@example.com",
-     *   "smtpPassword": "app-password",
-     *   "smtpFromEmail": "system@example.com",
      *   "defaultGradingMode": "MODE_1"
      * }
      * </pre>
-     * Quy tắc dữ liệu:
-     * <ul>
-     *   <li>`maxUploadSizeMb`, `maxExamPaperMb`: bắt buộc, &gt;= 1.</li>
-     *   <li>`smtpHost`, `smtpUsername`, `smtpPassword`: bắt buộc, không rỗng.</li>
-     *   <li>`smtpPort`: bắt buộc, trong khoảng 1..65535.</li>
-     *   <li>`smtpFromEmail`: bắt buộc, đúng định dạng email.</li>
-     *   <li>`defaultGradingMode`: bắt buộc, một trong MODE_1, MODE_2, MODE_3, MODE_4.</li>
-     * </ul>
-     *
      * @param request dữ liệu system settings mới
      * @param authentication người dùng đã xác thực
      * @return phản hồi thành công
@@ -259,47 +246,75 @@ public class SystemAdminConfigController {
         return ResponseEntity.ok(buildSuccessResponse("MSG-83: Cập nhật System Settings thành công", null));
     }
 
-        /**
-         * Kiểm tra kết nối SMTP Email runtime.
-         * <p>
-         * Cách nhập dữ liệu để chạy đúng:
-         * <ul>
-         *   <li>Method: POST</li>
-         *   <li>URL: /api/admin/config/system/test-connection</li>
-         *   <li>Header bắt buộc: Authorization: Bearer &lt;jwt_token&gt;</li>
-         *   <li>Header bắt buộc: Content-Type: application/json</li>
-         * </ul>
-         * <pre>
-         * {
-         *   "smtpHost": "smtp.gmail.com",
-         *   "smtpPort": 587,
-         *   "smtpUsername": "system@example.com",
-         *   "smtpPassword": "app-password",
-         *   "smtpFromEmail": "system@example.com",
-         *   "testToEmail": "receiver@example.com"
-         * }
-         * </pre>
-         * Quy tắc dữ liệu:
-         * <ul>
-         *   <li>`smtpHost`, `smtpUsername`, `smtpPassword`: bắt buộc, không rỗng.</li>
-         *   <li>`smtpPort`: bắt buộc, &gt;= 1.</li>
-         *   <li>`smtpFromEmail`, `testToEmail`: bắt buộc, đúng định dạng email.</li>
-         * </ul>
-        * Endpoint sẽ thực hiện kết nối SMTP và gửi email test thật đến `testToEmail`.
-         *
-         * @param request dữ liệu test SMTP
-         * @return kết quả test kết nối SMTP
-         */
-        @PostMapping("/system/test-connection")
-        public ResponseEntity<Map<String, Object>> testEmailConnection(
-            @Valid @RequestBody TestEmailConnectionRequest request
-        ) {
+    /**
+     * Kiểm tra kết nối SMTP Email runtime.
+     * <p>
+     * Cách nhập dữ liệu để chạy đúng:
+     * <ul>
+     *   <li>Method: POST</li>
+     *   <li>URL: /api/admin/config/system/test-connection</li>
+     *   <li>Header bắt buộc: Authorization: Bearer &lt;jwt_token&gt;</li>
+     *   <li>Header bắt buộc: Content-Type: application/json</li>
+     * </ul>
+     * <pre>
+     * {
+     *   "smtpHost": "smtp.gmail.com",
+     *   "smtpPort": 587,
+     *   "smtpUsername": "system@example.com",
+     *   "smtpPassword": "app-password",
+     *   "smtpFromEmail": "system@example.com",
+     *   "testToEmail": "receiver@example.com"
+     * }
+     * </pre>
+     * Endpoint sẽ thực hiện kết nối SMTP và gửi email test thật đến {@code testToEmail}.
+     *
+     * @param request dữ liệu test SMTP
+     * @return kết quả test kết nối SMTP
+     */
+    @PostMapping("/system/test-connection")
+    public ResponseEntity<Map<String, Object>> testEmailConnection(
+        @Valid @RequestBody TestEmailConnectionRequest request
+    ) {
         var result = systemConfigService.testEmailConnection(request);
         String message = Boolean.TRUE.equals(result.getIsConnected())
             ? "Kết nối máy chủ Email (SMTP) thành công"
             : "Kết nối máy chủ Email (SMTP) thất bại";
         return ResponseEntity.ok(buildSuccessResponse(message, result));
-        }
+    }
+
+    /**
+     * Cập nhật cấu hình SMTP Email.
+     * <p>
+     * Cách nhập dữ liệu để chạy đúng:
+     * <ul>
+     *   <li>Method: PUT</li>
+     *   <li>URL: /api/admin/config/system/email</li>
+     *   <li>Header bắt buộc: Authorization: Bearer &lt;jwt_token&gt;</li>
+     *   <li>Header bắt buộc: Content-Type: application/json</li>
+     * </ul>
+     * <pre>
+     * {
+     *   "smtpHost": "smtp.gmail.com",
+     *   "smtpPort": 587,
+     *   "smtpUsername": "system@example.com",
+     *   "smtpPassword": "app-password",
+     *   "smtpFromEmail": "system@example.com"
+     * }
+     * </pre>
+     * Tất cả các trường đều bắt buộc và phải hợp lệ.
+     *
+     * @param request        dữ liệu SMTP mới
+     * @param authentication người dùng đã xác thực
+     * @return phản hồi thành công
+     */
+    @PutMapping("/system/email")
+    public ResponseEntity<Map<String, Object>> updateEmailConfig(
+            @Valid @RequestBody UpdateEmailConfigRequest request,
+            Authentication authentication
+    ) {
+        systemConfigService.updateEmailConfig(request, authentication.getName());
+        return ResponseEntity.ok(buildSuccessResponse("Cập nhật cấu hình Email (SMTP) thành công", null));
+    }
 
     /**
      * Lấy toàn bộ cấu hình grading mode và mode mặc định.
