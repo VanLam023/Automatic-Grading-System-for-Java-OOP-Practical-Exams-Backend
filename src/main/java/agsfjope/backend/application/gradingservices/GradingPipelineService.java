@@ -20,7 +20,6 @@ import agsfjope.backend.domain.grading.QuestionScore;
 import agsfjope.backend.domain.grading.ScoreCalculator;
 import agsfjope.backend.domain.grading.ScoreCalculator.QuestionInput;
 import agsfjope.backend.application.notificationservices.NotificationService;
-import agsfjope.backend.application.ports.out.EmailService;
 import agsfjope.backend.infrastructure.ai.AIReviewRequest;
 import agsfjope.backend.infrastructure.ai.AIReviewResult;
 import agsfjope.backend.infrastructure.ai.LLMReviewService;
@@ -94,7 +93,6 @@ public class GradingPipelineService {
     private final ScoreCalculator     scoreCalculator;
     private final ObjectMapper        objectMapper;
     private final NotificationService notificationService;
-    private final EmailService        emailService;
     private final TransactionTemplate transactionTemplate;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
@@ -598,15 +596,15 @@ public class GradingPipelineService {
     // ─── NOTIFICATION ─────────────────────────────────────────────────────────
 
     /**
-     * Sends an in-app notification AND an email to the student after grading completes.
+     * Sends an in-app notification to the student telling them their submission has been graded.
      * Failure is swallowed — a notification error must never abort the grading result.
      */
     private void sendGradingCompleteNotification(Submission submission,
                                                   BigDecimal totalScore, boolean passed) {
         try {
-            UUID studentId   = submission.getStudent().getUserId();
-            Block block      = submission.getBlock();
-            String examName  = block.getExam()  != null ? block.getExam().getName()  : "kỳ thi";
+            UUID studentId = submission.getStudent().getUserId();
+            Block block    = submission.getBlock();
+            String examName  = block.getExam() != null ? block.getExam().getName() : "kỳ thi";
             String blockName = block.getName() != null ? block.getName() : "block";
 
             String status = passed ? "✅ ĐẠT" : "❌ KHÔNG ĐẠT";
@@ -618,19 +616,9 @@ public class GradingPipelineService {
                     examName, blockName,
                     totalScore, status);
 
-            // In-app notification
             notificationService.createNotification(
                     studentId, title, body,
                     "GRADING_RESULT", submission.getSubmissionId());
-
-            // Email notification (delegated to @Async SmtpEmailService)
-            String studentEmail = submission.getStudent().getEmail();
-            String studentName  = submission.getStudent().getFullName();
-            if (studentEmail != null && !studentEmail.isBlank()) {
-                emailService.sendGradingCompleteEmail(
-                        studentEmail, studentName, examName, blockName,
-                        totalScore.doubleValue(), passed);
-            }
 
         } catch (Exception e) {
             log.warn("Failed to send grading notification for submission {}: {}",

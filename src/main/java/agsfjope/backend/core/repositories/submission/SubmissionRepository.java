@@ -9,7 +9,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -134,46 +133,4 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             @Param("status")  SubmissionStatus status,
             @Param("keyword") String keyword,
             Pageable pageable);
-
-    /**
-     * Counts submissions submitted within the given date range.
-     * Used by the Admin Dashboard date-filtered overview.
-     *
-     * @param from start of date range (inclusive)
-     * @param to   end of date range (inclusive)
-     * @return number of submissions with submittedAt between from and to
-     */
-    long countBySubmittedAtBetween(OffsetDateTime from, OffsetDateTime to);
-
-    // ─── Staff Dashboard ────────────────────────────────────────────────────
-
-    /**
-     * Counts submissions with the given status.
-     * Used by Staff Dashboard to count graded submissions.
-     *
-     * @param status the submission status to filter by
-     * @return number of submissions matching the status
-     */
-    long countByStatus(SubmissionStatus status);
-
-    /**
-     * Counts all submissions belonging to exams in the given semester.
-     * Navigates Submission → Block → Exam to check the semester field.
-     *
-     * @param semester the semester code to filter by
-     * @return total submission count for the semester
-     */
-    @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.exam.semester = :semester")
-    long countBySemester(@Param("semester") String semester);
-
-    /**
-     * Counts submissions with the given status belonging to exams in the given semester.
-     *
-     * @param status   the submission status to filter by
-     * @param semester the semester code to filter by
-     * @return number of matching submissions
-     */
-    @Query("SELECT COUNT(s) FROM Submission s WHERE s.status = :status AND s.block.exam.semester = :semester")
-    long countByStatusAndSemester(@Param("status") SubmissionStatus status,
-                                  @Param("semester") String semester);
 }

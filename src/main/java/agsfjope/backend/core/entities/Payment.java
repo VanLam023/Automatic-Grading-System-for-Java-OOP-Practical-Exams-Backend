@@ -3,8 +3,6 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -23,9 +21,8 @@ public class Payment {
     @Column(name = "PaymentID")
     private UUID paymentId;
 
-    /** Appeal liên quan. Null khi PaymentPurpose = WALLET_DEPOSIT. */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "AppealID", nullable = true)
+    @JoinColumn(name = "AppealID", nullable = false)
     private Appeal appeal;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -40,8 +37,7 @@ public class Payment {
     private String currency = "VND";
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(name = "Status", nullable = false, columnDefinition = "payment_status")
+    @Column(name = "Status", nullable = false)
     @Builder.Default
     private PaymentStatus status = PaymentStatus.PENDING;
 
@@ -57,21 +53,6 @@ public class Payment {
     @Column(name = "CheckoutUrl", columnDefinition = "TEXT")
     private String checkoutUrl;
 
-    /**
-     * Mục đích payment: "APPEAL" (thanh toán phúc khảo) hoặc "WALLET_DEPOSIT" (nạp tiền ví).
-     * Mặc định là APPEAL để tương thích với code cũ.
-     */
-    @Column(name = "PaymentPurpose", nullable = false, length = 20)
-    @Builder.Default
-    private String paymentPurpose = "APPEAL";
-
-    /**
-     * Khi paymentPurpose = WALLET_DEPOSIT, đây là student được cộng tiền vào ví.
-     */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "DepositForStudentID")
-    private User depositForStudent;
-
     @Column(name = "ExpiresAt", nullable = false)
     private OffsetDateTime expiresAt;
 
@@ -81,7 +62,6 @@ public class Payment {
     @Column(name = "RefundedAt")
     private OffsetDateTime refundedAt;
 
-    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "PayosWebhookData", columnDefinition = "JSONB")
     private String payosWebhookData;
 

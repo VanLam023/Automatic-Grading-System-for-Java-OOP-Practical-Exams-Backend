@@ -65,20 +65,16 @@ public class LLMReviewService {
      * @return AI evaluation result; never null — fails gracefully with {@link AIReviewResult#failure}
      */
     public AIReviewResult review(AIReviewRequest request) {
-        // Lấy cấu hình AI từ DB (provider, model, api key, ngôn ngữ phản hồi)
         AIConfig config;
         try {
             config = loadConfig();
         } catch (Exception e) {
             log.error("AI config load failed: {}", e.getMessage());
-            // AI chưa cấu hình — trả về failure nhưng không crash pipeline chấm bài
             return AIReviewResult.failure("AI chưa được cấu hình: " + e.getMessage());
         }
 
-        // Chọn Adapter phù hợp theo provider (Gemini, OpenAI, hay URL tương thích OpenAI)
         LLMAdapter adapter = adapterFactory.getAdapter(config.provider());
 
-        // Bảo vệ: không thể chấm bài nếu không có source code — bỏ qua luôn, không lỗi
         // Guard: cannot review without source code
         if (request.sourceCode() == null || request.sourceCode().isBlank()) {
             log.warn("AI review skipped for question '{}' — no student source code available.",
@@ -90,97 +86,22 @@ public class LLMReviewService {
             log.debug("AI review: provider={}, model={}, question={}",
                     config.provider(), config.model(), request.questionTitle());
 
-            // [PERF-STEP2] Use callWithRetry() instead of direct adapter calls to handle
-            // Gemini rate limits / transient errors without failing the whole grading.
-            // Sử dụng callWithRetry() thay cho gọi trực tiếp adapter — tự động thử lại khi gặp lỗi.
-
-            // Chiến lược 2-PROMPT:
-            //   Prompt 1: yêu cầu AI phân tích sâu — kết quả là văn bản tự do
-            //   Prompt 2: yêu cầu AI đóng gói phân tích thành JSON có cấu trúc để hệ thống đọc được
-            // Tách 2 bước giúp tăng chất lượng phân tích không bị ảnh hưởng bởi format output.
-
             // Prompt 1: Deep OOP analysis with exam context
-            // [OLD] String analysis = adapter.chat(
-            //         buildAnalysisPrompt(request), config.apiKey(), config.model());
-            String analysis = callWithRetry(adapter, buildAnalysisPrompt(request),
-                    config.apiKey(), config.model(), false, request.questionTitle());
+            String analysis = adapter.chat(
+                    buildAnalysisPrompt(request), config.apiKey(), config.model());
 
             // Prompt 2: Return structured JSON — use chatJson() for providers that support
-            // JSON mode (responseMimeType) to avoid markdown wrapping and truncation.
-            // [OLD] String resultJson = adapter.chatJson(
-            //         buildResultPrompt(analysis, config.language()), config.apiKey(), config.model());
-            // Prompt 2: Bước này dùng chatJson() — với Gemini sẽ bật JSON mode để tránh markdown wrapper
-            String resultJson = callWithRetry(adapter, buildResultPrompt(analysis, config.language()),
-                    config.apiKey(), config.model(), true, request.questionTitle());
+            // JSON mode (responseMimeType) to avoid markdown wrapping and truncation
+            String resultJson = adapter.chatJson(
+                    buildResultPrompt(analysis, config.language()), config.apiKey(), config.model());
 
-            // Phân tích JSON trả về thành AIReviewResult object
             return parseResult(resultJson);
 
         } catch (Exception e) {
-            // Mọi lỗi đều được bắt ở đây — trả về failure không crash luồng chấm bài
             log.error("AI review failed [provider={}, question={}]: {}",
                     config.provider(), request.questionTitle(), e.getMessage());
             return AIReviewResult.failure("AI trả về lỗi: " + e.getMessage());
         }
-    }
-
-    // ─── RETRY HELPER ────────────────────────────────────────────────────────
-
-    /**
-     * [PERF-STEP2] Calls AI adapter with exponential-backoff retry.
-     *
-     * <p>Motivation: Gemini rate limits (429) or transient network errors can cause
-     * the response to be empty or the JSON to be truncated mid-stream. Retrying
-     * with a short pause almost always succeeds on the 2nd attempt.
-     *
-     * @param adapter      the LLM adapter to call
-     * @param prompt       the prompt to send
-     * @param apiKey       provider API key
-     * @param model        model ID
-     * @param jsonMode     true → call {@code chatJson()}, false → call {@code chat()}
-     * @param questionHint short label for log messages (e.g. question title)
-     * @return response text from the model
-     * @throws Exception re-thrown after all retries exhausted
-     */
-    private String callWithRetry(LLMAdapter adapter, String prompt,
-                                  String apiKey, String model,
-                                  boolean jsonMode, String questionHint) throws Exception {
-        // [PERF-STEP2] Max 3 attempts: original + 2 retries
-        // Tối đa 3 lần: lần 1 (gọc) + 2 lần thử lại nếu gặp rate limit hoặc network error
-        int maxAttempts = 3;
-        // Base delay in ms; doubles each retry: 2s → 4s → 6s
-        // Thời gian chờ tăng dần: lần 1 thất bại chờ 2s, lần 2 chờ 4s (exponential backoff nhẹ)
-        long baseDelayMs = 2_000L;
-
-        Exception lastException = null;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                // Gọi AI theo mode: chatJson() cho prompt 2, chat() cho prompt 1
-                return jsonMode
-                        ? adapter.chatJson(prompt, apiKey, model)
-                        : adapter.chat(prompt, apiKey, model);
-            } catch (Exception e) {
-                lastException = e;
-                if (attempt < maxAttempts) {
-                    long delayMs = baseDelayMs * attempt; // 2s, 4s, (would be 6s but no 3rd delay)
-                    // Chưa hết số lần thử — log cảnh báo và chờ rồi thử lại
-                    log.warn("[AI-RETRY] Attempt {}/{} failed for question '{}': {}. Retrying in {}ms...",
-                            attempt, maxAttempts, questionHint, e.getMessage(), delayMs);
-                    try {
-                        Thread.sleep(delayMs);
-                    } catch (InterruptedException ie) {
-                        // Thread bị interrupt giữa chờ — phuc hồi cờ interrupt và throw ngay
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("AI retry interrupted", ie);
-                    }
-                } else {
-                    // Đã hết số lần thử — log error, throw ra ngoài cho review() bắt và trả về failure
-                    log.error("[AI-RETRY] All {} attempts failed for question '{}': {}",
-                            maxAttempts, questionHint, e.getMessage());
-                }
-            }
-        }
-        throw lastException;
     }
 
     // ─── PROMPT BUILDERS ─────────────────────────────────────────────────────
@@ -376,7 +297,7 @@ public class LLMReviewService {
         String provider = Optional.ofNullable(map.get("AI_PROVIDER")).filter(s -> !s.isBlank())
                                   .orElse("gemini");
         String model    = Optional.ofNullable(map.get("AI_MODEL")).filter(s -> !s.isBlank())
-                                  .orElse("gemini-3-flash-preview");
+                                  .orElse("gemini-2.5-flash");
         String language = resolveLanguageName(
                 Optional.ofNullable(map.get("AI_LANGUAGE")).filter(s -> !s.isBlank())
                         .orElse("vi"));

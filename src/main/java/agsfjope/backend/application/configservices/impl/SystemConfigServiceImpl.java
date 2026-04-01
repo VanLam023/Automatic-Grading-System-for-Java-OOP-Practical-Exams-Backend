@@ -4,7 +4,6 @@ import agsfjope.backend.application.configservices.SystemConfigService;
 import agsfjope.backend.application.dtos.requests.config.TestAiConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
-import agsfjope.backend.application.dtos.requests.config.UpdateEmailConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
 import agsfjope.backend.application.dtos.responses.config.AiConfigResponse;
@@ -338,12 +337,14 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     public SystemSettingsResponse getSystemSettings() {
         Map<String, SystemConfig> map = getRequiredConfigMap(SYSTEM_KEYS);
 
+        String smtpUsername = readConfigValue(map.get("SMTP_USERNAME"));
+
         return SystemSettingsResponse.builder()
                 .maxUploadSizeMb(toInteger(readConfigValue(map.get("MAX_UPLOAD_SIZE_MB"))))
                 .maxExamPaperMb(toInteger(readConfigValue(map.get("MAX_EXAM_PAPER_MB"))))
                 .smtpHost(readConfigValue(map.get("SMTP_HOST")))
                 .smtpPort(toInteger(readConfigValue(map.get("SMTP_PORT"))))
-                .smtpUsername(readConfigValue(map.get("SMTP_USERNAME")))
+                .smtpUsername(aesEncryptionUtil.mask(smtpUsername))
                 .smtpFromEmail(readConfigValue(map.get("SMTP_FROM_EMAIL")))
                 .defaultGradingMode(agsfjope.backend.core.enums.GradingMode.valueOf(readConfigValue(map.get("DEFAULT_GRADING_MODE"))))
                 .appealDeadlineDays(toInteger(readConfigValue(map.get("APPEAL_DEADLINE_DAYS"))))
@@ -355,23 +356,14 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     public void updateSystemSettings(UpdateSystemSettingsRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
 
-        // Only update general settings (upload limits and default grading mode)
         saveConfig("MAX_UPLOAD_SIZE_MB", String.valueOf(request.getMaxUploadSizeMb()), false, updatedBy);
         saveConfig("MAX_EXAM_PAPER_MB", String.valueOf(request.getMaxExamPaperMb()), false, updatedBy);
-        saveConfig("DEFAULT_GRADING_MODE", request.getDefaultGradingMode().name(), false, updatedBy);
-    }
-
-    @Override
-    @Transactional
-    public void updateEmailConfig(UpdateEmailConfigRequest request, String updatedByUsername) {
-        User updatedBy = getUserOrThrow(updatedByUsername);
-
-        // Save SMTP settings; username and password are encrypted at rest
         saveConfig("SMTP_HOST", request.getSmtpHost(), false, updatedBy);
         saveConfig("SMTP_PORT", String.valueOf(request.getSmtpPort()), false, updatedBy);
         saveConfig("SMTP_USERNAME", request.getSmtpUsername(), true, updatedBy);
         saveConfig("SMTP_PASSWORD", request.getSmtpPassword(), true, updatedBy);
         saveConfig("SMTP_FROM_EMAIL", request.getSmtpFromEmail(), false, updatedBy);
+        saveConfig("DEFAULT_GRADING_MODE", request.getDefaultGradingMode().name(), false, updatedBy);
     }
 
     private Map<String, SystemConfig> getRequiredConfigMap(List<String> keys) {

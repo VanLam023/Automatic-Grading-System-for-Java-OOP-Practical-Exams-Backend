@@ -9,7 +9,6 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -35,31 +34,4 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>,
     @Modifying
     @Query("DELETE FROM AuditLog a WHERE a.createdAt < :cutoff")
     int deleteByCreatedAtBefore(@Param("cutoff") OffsetDateTime cutoff);
-
-    /**
-     * Returns the 10 most recent audit log entries, sorted newest-first.
-     * Used by the Admin Dashboard "Recent Activities" table.
-     *
-     * @return list of up to 10 most recent audit logs
-     */
-    List<AuditLog> findTop10ByOrderByCreatedAtDesc();
-
-    /**
-     * Counts audit log entries created after the given timestamp.
-     * Used by the Admin Dashboard to build time-series activity chart data.
-     *
-     * @param after the earliest timestamp to include
-     * @return number of audit log entries since the given timestamp
-     */
-    long countByCreatedAtAfter(OffsetDateTime after);
-
-    /**
-     * Returns the 10 most recent audit log entries within a date range, sorted newest-first.
-     * Used by the Admin Dashboard "Recent Activities" table when a date filter is applied.
-     *
-     * @param from start of date range (inclusive)
-     * @param to   end of date range (inclusive)
-     * @return list of up to 10 most recent audit logs within the given range
-     */
-    List<AuditLog> findTop10ByCreatedAtBetweenOrderByCreatedAtDesc(OffsetDateTime from, OffsetDateTime to);
 }
