@@ -37,4 +37,14 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
      */
     @Query("SELECT COUNT(b) > 0 FROM Block b WHERE b.exam.examId = :examId AND b.startTime <= :threshold")
     boolean existsBlockStartingOnOrBefore(@Param("examId") UUID examId, @Param("threshold") java.time.OffsetDateTime threshold);
+
+    /**
+     * Checks if a block belongs to a specific exam.
+     * Used by Exam Statistics to validate that blockId is not from a different exam.
+     *
+     * @param blockId the block UUID
+     * @param examId  the exam UUID to validate ownership
+     * @return true if the block exists and belongs to the given exam
+     */
+    boolean existsByBlockIdAndExam_ExamId(UUID blockId, UUID examId);
 }
