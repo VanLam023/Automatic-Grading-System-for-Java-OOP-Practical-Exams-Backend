@@ -160,7 +160,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         User student = userRepository.findById(studentId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy sinh viên với ID: " + studentId));
 
-        String objectPath = buildObjectPath(examId, blockId, studentId, originalFilename);
+        String objectPath = buildObjectPath(block.getExam(), block, student, originalFilename);
         String contentType = extension.equals(".zip")
                 ? "application/zip"
                 : "application/x-rar-compressed";
@@ -333,8 +333,46 @@ public class SubmissionServiceImpl implements SubmissionService {
         return answers;
     }
 
-    private String buildObjectPath(UUID examId, UUID blockId, UUID studentId, String fileName) {
-        return "exams/" + examId + "/blocks/" + blockId + "/students/" + studentId + "/" + fileName;
+    /**
+     * Builds the MinIO object path for a student submission archive.
+     * Format: {@code submissions/{Semester}-{AcademicYear}/{BlockName}/{FullName} - {MSSV}/{fileName}}
+     * Example: {@code submissions/Spring-2025/Block 10/Nguyen Van A - SE12345/BaiNop.zip}
+     */
+    private String buildObjectPath(agsfjope.backend.core.entities.Exam exam,
+                                   agsfjope.backend.core.entities.Block block,
+                                   agsfjope.backend.core.entities.User student,
+                                   String fileName) {
+        String semester   = expandSemester(exam.getSemester());
+        String folder     = semester + "-" + exam.getAcademicYear();
+        String studentDir = student.getFullName()
+                + (student.getMssv() != null ? " - " + student.getMssv() : "");
+        return "submissions/"
+                + sanitize(folder) + "/"
+                + sanitize(block.getName()) + "/"
+                + sanitize(studentDir) + "/"
+                + fileName;
+    }
+
+    /**
+     * Expands short semester code to full English name.
+     * SP → Spring, SU → Summer, FA → Fall.
+     */
+    private String expandSemester(String code) {
+        if (code == null) return "Unknown";
+        return switch (code.toUpperCase()) {
+            case "SP" -> "Spring";
+            case "SU" -> "Summer";
+            case "FA" -> "Fall";
+            default   -> code;
+        };
+    }
+
+    /**
+     * Sanitizes a string for safe use in a MinIO object path.
+     */
+    private String sanitize(String value) {
+        if (value == null) return "unknown";
+        return value.trim().replaceAll("[^a-zA-Z0-9\\-_. ]", "_");
     }
 
     private SubmissionResponse toResponse(

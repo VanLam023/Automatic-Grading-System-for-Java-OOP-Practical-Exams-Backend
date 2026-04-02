@@ -138,7 +138,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
         ParsedExamPaper parsedExamPaper = parseArchive(file, extension, originalFilename);
 
         // ── 8. Upload raw archive to MinIO ────────────────────────────────────
-        String objectPath = buildObjectPath(examId, blockId, originalFilename);
+        String objectPath = buildObjectPath(block.getExam(), block, originalFilename);
         String contentType = extension.equals(".zip")
                 ? "application/zip"
                 : "application/x-rar-compressed";
@@ -345,10 +345,38 @@ public class ExamPaperServiceImpl implements ExamPaperService {
 
     /**
      * Builds the MinIO object path for an exam paper archive.
-     * Format: {@code exams/{examId}/blocks/{blockId}/{fileName}}
+     * Format: {@code exam-papers/{Semester}-{AcademicYear}/{BlockName}/{fileName}}
+     * Example: {@code exam-papers/Spring-2025/Block 10/DeThi.zip}
      */
-    private String buildObjectPath(UUID examId, UUID blockId, String fileName) {
-        return "exams/" + examId + "/blocks/" + blockId + "/" + fileName;
+    private String buildObjectPath(agsfjope.backend.core.entities.Exam exam,
+                                   agsfjope.backend.core.entities.Block block,
+                                   String fileName) {
+        String semester = expandSemester(exam.getSemester());
+        String folder   = semester + "-" + exam.getAcademicYear();
+        return "exam-papers/" + sanitize(folder) + "/" + sanitize(block.getName()) + "/" + fileName;
+    }
+
+    /**
+     * Expands short semester code to full English name.
+     * SP → Spring, SU → Summer, FA → Fall. Unknown codes are kept as-is.
+     */
+    private String expandSemester(String code) {
+        if (code == null) return "Unknown";
+        return switch (code.toUpperCase()) {
+            case "SP" -> "Spring";
+            case "SU" -> "Summer";
+            case "FA" -> "Fall";
+            default   -> code;
+        };
+    }
+
+    /**
+     * Sanitizes a string for safe use in a MinIO object path.
+     * Replaces characters that may cause issues in object keys.
+     */
+    private String sanitize(String value) {
+        if (value == null) return "unknown";
+        return value.trim().replaceAll("[^a-zA-Z0-9\\-_. ]", "_");
     }
 
     // ─── Mappers ─────────────────────────────────────────────────────────────
