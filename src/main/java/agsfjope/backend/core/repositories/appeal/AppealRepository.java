@@ -448,5 +448,39 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             """,
            nativeQuery = true)
     long countDeniedByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
-}
 
+    // ─── Exam Statistics — Block-level queries (PROC-006) ────────────────────
+
+    /**
+     * Counts all appeals belonging to a specific block.
+     * Navigates Appeal → Submission → Block.
+     *
+     * @param blockId the block UUID
+     * @return total number of appeals for this block
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            WHERE s.BlockID = :blockId
+            """,
+           nativeQuery = true)
+    long countByBlockId(@Param("blockId") UUID blockId);
+
+    /**
+     * Counts appeals in a specific block filtered by status.
+     * Navigates Appeal → Submission → Block.
+     *
+     * @param blockId the block UUID
+     * @param status  the appeal status string
+     * @return count of matching appeals
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            WHERE s.BlockID = :blockId
+              AND a.Status = CAST(:status AS appeal_status)
+            """,
+           nativeQuery = true)
+    long countByBlockIdAndStatus(@Param("blockId") UUID blockId,
+                                  @Param("status") String status);
+}

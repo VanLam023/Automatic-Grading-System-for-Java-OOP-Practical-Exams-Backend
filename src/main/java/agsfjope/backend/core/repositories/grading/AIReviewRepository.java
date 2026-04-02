@@ -48,4 +48,17 @@ public interface AIReviewRepository extends JpaRepository<AIReview, UUID> {
     @Transactional
     @Query("DELETE FROM AIReview ar WHERE ar.answer.submission.submissionId = :submissionId")
     void deleteByAnswer_Submission_SubmissionId(@Param("submissionId") UUID submissionId);
+
+    // ─── Exam Statistics — Block-level queries (PROC-006) ────────────────────
+
+    /**
+     * Finds all AI reviews for all answers in all submissions of a given block.
+     * Navigates AIReview → Answer → Submission → Block.
+     * Used by Exam Statistics to calculate AI OOP metrics per block.
+     *
+     * @param blockId the block UUID
+     * @return list of AI reviews for the block
+     */
+    @Query("SELECT ar FROM AIReview ar WHERE ar.answer.submission.block.blockId = :blockId")
+    java.util.List<AIReview> findAllByBlockId(@Param("blockId") UUID blockId);
 }
