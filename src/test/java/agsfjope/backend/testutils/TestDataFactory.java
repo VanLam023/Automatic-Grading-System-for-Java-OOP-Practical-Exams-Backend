@@ -1,6 +1,8 @@
 package agsfjope.backend.testutils;
 
 import agsfjope.backend.core.entities.*;
+import agsfjope.backend.core.enums.GradingMode;
+import java.math.BigDecimal;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -140,5 +142,65 @@ public class TestDataFactory {
                 .expiresAt(OffsetDateTime.now().minusMinutes(5))
                 .isUsed(false)
                 .build();
+    }
+
+    // ─── SystemConfig ──────────────────────────────────────────────────────────
+
+    /** Tạo 1 SystemConfig với giá trị plain text (isEncrypted = false) */
+    public static SystemConfig createPlainConfig(String key, String value) {
+        return SystemConfig.builder()
+                .systemConfigId(1)
+                .configKey(key)
+                .configValue(value)
+                .isEncrypted(false)
+                .updatedAt(OffsetDateTime.now())
+                .build();
+    }
+
+    /** Tạo 1 SystemConfig với giá trị đã mã hóa (isEncrypted = true) */
+    public static SystemConfig createEncryptedConfig(String key, String encryptedValue) {
+        return SystemConfig.builder()
+                .systemConfigId(2)
+                .configKey(key)
+                .configValue(encryptedValue)
+                .isEncrypted(true)
+                .updatedAt(OffsetDateTime.now())
+                .build();
+    }
+
+    /** Tạo danh sách configs cho AI group (AI_PROVIDER, AI_MODEL, AI_API_KEY, AI_LANGUAGE) */
+    public static java.util.List<SystemConfig> createAiConfigList() {
+        return java.util.List.of(
+                createPlainConfig("AI_PROVIDER", "gemini"),
+                createPlainConfig("AI_MODEL", "gemini-1.5-pro"),
+                createEncryptedConfig("AI_API_KEY", "ENCRYPTED_AI_KEY"),
+                createPlainConfig("AI_LANGUAGE", "Vietnamese")
+        );
+    }
+
+    /** Tạo danh sách configs cho PayOS group */
+    public static java.util.List<SystemConfig> createPayosConfigList() {
+        return java.util.List.of(
+                createEncryptedConfig("PAYOS_CLIENT_ID", "ENCRYPTED_CLIENT_ID"),
+                createEncryptedConfig("PAYOS_API_KEY", "ENCRYPTED_PAYOS_KEY"),
+                createEncryptedConfig("PAYOS_CHECKSUM_KEY", "ENCRYPTED_CHECKSUM"),
+                createPlainConfig("APPEAL_FEE", "50000"),
+                createPlainConfig("PAYMENT_TIMEOUT_MIN", "15")
+        );
+    }
+
+    /** Tạo danh sách configs cho System Settings group */
+    public static java.util.List<SystemConfig> createSystemSettingsConfigList() {
+        return java.util.List.of(
+                createPlainConfig("MAX_UPLOAD_SIZE_MB", "50"),
+                createPlainConfig("MAX_EXAM_PAPER_MB", "10"),
+                createPlainConfig("SMTP_HOST", "smtp.gmail.com"),
+                createPlainConfig("SMTP_PORT", "587"),
+                createPlainConfig("SMTP_USERNAME", "test@gmail.com"),
+                createPlainConfig("SMTP_PASSWORD", "secret"),
+                createPlainConfig("SMTP_FROM_EMAIL", "noreply@fpt.edu.vn"),
+                createPlainConfig("DEFAULT_GRADING_MODE", "MODE_1"),
+                createPlainConfig("APPEAL_DEADLINE_DAYS", "7")
+        );
     }
 }
