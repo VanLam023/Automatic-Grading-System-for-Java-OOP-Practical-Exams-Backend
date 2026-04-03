@@ -5,23 +5,25 @@ import agsfjope.backend.application.dtos.responses.staffdashboard.GradeDistribut
 import agsfjope.backend.application.dtos.responses.staffdashboard.PendingAppealResponse;
 import agsfjope.backend.application.dtos.responses.staffdashboard.RecentExamResponse;
 import agsfjope.backend.application.dtos.responses.staffdashboard.StaffDashboardOverviewResponse;
-import agsfjope.backend.core.entities.Appeal;
 import agsfjope.backend.core.entities.Exam;
 import agsfjope.backend.core.enums.AppealStatus;
 import agsfjope.backend.core.enums.ExamStatus;
 import agsfjope.backend.core.enums.SubmissionStatus;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
+import agsfjope.backend.core.repositories.appeal.projections.PendingAppealRowProjection;
 import agsfjope.backend.core.repositories.exam.ExamRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.grading.projections.ScoreBucketCountProjection;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Default implementation of {@link StaffDashboardService}.
@@ -36,29 +38,23 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class StaffDashboardServiceImpl implements StaffDashboardService {
 
-    private final ExamRepository          examRepository;
-    private final SubmissionRepository    submissionRepository;
+    private final ExamRepository examRepository;
+    private final SubmissionRepository submissionRepository;
     private final GradingResultRepository gradingResultRepository;
-    private final AppealRepository        appealRepository;
+    private final AppealRepository appealRepository;
 
     /**
      * Score range definitions for the grade distribution chart.
-     * Each entry: { label, minScore (inclusive), maxScore (exclusive) }.
-     * The last bucket (9-10) uses 10.01 as upper bound to include 10.00.
+     * Kept aligned with the current agreed design: 0-4, 4-6, 6-8, 8-9, 9-10.
      */
-    private static final String[][] SCORE_RANGES = {
-            {"0-4",  "0.00",  "4.00"},
-            {"4-6",  "4.00",  "6.00"},
-            {"6-8",  "6.00",  "8.00"},
-            {"8-9",  "8.00",  "9.00"},
-            {"9-10", "9.00", "10.01"}
+    private static final String[] SCORE_RANGE_LABELS = {
+            "0-4",
+            "4-6",
+            "6-8",
+            "8-9",
+            "9-10"
     };
 
-    // ─── Overview ───────────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public StaffDashboardOverviewResponse getOverview(String semester) {
         boolean filtered = semester != null && !semester.isBlank();
@@ -75,9 +71,11 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
                 ? submissionRepository.countByStatusAndSemester(SubmissionStatus.GRADED, semester)
                 : submissionRepository.countByStatus(SubmissionStatus.GRADED);
 
+        // Keep field name for backward compatibility, but value now matches dashboard table logic:
+        // open appeals = PENDING + PROCESSING.
         long pendingAppeals = filtered
-                ? appealRepository.countByStatusAndSemester(AppealStatus.PENDING.name(), semester)
-                : appealRepository.countByStatus(AppealStatus.PENDING.name());
+                ? appealRepository.countOpenAppealsBySemester(semester)
+                : appealRepository.countOpenAppeals();
 
         return StaffDashboardOverviewResponse.builder()
                 .activeExams(activeExams)
@@ -87,11 +85,6 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
                 .build();
     }
 
-    // ─── Recent Exams ───────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public List<RecentExamResponse> getRecentExams(int limit, String semester) {
         boolean filtered = semester != null && !semester.isBlank();
@@ -113,11 +106,6 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
         return result;
     }
 
-    // ─── Grade Distribution ─────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public GradeDistributionResponse getGradeDistribution(String semester) {
         boolean filtered = semester != null && !semester.isBlank();
@@ -126,18 +114,24 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
                 ? gradingResultRepository.countAllBySemester(semester)
                 : gradingResultRepository.countAll();
 
+        List<ScoreBucketCountProjection> bucketRows = filtered
+                ? gradingResultRepository.aggregateScoreBucketsBySemester(semester)
+                : gradingResultRepository.aggregateScoreBuckets();
+
+        Map<String, Long> bucketCounts = new HashMap<>();
+        for (ScoreBucketCountProjection row : bucketRows) {
+            bucketCounts.put(row.getBucketLabel(), row.getBucketCount());
+        }
+
         List<ScoreRange> ranges = new ArrayList<>();
-        for (String[] range : SCORE_RANGES) {
-            BigDecimal min = new BigDecimal(range[1]);
-            BigDecimal max = new BigDecimal(range[2]);
-            long count = filtered
-                    ? gradingResultRepository.countByScoreRangeAndSemester(min, max, semester)
-                    : gradingResultRepository.countByScoreRange(min, max);
+        for (String label : SCORE_RANGE_LABELS) {
+            long count = bucketCounts.getOrDefault(label, 0L);
             double percentage = totalGraded > 0
                     ? Math.round(count * 1000.0 / totalGraded) / 10.0
                     : 0.0;
+
             ranges.add(ScoreRange.builder()
-                    .label(range[0])
+                    .label(label)
                     .count(count)
                     .percentage(percentage)
                     .build());
@@ -149,38 +143,23 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
                 .build();
     }
 
-    // ─── Pending Appeals ────────────────────────────────────────────────────
-
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public List<PendingAppealResponse> getPendingAppeals(int limit, String semester) {
         boolean filtered = semester != null && !semester.isBlank();
         PageRequest page = PageRequest.of(0, limit);
 
-        List<Appeal> appeals = filtered
-                ? appealRepository.findPendingAndProcessingBySemesterOrderByCreatedAtDesc(semester, page)
-                : appealRepository.findPendingAndProcessingOrderByCreatedAtDesc(page);
-
+        List<PendingAppealRowProjection> appeals = filtered
+                ? appealRepository.findPendingAndProcessingRowsBySemesterOrderByCreatedAtDesc(semester, page)
+                : appealRepository.findPendingAndProcessingRowsOrderByCreatedAtDesc(page);
 
         List<PendingAppealResponse> result = new ArrayList<>();
-        for (Appeal appeal : appeals) {
-            String studentName = appeal.getStudent() != null ? appeal.getStudent().getFullName() : "";
-            String studentMssv = appeal.getStudent() != null ? appeal.getStudent().getMssv() : "";
-            String examName    = "";
-            if (appeal.getSubmission() != null
-                    && appeal.getSubmission().getBlock() != null
-                    && appeal.getSubmission().getBlock().getExam() != null) {
-                examName = appeal.getSubmission().getBlock().getExam().getName();
-            }
-
+        for (PendingAppealRowProjection appeal : appeals) {
             result.add(PendingAppealResponse.builder()
                     .appealId(appeal.getAppealId())
-                    .studentName(studentName)
-                    .studentMssv(studentMssv)
-                    .examName(examName)
-                    .status(appeal.getStatus())
+                    .studentName(appeal.getStudentName())
+                    .studentMssv(appeal.getStudentMssv())
+                    .examName(appeal.getExamName())
+                    .status(AppealStatus.valueOf(appeal.getStatus()))
                     .createdAt(appeal.getCreatedAt())
                     .build());
         }
