@@ -10,17 +10,19 @@ import agsfjope.backend.application.dtos.responses.appeal.StaffAppealOverviewRes
 import agsfjope.backend.application.dtos.responses.appeal.StaffAppealPageResponse;
 import agsfjope.backend.application.notificationservices.NotificationService;
 import agsfjope.backend.application.walletservices.WalletService;
+import agsfjope.backend.configuration.storage.MinioConfig;
 import agsfjope.backend.core.entities.Appeal;
 import agsfjope.backend.core.entities.GradingResult;
 import agsfjope.backend.core.entities.User;
 import agsfjope.backend.core.enums.AppealStatus;
 import agsfjope.backend.core.enums.GradingResultStatus;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
-import agsfjope.backend.core.repositories.payment.PaymentRepository;
-import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.appeal.projections.LecturerAppealWorkloadProjection;
+import agsfjope.backend.core.repositories.appeal.projections.StaffAppealListRowProjection;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
-import agsfjope.backend.configuration.storage.MinioConfig;
+import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import agsfjope.backend.infrastructure.storage.MinioService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -47,7 +51,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     private static final String KEY_DEADLINE_DAYS = "APPEAL_DEADLINE_DAYS";
     private static final int DEFAULT_DEADLINE_DAYS = 7;
     private static final String KEY_APPEAL_FEE = "APPEAL_FEE";
-    private static final java.math.BigDecimal DEFAULT_APPEAL_FEE = new java.math.BigDecimal("200000");
+    private static final BigDecimal DEFAULT_APPEAL_FEE = new BigDecimal("200000");
 
     private final AppealRepository appealRepository;
     private final UserRepository userRepository;
@@ -59,28 +63,21 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     private final WalletService walletService;
     private final NotificationService notificationService;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 1. Danh sách + stats
-    // ─────────────────────────────────────────────────────────────────────────
-
     @Override
     @Transactional(readOnly = true)
     public StaffAppealPageResponse getAppeals(String status, String keyword, String semester, String examName, int page,
-            int size) {
+                                              int size) {
         log.info("[Staff] Lấy danh sách appeals: status={}, keyword={}, semester={}, examName={}, page={}", status,
                 keyword, semester, examName, page);
 
-        // Normalize params
         String statusParam = (status == null || status.isBlank()) ? null : status.toUpperCase();
         String keywordParam = (keyword == null) ? "" : keyword.trim();
         String semesterParam = (semester == null || semester.isBlank()) ? null : semester.trim();
         String examNameParam = (examName == null || examName.isBlank()) ? null : examName.trim();
 
-        // 1. Overview stats
         StaffAppealOverviewResponse overview = buildOverview();
 
-        // 2. Paged list
-        Page<Appeal> pageResult = appealRepository.searchAppealsForStaff(
+        Page<StaffAppealListRowProjection> pageResult = appealRepository.searchAppealRowsForStaff(
                 statusParam, keywordParam, semesterParam, examNameParam, PageRequest.of(page, size));
 
         List<StaffAppealListItemResponse> items = pageResult.getContent()
@@ -98,10 +95,6 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .build();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 2. Chi tiết
-    // ─────────────────────────────────────────────────────────────────────────
-
     @Override
     @Transactional(readOnly = true)
     public StaffAppealDetailResponse getAppealDetail(UUID appealId) {
@@ -110,10 +103,6 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         return toDetailResponse(appeal);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 3. Phân công giảng viên
-    // ─────────────────────────────────────────────────────────────────────────
-
     @Override
     @Transactional
     public StaffAppealDetailResponse assignLecturer(UUID appealId, AssignAppealRequest request, UUID staffId) {
@@ -121,24 +110,20 @@ public class StaffAppealServiceImpl implements StaffAppealService {
 
         Appeal appeal = findAppealOrThrow(appealId);
 
-        // BR-05: chỉ assign được khi PENDING
         if (appeal.getStatus() != AppealStatus.PENDING) {
             throw new IllegalStateException(
                     "Chỉ có thể phân công đơn phúc khảo ở trạng thái PENDING. " +
                             "Trạng thái hiện tại: " + appeal.getStatus());
         }
 
-        // Load lecturer
         User lecturer = userRepository.findById(request.getLecturerId())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy giảng viên: " + request.getLecturerId()));
 
-        // Load staff (người thực hiện phân công)
         User staff = userRepository.findById(staffId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy staff: " + staffId));
 
-        // Validation deadline
         OffsetDateTime deadline = request.getDeadlineAt();
         if (deadline == null) {
             int deadlineDays = loadDeadlineDays();
@@ -147,7 +132,6 @@ public class StaffAppealServiceImpl implements StaffAppealService {
             throw new IllegalArgumentException("Deadline không được chọn trong quá khứ");
         }
 
-        // Cập nhật Appeal
         appeal.setAssignedLecturer(lecturer);
         appeal.setAssignedBy(staff);
         appeal.setAssignedAt(OffsetDateTime.now());
@@ -160,25 +144,22 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         return toDetailResponse(saved);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 4. Danh sách giảng viên (dropdown)
-    // ─────────────────────────────────────────────────────────────────────────
-
     @Override
     @Transactional(readOnly = true)
     public List<LecturerOptionResponse> getLecturerOptions() {
         List<User> lecturers = userRepository.findByRole_NameAndDeletedAtIsNull("LECTURER");
+        Map<UUID, Long> workloadMap = new HashMap<>();
+        for (LecturerAppealWorkloadProjection row : appealRepository.countActiveAppealsGroupedByLecturer()) {
+            workloadMap.put(row.getLecturerId(), row.getActiveAppealCount());
+        }
+
         return lecturers.stream().map(u -> LecturerOptionResponse.builder()
                 .lecturerId(u.getUserId())
                 .fullName(u.getFullName())
                 .email(u.getEmail())
-                .activeAppealCount(appealRepository.countActiveAppealsByLecturer(u.getUserId()))
+                .activeAppealCount(workloadMap.getOrDefault(u.getUserId(), 0L))
                 .build()).toList();
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 5. Xác nhận đơn phúc khảo
-    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     @Transactional
@@ -200,12 +181,9 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                     .findBySubmission_SubmissionId(appeal.getSubmission().getSubmissionId())
                     .orElseThrow(() -> new IllegalStateException("Không tìm thấy kết quả chấm của bài thi này"));
 
-            // Cập nhật điểm mới, nếu newScore null (chưa có điểm mới) thì giữ nguyên điểm
-            // gốc
             BigDecimal finalScore = appeal.getNewScore() != null ? appeal.getNewScore() : gradingResult.getTotalScore();
             gradingResult.setTotalScore(finalScore);
 
-            // Đánh giá lại PASS/FAIL
             if (finalScore != null && finalScore.compareTo(new BigDecimal("4.0")) >= 0) {
                 gradingResult.setStatus(GradingResultStatus.PASS);
             } else {
@@ -215,9 +193,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
             gradingResultRepository.save(gradingResult);
             log.info("[Staff] Đã cập nhật điểm mới = {}", finalScore);
 
-            // Hoàn tiền ví cho sinh viên khi APPROVED
-            // WalletService tự gửi notification cho student
-            java.math.BigDecimal refundAmount = loadAppealFee();
+            BigDecimal refundAmount = loadAppealFee();
             walletService.refundToWallet(
                     appeal.getStudent().getUserId(),
                     refundAmount,
@@ -229,7 +205,6 @@ public class StaffAppealServiceImpl implements StaffAppealService {
             appeal.setStatus(AppealStatus.DENIED);
             log.info("[Staff] Từ chối cập nhật điểm");
 
-            // Gửi notification cho student khi DENIED
             notificationService.createNotification(
                     appeal.getStudent().getUserId(),
                     "Phúc khảo bị từ chối",
@@ -237,16 +212,11 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                     "APPEAL", appeal.getAppealId());
         }
 
-        // Cập nhật thời gian hoàn thành toàn bộ
         appeal.setCompletedAt(OffsetDateTime.now());
 
         Appeal saved = appealRepository.save(appeal);
         return toDetailResponse(saved);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // 6. Download Submission
-    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     public InputStream downloadSubmission(UUID appealId) {
@@ -261,10 +231,6 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 minioConfig.getBucket().getSubmissions(),
                 appeal.getSubmission().getFilePath());
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Private Helpers
-    // ─────────────────────────────────────────────────────────────────────────
 
     private Appeal findAppealOrThrow(UUID appealId) {
         return appealRepository.findById(appealId)
@@ -283,36 +249,23 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .build();
     }
 
-    private StaffAppealListItemResponse toListItem(Appeal a) {
-        String examName = "", blockName = "";
-        try {
-            examName = a.getSubmission().getBlock().getExam().getName();
-            blockName = a.getSubmission().getBlock().getName();
-        } catch (Exception ignored) {
-        }
-
-        BigDecimal originalScore = gradingResultRepository
-                .findBySubmission_SubmissionId(a.getSubmission().getSubmissionId())
-                .map(gr -> gr.getTotalScore())
-                .orElse(BigDecimal.ZERO);
-
-        String appealCode = "#PK-" + a.getCreatedAt().getYear()
-                + "-" + a.getAppealId().toString().substring(0, 4).toUpperCase();
+    private StaffAppealListItemResponse toListItem(StaffAppealListRowProjection row) {
+        String appealCode = "#PK-" + row.getCreatedAt().getYear()
+                + "-" + row.getAppealId().toString().substring(0, 4).toUpperCase();
 
         return StaffAppealListItemResponse.builder()
-                .appealId(a.getAppealId())
+                .appealId(row.getAppealId())
                 .appealCode(appealCode)
-                .studentName(a.getStudent().getFullName())
-                .studentMssv(a.getStudent().getMssv())
-                .examName(examName)
-                .blockName(blockName)
-                .status(a.getStatus())
-                .originalScore(originalScore)
-                .newScore(a.getNewScore())
-                .createdAt(a.getCreatedAt())
-                .deadlineAt(a.getDeadlineAt())
-                .assignedLecturerName(
-                        a.getAssignedLecturer() != null ? a.getAssignedLecturer().getFullName() : null)
+                .studentName(row.getStudentName())
+                .studentMssv(row.getStudentMssv())
+                .examName(row.getExamName())
+                .blockName(row.getBlockName())
+                .status(AppealStatus.valueOf(row.getStatus()))
+                .originalScore(row.getOriginalScore() != null ? row.getOriginalScore() : BigDecimal.ZERO)
+                .newScore(row.getNewScore())
+                .createdAt(row.getCreatedAt())
+                .deadlineAt(row.getDeadlineAt())
+                .assignedLecturerName(row.getAssignedLecturerName())
                 .build();
     }
 
@@ -331,10 +284,9 @@ public class StaffAppealServiceImpl implements StaffAppealService {
 
         BigDecimal originalScore = gradingResultRepository
                 .findBySubmission_SubmissionId(submissionId)
-                .map(gr -> gr.getTotalScore())
+                .map(GradingResult::getTotalScore)
                 .orElse(BigDecimal.ZERO);
 
-        // Payment info
         var payment = paymentRepository.findByAppealId(a.getAppealId()).orElse(null);
 
         String appealCode = "#PK-" + a.getCreatedAt().getYear()
@@ -352,25 +304,20 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .createdAt(a.getCreatedAt())
                 .deadlineAt(a.getDeadlineAt())
                 .completedAt(a.getCompletedAt())
-                // Student
                 .studentId(a.getStudent().getUserId())
                 .studentName(a.getStudent().getFullName())
                 .studentMssv(a.getStudent().getMssv())
                 .studentEmail(a.getStudent().getEmail())
-                // Exam
                 .examName(examName)
                 .semester(semester)
                 .blockName(blockName)
-                // Submission
                 .submissionId(submissionId)
                 .submissionFileName(submissionFileName)
-                // Assigned Lecturer
                 .assignedLecturerId(a.getAssignedLecturer() != null ? a.getAssignedLecturer().getUserId() : null)
                 .assignedLecturerName(a.getAssignedLecturer() != null ? a.getAssignedLecturer().getFullName() : null)
                 .assignedLecturerEmail(a.getAssignedLecturer() != null ? a.getAssignedLecturer().getEmail() : null)
                 .assignedAt(a.getAssignedAt())
                 .assignedByName(a.getAssignedBy() != null ? a.getAssignedBy().getFullName() : null)
-                // Payment
                 .paymentAmount(payment != null ? payment.getAmount() : null)
                 .paymentStatus(payment != null ? payment.getStatus() : null)
                 .paidAt(payment != null ? payment.getPaidAt() : null)
@@ -389,14 +336,11 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .orElse(DEFAULT_DEADLINE_DAYS);
     }
 
-    /**
-     * Đọc phí phúc khảo từ SystemConfigs (dùng khi hoàn tiền).
-     */
-    private java.math.BigDecimal loadAppealFee() {
+    private BigDecimal loadAppealFee() {
         return systemConfigRepository.findByConfigKey(KEY_APPEAL_FEE)
                 .map(c -> {
                     try {
-                        return new java.math.BigDecimal(c.getConfigValue());
+                        return new BigDecimal(c.getConfigValue());
                     } catch (NumberFormatException e) {
                         return DEFAULT_APPEAL_FEE;
                     }

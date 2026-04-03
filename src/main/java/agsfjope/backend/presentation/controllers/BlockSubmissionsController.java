@@ -1,13 +1,13 @@
 package agsfjope.backend.presentation.controllers;
 
 import agsfjope.backend.application.dtos.responses.submission.SubmissionListItemResponse;
-import agsfjope.backend.core.entities.GradingResult;
-import agsfjope.backend.core.entities.Submission;
-import agsfjope.backend.core.entities.User;
+import agsfjope.backend.core.enums.GradingResultStatus;
 import agsfjope.backend.core.enums.SubmissionStatus;
-import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
+import agsfjope.backend.core.repositories.submission.projections.SubmissionListRowProjection;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
@@ -19,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -33,127 +32,93 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BlockSubmissionsController {
 
-    private final SubmissionRepository    submissionRepository;
-    private final GradingResultRepository gradingResultRepository;
+    private final SubmissionRepository submissionRepository;
 
     private static final String STAFF_ROLES =
             "hasAnyAuthority('EXAM_STAFF','ROLE_EXAM_STAFF','SYSTEM_ADMIN','ROLE_SYSTEM_ADMIN')";
 
-    /**
-     * Trả danh sách phân trang các bài nộp trong một block.
-     * Filter và search được thực hiện in-memory sau khi load.
-     */
     @GetMapping("/api/exams/{examId}/blocks/{blockId}/submissions")
     @PreAuthorize(STAFF_ROLES)
     public ResponseEntity<Map<String, Object>> getBlockSubmissions(
             @PathVariable UUID examId,
             @PathVariable UUID blockId,
-            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false)    String search,
-            @RequestParam(required = false)    String status
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status
     ) {
-        // 1. Load ALL submissions for the block (ordered by submittedAt DESC)
-        List<Submission> allSubmissions =
-                submissionRepository.findAllByBlock_BlockIdOrderBySubmittedAtDesc(blockId);
-
-        // 2. Build grading map for O(1) lookup
-        Map<UUID, GradingResult> gradingMap = new HashMap<>();
-                gradingResultRepository.findAllBySubmission_Block_BlockId(blockId)
-                                .forEach(gr -> {
-                                        if (gr != null && gr.getSubmission() != null && gr.getSubmission().getSubmissionId() != null) {
-                                                gradingMap.put(gr.getSubmission().getSubmissionId(), gr);
-                                        }
-                                });
-
-        // 3. Map to DTOs
-        List<SubmissionListItemResponse> allItems = allSubmissions.stream().map(sub -> {
-            Optional<GradingResult> gr = Optional.ofNullable(gradingMap.get(sub.getSubmissionId()));
-            User student = sub.getStudent();
-            return SubmissionListItemResponse.builder()
-                    .submissionId(sub.getSubmissionId())
-                    .fileName(sub.getFileName())
-                    .fileSizeBytes(sub.getFileSizeBytes())
-                    .submissionStatus(sub.getStatus())
-                    .submittedAt(sub.getSubmittedAt())
-                    .studentId(student != null ? student.getUserId() : null)
-                    .studentName(student != null ? student.getFullName() : null)
-                    .studentCode(student != null ? student.getMssv() : null)
-                    .studentEmail(student != null ? student.getEmail() : null)
-                    .gradingResultId(gr.map(GradingResult::getGradingResultId).orElse(null))
-                    .gradingStatus(gr.map(GradingResult::getStatus).orElse(null))
-                    .totalScore(gr.map(GradingResult::getTotalScore).orElse(null))
-                    .maxScore(gr.map(GradingResult::getMaxScore).orElse(null))
-                    .gradedAt(gr.map(GradingResult::getUpdatedAt).orElse(null))
-                    .build();
-        }).toList();
-
-        // 4. Stats — full block counts (before any filter)
-        long totalAll     = allItems.size();
-        long totalSubmitted = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.SUBMITTED).count();
-        long totalGrading   = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.GRADING).count();
-        long totalGraded    = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.GRADED).count();
-
-        // 5. In-memory filter: status
-        SubmissionStatus statusFilter = null;
+        String keyword = StringUtils.hasText(search) ? search.trim() : "";
+        String normalizedStatus = null;
         if (StringUtils.hasText(status)) {
-            try { statusFilter = SubmissionStatus.valueOf(status.toUpperCase()); }
-            catch (IllegalArgumentException ignored) { /* treat as "all" */ }
-        }
-        final SubmissionStatus finalStatus = statusFilter;
-
-        List<SubmissionListItemResponse> filtered = allItems;
-        if (finalStatus != null) {
-            filtered = filtered.stream()
-                    .filter(i -> i.getSubmissionStatus() == finalStatus)
-                    .toList();
+            try {
+                normalizedStatus = SubmissionStatus.valueOf(status.trim().toUpperCase()).name();
+            } catch (IllegalArgumentException ignored) {
+                normalizedStatus = null;
+            }
         }
 
-        // 6. In-memory filter: keyword (name or MSSV)
-        if (StringUtils.hasText(search)) {
-            String q = search.trim().toLowerCase();
-            filtered = filtered.stream()
-                    .filter(i -> {
-                        String name = i.getStudentName() != null ? i.getStudentName().toLowerCase() : "";
-                        String code = i.getStudentCode() != null ? i.getStudentCode().toLowerCase() : "";
-                        return name.contains(q) || code.contains(q);
-                    })
-                    .toList();
-        }
+        PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.max(size, 1));
+        Page<SubmissionListRowProjection> pageResult = normalizedStatus == null
+                ? submissionRepository.findSubmissionListPageByBlock(examId, blockId, keyword, pageable)
+                : submissionRepository.findSubmissionListPageByBlockAndStatus(examId, blockId, normalizedStatus, keyword, pageable);
 
-        // 7. Pagination
-        int totalFiltered = filtered.size();
-        int totalPages    = (int) Math.ceil((double) totalFiltered / size);
-        int safePage      = Math.max(0, Math.min(page, totalPages - 1));
-        int fromIdx       = safePage * size;
-        int toIdx         = Math.min(fromIdx + size, totalFiltered);
+        List<SubmissionListItemResponse> items = pageResult.getContent().stream()
+                .map(this::toResponse)
+                .toList();
 
-        List<SubmissionListItemResponse> pageItems = (fromIdx < totalFiltered)
-                ? filtered.subList(fromIdx, toIdx)
-                : List.of();
+        long totalAll = submissionRepository.countByBlock_BlockId(blockId);
+        long totalSubmitted = submissionRepository.countByBlock_BlockIdAndStatus(blockId, SubmissionStatus.SUBMITTED);
+        long totalGrading = submissionRepository.countByBlock_BlockIdAndStatus(blockId, SubmissionStatus.GRADING);
+        long totalGraded = submissionRepository.countByBlock_BlockIdAndStatus(blockId, SubmissionStatus.GRADED);
 
-        // 8. Build response
         Map<String, Object> stats = new HashMap<>();
-        stats.put("total",     totalAll);
+        stats.put("total", totalAll);
         stats.put("submitted", totalSubmitted);
-        stats.put("grading",   totalGrading);
-        stats.put("graded",    totalGraded);
+        stats.put("grading", totalGrading);
+        stats.put("graded", totalGraded);
 
         Map<String, Object> pagination = new HashMap<>();
-        pagination.put("page",          safePage);
-        pagination.put("size",          size);
-        pagination.put("totalElements", totalFiltered);
-        pagination.put("totalPages",    Math.max(1, totalPages));
-        pagination.put("isFirst",       safePage == 0);
-        pagination.put("isLast",        safePage >= totalPages - 1);
+        pagination.put("page", pageResult.getNumber());
+        pagination.put("size", pageResult.getSize());
+        pagination.put("totalElements", pageResult.getTotalElements());
+        pagination.put("totalPages", Math.max(1, pageResult.getTotalPages()));
+        pagination.put("isFirst", pageResult.getNumber() == 0);
+        pagination.put("isLast", pageResult.getNumber() >= Math.max(0, pageResult.getTotalPages() - 1));
 
         Map<String, Object> response = new HashMap<>();
-        response.put("success",    true);
-        response.put("message",    "Danh sách bài nộp: " + totalFiltered + " bài.");
-        response.put("data",       pageItems);
-        response.put("stats",      stats);
+        response.put("success", true);
+        response.put("message", "Danh sách bài nộp: " + pageResult.getTotalElements() + " bài.");
+        response.put("data", items);
+        response.put("stats", stats);
         response.put("pagination", pagination);
-        response.put("errors",     null);
+        response.put("errors", null);
         return ResponseEntity.ok(response);
+    }
+
+    private SubmissionListItemResponse toResponse(SubmissionListRowProjection row) {
+        SubmissionStatus submissionStatus = row.getSubmissionStatus() != null
+                ? SubmissionStatus.valueOf(row.getSubmissionStatus())
+                : null;
+
+        GradingResultStatus gradingStatus = row.getGradingStatus() != null
+                ? GradingResultStatus.valueOf(row.getGradingStatus())
+                : null;
+
+        return SubmissionListItemResponse.builder()
+                .submissionId(row.getSubmissionId())
+                .fileName(row.getFileName())
+                .fileSizeBytes(row.getFileSizeBytes())
+                .submissionStatus(submissionStatus)
+                .submittedAt(row.getSubmittedAt())
+                .studentId(row.getStudentId())
+                .studentName(row.getStudentName())
+                .studentCode(row.getStudentCode())
+                .studentEmail(row.getStudentEmail())
+                .gradingResultId(row.getGradingResultId())
+                .gradingStatus(gradingStatus)
+                .totalScore(row.getTotalScore())
+                .maxScore(row.getMaxScore())
+                .gradedAt(row.getGradedAt())
+                .build();
     }
 }

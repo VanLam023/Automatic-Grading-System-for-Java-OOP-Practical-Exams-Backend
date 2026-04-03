@@ -2,6 +2,9 @@ package agsfjope.backend.core.repositories.appeal;
 
 import agsfjope.backend.core.entities.Appeal;
 import agsfjope.backend.core.enums.AppealStatus;
+import agsfjope.backend.core.repositories.appeal.projections.LecturerAppealWorkloadProjection;
+import agsfjope.backend.core.repositories.appeal.projections.PendingAppealRowProjection;
+import agsfjope.backend.core.repositories.appeal.projections.StaffAppealListRowProjection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -80,7 +83,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.StudentID = :studentId
               AND a.Status = CAST(:status AS appeal_status)
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countByStudentAndStatus(@Param("studentId") UUID studentId,
                                  @Param("status") String status);
 
@@ -128,7 +131,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
      * @return number of appeals matching the given status
      */
     @Query(value = "SELECT COUNT(*) FROM Appeals a WHERE a.Status = CAST(:status AS appeal_status)",
-           nativeQuery = true)
+            nativeQuery = true)
     long countByStatus(@Param("status") String status);
 
     /**
@@ -142,7 +145,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
      * @return number of appeals matching the given status and date range
      */
     @Query(value = "SELECT COUNT(*) FROM Appeals a WHERE a.Status = CAST(:status AS appeal_status) AND a.CreatedAt BETWEEN :from AND :to",
-           nativeQuery = true)
+            nativeQuery = true)
     long countByStatusAndCreatedAtBetween(@Param("status") String status,
                                           @Param("from") OffsetDateTime from,
                                           @Param("to") OffsetDateTime to);
@@ -163,12 +166,13 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
               AND (:keyword = '' OR
                    LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
-                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
               AND (:semester IS NULL OR e.Semester = :semester)
-              AND (:examName IS NULL OR e.Name = :examName)
+              AND (:examName IS NULL OR LOWER(e.Name) = LOWER(:examName))
             ORDER BY a.CreatedAt DESC
             """,
-           countQuery = """
+            countQuery = """
             SELECT COUNT(*) FROM Appeals a
             JOIN Users u ON a.StudentID = u.UserID
             JOIN Submissions s ON a.SubmissionID = s.SubmissionID
@@ -177,13 +181,70 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
               AND (:keyword = '' OR
                    LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
-                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
               AND (:semester IS NULL OR e.Semester = :semester)
-              AND (:examName IS NULL OR e.Name = :examName)
+              AND (:examName IS NULL OR LOWER(e.Name) = LOWER(:examName))
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     Page<Appeal> searchAppealsForStaff(
             @Param("status")  String status,
+            @Param("keyword") String keyword,
+            @Param("semester") String semester,
+            @Param("examName") String examName,
+            Pageable pageable);
+
+    /**
+     * Optimized flat query for the Exam Staff appeal list page.
+     * Removes per-row grading-result lookup and supports exam-name keyword search.
+     */
+    @Query(value = """
+            SELECT
+                a.AppealID AS appealId,
+                a.CreatedAt AS createdAt,
+                u.FullName AS studentName,
+                u.MSSV AS studentMssv,
+                e.Name AS examName,
+                b.Name AS blockName,
+                a.Status AS status,
+                COALESCE(gr.TotalScore, 0) AS originalScore,
+                a.NewScore AS newScore,
+                a.DeadlineAt AS deadlineAt,
+                lec.FullName AS assignedLecturerName
+            FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            LEFT JOIN GradingResults gr ON gr.SubmissionID = s.SubmissionID
+            LEFT JOIN Users lec ON a.AssignedLecturerID = lec.UserID
+            WHERE (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
+              AND (:keyword = '' OR
+                   LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+              AND (:semester IS NULL OR e.Semester = :semester)
+              AND (:examName IS NULL OR LOWER(e.Name) = LOWER(:examName))
+            ORDER BY a.CreatedAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(*)
+            FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
+              AND (:keyword = '' OR
+                   LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
+                   LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
+              AND (:semester IS NULL OR e.Semester = :semester)
+              AND (:examName IS NULL OR LOWER(e.Name) = LOWER(:examName))
+            """,
+            nativeQuery = true)
+    Page<StaffAppealListRowProjection> searchAppealRowsForStaff(
+            @Param("status") String status,
             @Param("keyword") String keyword,
             @Param("semester") String semester,
             @Param("examName") String examName,
@@ -201,11 +262,24 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.AssignedLecturerID = :lecturerId
               AND a.Status = CAST('PROCESSING' AS appeal_status)
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countActiveAppealsByLecturer(@Param("lecturerId") UUID lecturerId);
 
-    // ─── Staff Dashboard ────────────────────────────────────────────────────
+    /**
+     * Batched lecturer workload aggregation to avoid 1-lecturer = 1-query pattern.
+     */
+    @Query(value = """
+            SELECT a.AssignedLecturerID AS lecturerId,
+                   COUNT(*) AS activeAppealCount
+            FROM Appeals a
+            WHERE a.AssignedLecturerID IS NOT NULL
+              AND a.Status = CAST('PROCESSING' AS appeal_status)
+            GROUP BY a.AssignedLecturerID
+            """,
+            nativeQuery = true)
+    List<LecturerAppealWorkloadProjection> countActiveAppealsGroupedByLecturer();
 
+    // ─── Staff Dashboard ────────────────────────────────────────────────────
 
     /**
      * Finds appeals with PENDING or PROCESSING status, ordered by creation date descending.
@@ -220,9 +294,31 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
             ORDER BY a.CreatedAt DESC
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     List<Appeal> findPendingAndProcessingOrderByCreatedAtDesc(
             org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Optimized flat query for the staff dashboard open appeals table.
+     */
+    @Query(value = """
+            SELECT
+                a.AppealID AS appealId,
+                u.FullName AS studentName,
+                u.MSSV AS studentMssv,
+                e.Name AS examName,
+                a.Status AS status,
+                a.CreatedAt AS createdAt
+            FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+            ORDER BY a.CreatedAt DESC
+            """,
+            nativeQuery = true)
+    List<PendingAppealRowProjection> findPendingAndProcessingRowsOrderByCreatedAtDesc(Pageable pageable);
 
     /**
      * Finds appeals with PENDING or PROCESSING status for a specific semester.
@@ -242,10 +338,35 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
               AND e.Semester = :semester
             ORDER BY a.CreatedAt DESC
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     List<Appeal> findPendingAndProcessingBySemesterOrderByCreatedAtDesc(
             @Param("semester") String semester,
             org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * Optimized flat query for the staff dashboard open appeals table filtered by semester.
+     */
+    @Query(value = """
+            SELECT
+                a.AppealID AS appealId,
+                u.FullName AS studentName,
+                u.MSSV AS studentMssv,
+                e.Name AS examName,
+                a.Status AS status,
+                a.CreatedAt AS createdAt
+            FROM Appeals a
+            JOIN Users u ON a.StudentID = u.UserID
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+              AND e.Semester = :semester
+            ORDER BY a.CreatedAt DESC
+            """,
+            nativeQuery = true)
+    List<PendingAppealRowProjection> findPendingAndProcessingRowsBySemesterOrderByCreatedAtDesc(
+            @Param("semester") String semester,
+            Pageable pageable);
 
     /**
      * Counts appeals with the given status for a specific semester.
@@ -263,9 +384,33 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.Status = CAST(:status AS appeal_status)
               AND e.Semester = :semester
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countByStatusAndSemester(@Param("status") String status,
                                   @Param("semester") String semester);
+
+    /**
+     * Counts open appeals (PENDING + PROCESSING) for the dashboard overview card.
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+            """,
+            nativeQuery = true)
+    long countOpenAppeals();
+
+    /**
+     * Counts open appeals (PENDING + PROCESSING) for a specific semester.
+     */
+    @Query(value = """
+            SELECT COUNT(*) FROM Appeals a
+            JOIN Submissions s ON a.SubmissionID = s.SubmissionID
+            JOIN Blocks b ON s.BlockID = b.BlockID
+            JOIN Exams e ON b.ExamID = e.ExamID
+            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+              AND e.Semester = :semester
+            """,
+            nativeQuery = true)
+    long countOpenAppealsBySemester(@Param("semester") String semester);
 
     // ─── Lecturer — Appeal Management ─────────────────────────────────────────
 
@@ -287,7 +432,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
                    LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
             ORDER BY a.CreatedAt DESC
             """,
-           countQuery = """
+            countQuery = """
             SELECT COUNT(*) FROM Appeals a
             JOIN Users u ON a.StudentID = u.UserID
             JOIN Submissions s ON a.SubmissionID = s.SubmissionID
@@ -300,7 +445,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
                    LOWER(u.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')) OR
                    LOWER(e.Name)     LIKE LOWER(CONCAT('%', :keyword, '%')))
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     Page<Appeal> searchAppealsForLecturer(
             @Param("lecturerId") UUID lecturerId,
             @Param("status")  String status,
@@ -322,7 +467,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.AssignedLecturerID = :lecturerId
               AND a.Status = CAST(:status AS appeal_status)
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countByAssignedLecturerAndStatus(@Param("lecturerId") UUID lecturerId,
                                           @Param("status") String status);
 
@@ -340,7 +485,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
               AND a.Status = CAST('PROCESSING' AS appeal_status)
               AND a.DeadlineAt < :now
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countOverdueByAssignedLecturer(@Param("lecturerId") UUID lecturerId,
                                         @Param("now") OffsetDateTime now);
 
@@ -360,7 +505,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
                 CAST('DENIED'    AS appeal_status)
               )
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countCompletedReviewsByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
 
     /**
@@ -395,7 +540,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
               AND a.Status = CAST(:status AS appeal_status)
             ORDER BY a.AssignedAt DESC
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     List<Appeal> findByAssignedLecturerAndStatusOrderByAssignedAtDesc(
             @Param("lecturerId") UUID lecturerId,
             @Param("status") String status,
@@ -431,7 +576,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.AssignedLecturerID = :lecturerId
               AND a.Status = CAST('APPROVED' AS appeal_status)
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countApprovedByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
 
     /**
@@ -446,7 +591,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE a.AssignedLecturerID = :lecturerId
               AND a.Status = CAST('DENIED' AS appeal_status)
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countDeniedByAssignedLecturer(@Param("lecturerId") UUID lecturerId);
 
     // ─── Exam Statistics — Block-level queries (PROC-006) ────────────────────
@@ -463,7 +608,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             JOIN Submissions s ON a.SubmissionID = s.SubmissionID
             WHERE s.BlockID = :blockId
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countByBlockId(@Param("blockId") UUID blockId);
 
     /**
@@ -480,7 +625,7 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             WHERE s.BlockID = :blockId
               AND a.Status = CAST(:status AS appeal_status)
             """,
-           nativeQuery = true)
+            nativeQuery = true)
     long countByBlockIdAndStatus(@Param("blockId") UUID blockId,
-                                  @Param("status") String status);
+                                 @Param("status") String status);
 }
