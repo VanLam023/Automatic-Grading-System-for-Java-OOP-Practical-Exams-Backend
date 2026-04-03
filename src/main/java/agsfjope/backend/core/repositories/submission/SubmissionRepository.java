@@ -2,7 +2,6 @@ package agsfjope.backend.core.repositories.submission;
 
 import agsfjope.backend.core.entities.Submission;
 import agsfjope.backend.core.enums.SubmissionStatus;
-import agsfjope.backend.core.repositories.submission.projections.SubmissionListRowProjection;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,23 +20,73 @@ import java.util.UUID;
 @Repository
 public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
 
+    /**
+     * Checks whether any student has already submitted a file for the given block.
+     *
+     * <p>Used to enforce <strong>BR-11</strong>: an exam paper cannot be modified or deleted
+     * once at least one submission exists for its block.</p>
+     *
+     * @param blockId the block's UUID to check
+     * @return true if at least one submission exists for this block
+     */
     boolean existsByBlock_BlockId(UUID blockId);
 
+    /**
+     * Finds the existing submission (if any) for a specific student and block.
+     *
+     * <p>Used to detect resubmit (BR-17): if a submission already exists,
+     * the old one must be fully deleted before the new one is saved.</p>
+     *
+     * @param studentId the student's user UUID
+     * @param blockId   the block UUID
+     * @return the existing submission, or empty if none
+     */
     Optional<Submission> findByStudent_UserIdAndBlock_BlockId(UUID studentId, UUID blockId);
 
+    /**
+     * Finds all submissions for a block with a specific status.
+     * Used by GradingService to fetch submissions that need to be graded (SUBMITTED status).
+     *
+     * @param blockId the block UUID
+     * @param status  the submission status filter
+     * @return list of matching submissions
+     */
     List<Submission> findByBlock_BlockIdAndStatus(UUID blockId, SubmissionStatus status);
 
+    /**
+     * Finds submissions for a block matching any of the given statuses.
+     * Used by GradingService to include stuck-GRADING submissions in GRADE_ALL.
+     */
     List<Submission> findByBlock_BlockIdAndStatusIn(UUID blockId, List<SubmissionStatus> statuses);
 
+
+    /**
+     * Counts total submissions for a block.
+     * Uses explicit JPQL to avoid unnecessary JOIN with Blocks table.
+     */
     @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.blockId = :blockId")
     long countByBlock_BlockId(@Param("blockId") UUID blockId);
 
+    /**
+     * Counts submissions for a block with a specific status.
+     * Uses explicit JPQL to avoid unnecessary JOIN with Blocks table.
+     */
     @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.blockId = :blockId AND s.status = :status")
     long countByBlock_BlockIdAndStatus(@Param("blockId") UUID blockId,
                                        @Param("status") SubmissionStatus status);
 
+    /**
+     * Finds ALL submissions for a block (any status).
+     * Used by EXAM_STAFF to display the full submission list.
+     *
+     * @param blockId the block UUID
+     * @return list of all submissions in the block, ordered by submission time desc
+     */
     List<Submission> findAllByBlock_BlockIdOrderBySubmittedAtDesc(UUID blockId);
 
+    /**
+     * Pageable search — no status filter, keyword only (or all if keyword blank).
+     */
     @Query(value = """
             SELECT s FROM Submission s
             JOIN FETCH s.student st
@@ -59,6 +108,9 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             @Param("keyword") String keyword,
             Pageable pageable);
 
+    /**
+     * Pageable search — filtered by a specific status + optional keyword.
+     */
     @Query(value = """
             SELECT s FROM Submission s
             JOIN FETCH s.student st
@@ -84,112 +136,43 @@ public interface SubmissionRepository extends JpaRepository<Submission, UUID> {
             Pageable pageable);
 
     /**
-     * Optimized flat query for Exam Staff submission list page.
-     * Pushes search/filter/pagination to DB and joins GradingResults in one query.
+     * Counts submissions submitted within the given date range.
+     * Used by the Admin Dashboard date-filtered overview.
+     *
+     * @param from start of date range (inclusive)
+     * @param to   end of date range (inclusive)
+     * @return number of submissions with submittedAt between from and to
      */
-    @Query(value = """
-            SELECT
-                s.SubmissionID    AS submissionId,
-                s.FileName        AS fileName,
-                s.FileSizeBytes   AS fileSizeBytes,
-                s.Status          AS submissionStatus,
-                s.SubmittedAt     AS submittedAt,
-                st.UserID         AS studentId,
-                st.FullName       AS studentName,
-                st.MSSV           AS studentCode,
-                st.Email          AS studentEmail,
-                gr.GradingResultID AS gradingResultId,
-                gr.Status         AS gradingStatus,
-                gr.TotalScore     AS totalScore,
-                gr.MaxScore       AS maxScore,
-                gr.UpdatedAt      AS gradedAt
-            FROM Submissions s
-            JOIN Blocks b ON s.BlockID = b.BlockID
-            JOIN Users st ON s.StudentID = st.UserID
-            LEFT JOIN GradingResults gr ON gr.SubmissionID = s.SubmissionID
-            WHERE s.BlockID = :blockId
-              AND b.ExamID = :examId
-              AND (:keyword IS NULL OR :keyword = ''
-                   OR LOWER(st.FullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(st.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
-            ORDER BY s.SubmittedAt DESC, s.SubmissionID DESC
-            """,
-            countQuery = """
-            SELECT COUNT(*)
-            FROM Submissions s
-            JOIN Blocks b ON s.BlockID = b.BlockID
-            JOIN Users st ON s.StudentID = st.UserID
-            WHERE s.BlockID = :blockId
-              AND b.ExamID = :examId
-              AND (:keyword IS NULL OR :keyword = ''
-                   OR LOWER(st.FullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(st.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
-            """,
-            nativeQuery = true)
-    Page<SubmissionListRowProjection> findSubmissionListPageByBlock(
-            @Param("examId") UUID examId,
-            @Param("blockId") UUID blockId,
-            @Param("keyword") String keyword,
-            Pageable pageable);
-
-    /**
-     * Optimized flat query for Exam Staff submission list page with status filter.
-     */
-    @Query(value = """
-            SELECT
-                s.SubmissionID    AS submissionId,
-                s.FileName        AS fileName,
-                s.FileSizeBytes   AS fileSizeBytes,
-                s.Status          AS submissionStatus,
-                s.SubmittedAt     AS submittedAt,
-                st.UserID         AS studentId,
-                st.FullName       AS studentName,
-                st.MSSV           AS studentCode,
-                st.Email          AS studentEmail,
-                gr.GradingResultID AS gradingResultId,
-                gr.Status         AS gradingStatus,
-                gr.TotalScore     AS totalScore,
-                gr.MaxScore       AS maxScore,
-                gr.UpdatedAt      AS gradedAt
-            FROM Submissions s
-            JOIN Blocks b ON s.BlockID = b.BlockID
-            JOIN Users st ON s.StudentID = st.UserID
-            LEFT JOIN GradingResults gr ON gr.SubmissionID = s.SubmissionID
-            WHERE s.BlockID = :blockId
-              AND b.ExamID = :examId
-              AND s.Status = CAST(:status AS submission_status)
-              AND (:keyword IS NULL OR :keyword = ''
-                   OR LOWER(st.FullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(st.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
-            ORDER BY s.SubmittedAt DESC, s.SubmissionID DESC
-            """,
-            countQuery = """
-            SELECT COUNT(*)
-            FROM Submissions s
-            JOIN Blocks b ON s.BlockID = b.BlockID
-            JOIN Users st ON s.StudentID = st.UserID
-            WHERE s.BlockID = :blockId
-              AND b.ExamID = :examId
-              AND s.Status = CAST(:status AS submission_status)
-              AND (:keyword IS NULL OR :keyword = ''
-                   OR LOWER(st.FullName) LIKE LOWER(CONCAT('%', :keyword, '%'))
-                   OR LOWER(st.MSSV)     LIKE LOWER(CONCAT('%', :keyword, '%')))
-            """,
-            nativeQuery = true)
-    Page<SubmissionListRowProjection> findSubmissionListPageByBlockAndStatus(
-            @Param("examId") UUID examId,
-            @Param("blockId") UUID blockId,
-            @Param("status") String status,
-            @Param("keyword") String keyword,
-            Pageable pageable);
-
     long countBySubmittedAtBetween(OffsetDateTime from, OffsetDateTime to);
 
+    // ─── Staff Dashboard ────────────────────────────────────────────────────
+
+    /**
+     * Counts submissions with the given status.
+     * Used by Staff Dashboard to count graded submissions.
+     *
+     * @param status the submission status to filter by
+     * @return number of submissions matching the status
+     */
     long countByStatus(SubmissionStatus status);
 
+    /**
+     * Counts all submissions belonging to exams in the given semester.
+     * Navigates Submission → Block → Exam to check the semester field.
+     *
+     * @param semester the semester code to filter by
+     * @return total submission count for the semester
+     */
     @Query("SELECT COUNT(s) FROM Submission s WHERE s.block.exam.semester = :semester")
     long countBySemester(@Param("semester") String semester);
 
+    /**
+     * Counts submissions with the given status belonging to exams in the given semester.
+     *
+     * @param status   the submission status to filter by
+     * @param semester the semester code to filter by
+     * @return number of matching submissions
+     */
     @Query("SELECT COUNT(s) FROM Submission s WHERE s.status = :status AND s.block.exam.semester = :semester")
     long countByStatusAndSemester(@Param("status") SubmissionStatus status,
                                   @Param("semester") String semester);

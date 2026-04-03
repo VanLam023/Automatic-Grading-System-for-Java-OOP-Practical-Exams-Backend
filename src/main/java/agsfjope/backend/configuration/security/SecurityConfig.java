@@ -50,7 +50,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         // Allow defined origins from .env, but also add common localhost ports to bypass CORS logic during dev
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOriginPatterns(List.of("*")); 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
         config.setAllowCredentials(true);
@@ -70,65 +70,50 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // Enable CORS with our custom configuration
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // Disable CSRF protection — not needed for REST APIs with JWT
-                .csrf(AbstractHttpConfigurer::disable)
+            // Enable CORS with our custom configuration
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            // Disable CSRF protection — not needed for REST APIs with JWT
+            .csrf(AbstractHttpConfigurer::disable)
 
-                // Configure authorization rules per URL pattern
-                .authorizeHttpRequests(auth -> auth
-                        // Public endpoints: no token required
-                        .requestMatchers(
-                                "/api/auth/login",              // Login endpoint
-                                "/api/auth/refresh",            // Refresh Token endpoint
-                                "/api/auth/register",           // Student self-registration
-                                "/api/auth/verify-account",     // Email activation link
-                                "/api/auth/forgot-password",    // Forgot Password — send reset email
-                                "/api/auth/verify-reset-token", // Verify reset token validity
-                                "/api/auth/reset-password",     // Confirm new password
-                                "/api/v1/payments/webhook",     // PayOS webhook callback (no JWT — PayOS server calls this)
-                                "/swagger-ui/**",               // Swagger UI
-                                "/swagger-ui.html",
-                                "/v3/api-docs/**",              // OpenAPI JSON spec
-                                "/api-docs/**",
-                                "/error"                        // Spring Boot default error routing
-                        ).permitAll()
+            // Configure authorization rules per URL pattern
+            .authorizeHttpRequests(auth -> auth
+                // Public endpoints: no token required
+                .requestMatchers(
+                    "/api/auth/login",              // Login endpoint
+                    "/api/auth/refresh",            // Refresh Token endpoint
+                    "/api/auth/register",           // Student self-registration
+                    "/api/auth/verify-account",     // Email activation link
+                    "/api/auth/forgot-password",    // Forgot Password — send reset email
+                    "/api/auth/verify-reset-token", // Verify reset token validity
+                    "/api/auth/reset-password",     // Confirm new password
+                    "/api/v1/payments/webhook",     // PayOS webhook callback (no JWT — PayOS server calls this)
+                    "/swagger-ui/**",               // Swagger UI
+                    "/swagger-ui.html",
+                    "/v3/api-docs/**",              // OpenAPI JSON spec
+                    "/api-docs/**",
+                    "/error"                        // Spring Boot default error routing
+                ).permitAll()
+                    .requestMatchers("/api/admin/**").hasAnyRole("SYSTEM_ADMIN", "ADMIN")
+                    .requestMatchers("/api/staff/**").hasRole("EXAM_STAFF")
+                    .requestMatchers("/api/lecturer/**").hasRole("LECTURER")
+                // /api/auth/logout requires a valid Bearer JWT (JwtAuthenticationFilter must pass first)
+                .requestMatchers("/api/auth/logout").authenticated()
+                // All other endpoints require authentication (valid JWT token)
+                .anyRequest().authenticated()
+            )
 
-                        // Specific audit-log routes must be declared before broader /api/admin/** and /api/staff/**
-                        .requestMatchers("/api/admin/audit-logs/**")
-                        .hasAnyRole("SYSTEM_ADMIN", "ADMIN")
+            // Set session management to STATELESS — Spring Security will NOT create HTTP sessions
+            // Every request must be self-contained with a valid JWT token
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            )
 
-                        .requestMatchers("/api/staff/audit-logs/**")
-                        .hasRole("EXAM_STAFF")
+            // Register our custom authentication provider (loads users from DB via UserDetailsService)
+            .authenticationProvider(authenticationProvider())
 
-                        .requestMatchers("/api/admin/**")
-                        .hasAnyRole("SYSTEM_ADMIN", "ADMIN")
-
-                        .requestMatchers("/api/staff/**")
-                        .hasRole("EXAM_STAFF")
-
-                        .requestMatchers("/api/lecturer/**")
-                        .hasRole("LECTURER")
-
-                        // /api/auth/logout requires a valid Bearer JWT (JwtAuthenticationFilter must pass first)
-                        .requestMatchers("/api/auth/logout").authenticated()
-
-                        // All other endpoints require authentication (valid JWT token)
-                        .anyRequest().authenticated()
-                )
-
-                // Set session management to STATELESS — Spring Security will NOT create HTTP sessions
-                // Every request must be self-contained with a valid JWT token
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-
-                // Register our custom authentication provider (loads users from DB via UserDetailsService)
-                .authenticationProvider(authenticationProvider())
-
-                // Insert JwtAuthenticationFilter BEFORE the default Spring Security username/password filter
-                // This ensures JWT is validated first before any other authentication attempt
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            // Insert JwtAuthenticationFilter BEFORE the default Spring Security username/password filter
+            // This ensures JWT is validated first before any other authentication attempt
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
