@@ -47,4 +47,16 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
      * @return true if the block exists and belongs to the given exam
      */
     boolean existsByBlockIdAndExam_ExamId(UUID blockId, UUID examId);
+
+    /**
+     * Finds a block and eagerly loads its associated Exam (JOIN FETCH).
+     *
+     * <p>Use this method when you need to access block.getExam() outside of an active
+     * transaction (e.g., in a Controller), to avoid LazyInitializationException.</p>
+     *
+     * @param blockId the block UUID
+     * @return Optional Block with Exam eagerly loaded
+     */
+    @Query("SELECT b FROM Block b JOIN FETCH b.exam WHERE b.blockId = :blockId")
+    Optional<Block> findByBlockIdWithExam(@Param("blockId") UUID blockId);
 }

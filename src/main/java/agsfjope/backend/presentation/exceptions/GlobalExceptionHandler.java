@@ -23,6 +23,7 @@ import org.springframework.security.authentication.AuthenticationCredentialsNotF
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
  * Ensures that API clients ALWAYS receive a consistent JSON response format:
  * { "success": false, "message": "...", "data": null, "errors": "..." }
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -204,6 +206,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGlobalException(Exception ex) {
+        // Log full stacktrace to help diagnose 500 errors
+        log.error("[GlobalExceptionHandler] Unhandled exception: {}", ex.getMessage(), ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(buildErrorResponse("Lỗi hệ thống không xác định: " + ex.getMessage()));
