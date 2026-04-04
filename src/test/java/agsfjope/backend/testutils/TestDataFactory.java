@@ -2,9 +2,11 @@ package agsfjope.backend.testutils;
 
 import agsfjope.backend.core.entities.*;
 import agsfjope.backend.core.enums.GradingMode;
+import agsfjope.backend.core.enums.ExamStatus;
 import java.math.BigDecimal;
-
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -202,5 +204,86 @@ public class TestDataFactory {
                 createPlainConfig("DEFAULT_GRADING_MODE", "MODE_1"),
                 createPlainConfig("APPEAL_DEADLINE_DAYS", "7")
         );
+    }
+
+    // ─── Exam ────────────────────────────────────────────────────────────────
+
+    /**
+     * Exam đang ONGOING: StartTime = 1 giờ trước, EndTime = 1 giờ sau.
+     * semester: "FA", academicYear: "2025-2026"
+     */
+    public static Exam createOngoingExam() {
+        return Exam.builder()
+                .examId(UUID.randomUUID())
+                .name("PRO192 Practical Exam")
+                .semester("FA")
+                .academicYear("2026")
+                .status(ExamStatus.ONGOING)
+                .startTime(OffsetDateTime.now().minusHours(1))
+                .endTime(OffsetDateTime.now().plusHours(2))
+                .gradingMode(GradingMode.MODE_1)
+                .build();
+    }
+
+    // ─── Block ────────────────────────────────────────────────────────────────
+
+    /**
+     * Block đang ONGOING: StartTime = 1 giờ trước, EndTime = 1 giờ sau.
+     * name: "Block 10"
+     */
+    public static Block createOngoingBlock(Exam exam) {
+        return Block.builder()
+                .blockId(UUID.randomUUID())
+                .exam(exam)
+                .name("Block 10")
+                .examDate(LocalDate.now())
+                .startTime(OffsetDateTime.now().minusHours(1))
+                .endTime(OffsetDateTime.now().plusHours(1))
+                .build();
+    }
+
+    /** Block chưa bắt đầu: StartTime = 2 giờ sau. */
+    public static Block createNotStartedBlock(Exam exam) {
+        return Block.builder()
+                .blockId(UUID.randomUUID())
+                .exam(exam)
+                .name("Block 10")
+                .startTime(OffsetDateTime.now().plusHours(2))
+                .endTime(OffsetDateTime.now().plusHours(4))
+                .build();
+    }
+
+    /** Block đã kết thúc: EndTime = 2 giờ trước. */
+    public static Block createFinishedBlock(Exam exam) {
+        return Block.builder()
+                .blockId(UUID.randomUUID())
+                .exam(exam)
+                .name("Block 10")
+                .startTime(OffsetDateTime.now().minusHours(4))
+                .endTime(OffsetDateTime.now().minusHours(2))
+                .build();
+    }
+
+    // ─── Submission ───────────────────────────────────────────────────────────
+
+    public static Submission createSubmission(User student, Block block) {
+        return Submission.builder()
+                .submissionId(UUID.randomUUID())
+                .student(student)
+                .block(block)
+                .fileName("MySolution.zip")
+                .filePath("submissions/Fall-2025/Block 10/Lam Tran Van - se173173/MySolution.zip")
+                .fileSizeBytes(1024L * 512)  // 512 KB
+                .build();
+    }
+
+    // ─── Question ─────────────────────────────────────────────────────────────
+
+    public static Question createQuestion(int number) {
+        return Question.builder()
+                .questionId(UUID.randomUUID())
+                .questionNumber(number)
+                .title("Question " + number)
+                .build();
     }
 }
