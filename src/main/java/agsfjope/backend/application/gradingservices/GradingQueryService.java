@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -51,6 +52,24 @@ public class GradingQueryService {
                 .stream()
                 .map(this::toSummaryResponse)
                 .toList();
+    }
+
+    /**
+     * Returns all grading results for a block WITH per-question answer breakdown.
+     *
+     * <p>Similar to {@link #getBlockResults(UUID)} but includes the full
+     * {@code answers} list (test case results + AI OOP detail per question).
+     * Used by the Excel export service to populate per-question score columns.</p>
+     *
+     * @param blockId block UUID
+     * @return full detail list including per-answer breakdown
+     */
+    @Transactional(readOnly = true)
+    public List<GradingResultResponse> getBlockResultsWithDetails(UUID blockId) {
+        return gradingResultRepository.findAllBySubmission_Block_BlockId(blockId)
+                .stream()
+                .map(this::toDetailResponse)
+                .collect(java.util.stream.Collectors.toList()); // mutable list — required since ExcelExportService calls .sort()
     }
 
     /**
