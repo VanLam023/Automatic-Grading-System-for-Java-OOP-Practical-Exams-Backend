@@ -7,6 +7,7 @@ import agsfjope.backend.core.entities.AIReview;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.block.BlockRepository;
+import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.core.repositories.grading.AIReviewRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
@@ -52,6 +53,7 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
     private final GradingResultRepository  gradingResultRepository;
     private final AIReviewRepository       aiReviewRepository;
     private final AppealRepository         appealRepository;
+    private final SystemConfigRepository   systemConfigRepository;
     private final ObjectMapper             objectMapper;
 
     @Override
@@ -294,9 +296,8 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
         // totalFeesCollected = số đơn đã thanh toán × phí mỗi đơn (lấy từ tổng APPEAL_PAYMENT)
         // totalRefunded = số đơn approved × phí mỗi đơn (lấy từ tổng APPEAL_REFUND)
         // Hiện tại chưa có query trực tiếp WalletTransaction theo block →
-        // tạm tính từ appeal count × giá cố định (50,000 VND theo business rules)
-        // TODO: Khi cần chính xác hơn, thêm native query vào WalletTransactionRepository
-        BigDecimal appealFee = new BigDecimal("50000");
+        // lấy phí từ SystemConfigs (mặc định 200,000 VND)
+        BigDecimal appealFee = getAppealFee();
         // Tổng phí thu = tổng đơn (trừ PENDING_PAYMENT, CANCELLED) × phí
         long paidAppeals = totalAppeals
                 - appealRepository.countByBlockIdAndStatus(blockId, "PENDING_PAYMENT")
@@ -317,6 +318,18 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                 .totalRefunded(totalRefunded)
                 .netRevenue(netRevenue)
                 .build();
+    }
+
+    private BigDecimal getAppealFee() {
+        return systemConfigRepository.findByConfigKey("APPEAL_FEE")
+                .map(config -> {
+                    try {
+                        return new BigDecimal(config.getConfigValue());
+                    } catch (Exception e) {
+                        return new BigDecimal("200000");
+                    }
+                })
+                .orElse(new BigDecimal("200000"));
     }
 
     // ─── UTILITIES ──────────────────────────────────────────────────────────
