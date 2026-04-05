@@ -76,6 +76,10 @@ public class GeminiAdapter implements LLMAdapter {
         String mimeTypePart = responseJson
                 ? ",\n    \"responseMimeType\": \"application/json\""
                 : "";
+        // [PERF-STEP1] maxOutputTokens tăng từ 8192 → 16384 để tránh JSON bị cắt giữa chừng
+        // khi analysis prompt dài (nhiều file .java). gemini-3-flash-preview hỗ trợ tối đa 65536 tokens.
+        // LƯU Ý: KHÔNG đặt comment Java bên trong text block vì Java KHÔNG strip comment ra —
+        // chúng được nhúng nguyên vào chuỗi JSON → gây lỗi 400 Bad Request từ Gemini API.
         return """
                 {
                   "contents": [
@@ -86,9 +90,6 @@ public class GeminiAdapter implements LLMAdapter {
                   ],
                   "generationConfig": {
                     "temperature": 0.2,
-                    // [PERF-STEP1] Increased from 8192 → 16384 to prevent JSON truncation
-                    // when analysis prompt is long (many .java files, large codebase).
-                    // gemini-3-flash-preview supports up to 65536 output tokens.
                     "maxOutputTokens": 16384%s
                   }
                 }

@@ -136,6 +136,20 @@ public class GradingPipelineService {
             Block block = sub.getBlock();
             // Force-initialize Block proxy (accessing any field triggers initialization)
             block.getBlockId();
+            // Force-init Block fields needed by sendGradingCompleteNotification()
+            // (session closes after this TX — any uninitialized lazy proxy will throw outside)
+            block.getName();
+            if (block.getExam() != null) {
+                block.getExam().getName(); // init Exam proxy
+            }
+
+            // Force-init Student (User) fields needed by sendGradingCompleteNotification()
+            User student = sub.getStudent();
+            if (student != null) {
+                student.getUserId();
+                student.getEmail();
+                student.getFullName();
+            }
 
             GradingModeConfig modeConfig = resolveGradingModeConfig(block);
 
