@@ -286,4 +286,37 @@ public class TestDataFactory {
                 .title("Question " + number)
                 .build();
     }
+
+    // ─── AuditLog ─────────────────────────────────────────────────────────────
+
+    /**
+     * AuditLog do user thực hiện hành động LOGIN.
+     * username: "lamtvse173173"
+     */
+    public static agsfjope.backend.core.entities.AuditLog createAuditLogWithUser(User user) {
+        return agsfjope.backend.core.entities.AuditLog.builder()
+                .auditLogId(UUID.randomUUID())
+                .user(user)
+                .action(agsfjope.backend.core.enums.AuditAction.LOGIN)
+                .entityType("User")
+                .entityId(user.getUserId())
+                .ipAddress("192.168.1.10")
+                .createdAt(OffsetDateTime.now().minusMinutes(5))
+                .build();
+    }
+
+    /**
+     * AuditLog của hệ thống (user = null → hiển thị "system"/"System").
+     */
+    public static agsfjope.backend.core.entities.AuditLog createSystemAuditLog() {
+        return agsfjope.backend.core.entities.AuditLog.builder()
+                .auditLogId(UUID.randomUUID())
+                .user(null)
+                .action(agsfjope.backend.core.enums.AuditAction.CONFIG_CHANGE)
+                .entityType("SystemConfig")
+                .entityId(UUID.randomUUID())
+                .ipAddress("127.0.0.1")
+                .createdAt(OffsetDateTime.now().minusMinutes(1))
+                .build();
+    }
 }
