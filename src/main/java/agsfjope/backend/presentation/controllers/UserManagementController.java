@@ -95,14 +95,14 @@ public class UserManagementController {
 
     /**
      * POST /api/admin/users/create
-     * Tạo thủ công 1 tài khoản với role STUDENT | EXAM_STAFF | LECTURER.
+     * Tạo thủ công 1 tài khoản với role STUDENT | EXAM_STAFF | LECTURER | SYSTEM_ADMIN.
      *
      * <p>
      * Body JSON:
      * 
      * <pre>{@code
      * {
-     *   "roleName" : "STUDENT" | "EXAM_STAFF" | "LECTURER",
+     *   "roleName" : "STUDENT" | "EXAM_STAFF" | "LECTURER" | "SYSTEM_ADMIN",
      *   "email"    : "user@example.com",
      *   "fullName" : "Nguyen Van A",
      *   "mssv"     : "SE170601"  // optional; nếu có và role=STUDENT thì email phải @fpt.edu.vn

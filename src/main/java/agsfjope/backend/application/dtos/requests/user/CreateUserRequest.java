@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
  * Request DTO for Admin to manually create a single user account.
  *
  * <ul>
- *   <li>{@code roleName} must be one of: STUDENT, EXAM_STAFF, LECTURER.</li>
+ *   <li>{@code roleName} must be one of: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.</li>
  *   <li>Username is auto-derived from email (part before '@').</li>
  *   <li>For STUDENT: if {@code mssv} is provided, email must be @fpt.edu.vn.</li>
  *   <li>Default password {@code Abc@123}; account starts inactive.</li>
@@ -25,7 +25,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CreateUserRequest {
 
-    /** Allowed values: STUDENT, EXAM_STAFF, LECTURER. */
+    /** Allowed values: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN. */
     @NotBlank(message = "Role không được để trống")
     private String roleName;
 

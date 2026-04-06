@@ -240,7 +240,7 @@ class UserManagementServiceImplTest {
         // Act & Assert
         assertThatThrownBy(() -> service.createUser(request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Role 'ADMIN' không hợp lệ");
+                .hasMessageContaining("Role 'ADMIN' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.");
 
         verify(userRepository, never()).save(any());
     }
@@ -368,17 +368,18 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[A] deleteUser - Throw IllegalArgumentException khi cố xoá tài khoản SYSTEM_ADMIN")
-    void deleteUser_SystemAdminUser_ThrowIllegalArgumentException() {
+    @DisplayName("[A] deleteUser - Throw IllegalArgumentException khi cố xoá tài khoản quản trị mặc định 'admin'")
+    void deleteUser_DefaultAdminUser_ThrowIllegalArgumentException() {
         // Arrange
         User adminUser = TestDataFactory.createActiveStudent();
+        adminUser.setUsername("admin");
         adminUser.setRole(sysAdminRole);
         when(userRepository.findById(testUserId)).thenReturn(Optional.of(adminUser));
 
         // Act & Assert
         assertThatThrownBy(() -> service.deleteUser(testUserId))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Không thể xoá tài khoản SYSTEM_ADMIN");
+                .hasMessageContaining("Không thể xoá tài khoản quản trị mặc định ('admin')");
 
         verify(userRepository, never()).save(any());
     }
@@ -462,7 +463,7 @@ class UserManagementServiceImplTest {
         // Arrange
         Pageable pageable = PageRequest.of(0, 10);
         Page<User> userPage = new PageImpl<>(List.of(activeStudent));
-        when(userRepository.findAllByDeletedAtIsNullAndRoleNameNot("SYSTEM_ADMIN", pageable))
+        when(userRepository.findAllByDeletedAtIsNull(pageable))
                 .thenReturn(userPage);
 
         // Act
@@ -479,7 +480,7 @@ class UserManagementServiceImplTest {
         // Arrange
         Pageable pageable = PageRequest.of(0, 10);
         Page<User> emptyPage = new PageImpl<>(List.of());
-        when(userRepository.findAllByDeletedAtIsNullAndRoleNameNot("SYSTEM_ADMIN", pageable))
+        when(userRepository.findAllByDeletedAtIsNull(pageable))
                 .thenReturn(emptyPage);
 
         // Act
@@ -557,17 +558,20 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[A] getUserById - Throw IllegalArgumentException khi user là SYSTEM_ADMIN (ẩn khỏi admin UI)")
-    void getUserById_SystemAdminUser_ThrowIllegalArgumentException() {
+    @DisplayName("[N] getUserById - Lấy thông tin SYSTEM_ADMIN (hiện đã cho phép hiển thị trong admin UI)")
+    void getUserById_SystemAdminUser_ReturnsResponse() {
         // Arrange
         User adminUser = TestDataFactory.createActiveStudent();
+        adminUser.setUsername("someadmin");
         adminUser.setRole(sysAdminRole);
         when(userRepository.findById(testUserId)).thenReturn(Optional.of(adminUser));
 
-        // Act & Assert
-        assertThatThrownBy(() -> service.getUserById(testUserId))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Không tìm thấy user với ID:");
+        // Act
+        UserDetailResponse response = service.getUserById(testUserId);
+
+        // Assert
+        assertThat(response.getUsername()).isEqualTo("someadmin");
+        assertThat(response.getRoleName()).isEqualTo("SYSTEM_ADMIN");
     }
 
     @Test
@@ -607,10 +611,11 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[A] updateUser - Throw IllegalArgumentException khi cố sửa tài khoản SYSTEM_ADMIN")
-    void updateUser_SystemAdminUser_ThrowIllegalArgumentException() {
+    @DisplayName("[A] updateUser - Throw IllegalArgumentException khi cố sửa tài khoản quản trị mặc định 'admin'")
+    void updateUser_DefaultAdminUser_ThrowIllegalArgumentException() {
         // Arrange
         User adminUser = TestDataFactory.createActiveStudent();
+        adminUser.setUsername("admin");
         adminUser.setRole(sysAdminRole);
         when(userRepository.findById(testUserId)).thenReturn(Optional.of(adminUser));
 
@@ -620,7 +625,7 @@ class UserManagementServiceImplTest {
         // Act & Assert
         assertThatThrownBy(() -> service.updateUser(testUserId, request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Không thể chỉnh sửa tài khoản SYSTEM_ADMIN");
+                .hasMessageContaining("Không thể chỉnh sửa tài khoản quản trị mặc định ('admin')");
 
         verify(userRepository, never()).save(any());
     }
@@ -676,7 +681,7 @@ class UserManagementServiceImplTest {
         // Act & Assert
         assertThatThrownBy(() -> service.updateUser(testUserId, request))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Role 'SUPERUSER' không hợp lệ");
+                .hasMessageContaining("Role 'SUPERUSER' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.");
 
         verify(userRepository, never()).save(any());
     }

@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
  * A null field means "keep the current value".</p>
  *
  * <ul>
- *   <li>{@code roleName} must be one of: STUDENT, EXAM_STAFF, LECTURER (cannot set SYSTEM_ADMIN).</li>
+ *   <li>{@code roleName} must be one of: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.</li>
  *   <li>If {@code email} is changed, username will be re-derived from the new email.</li>
  *   <li>If {@code username} is provided, it overrides the auto-derived username.</li>
  * </ul>
@@ -45,6 +45,6 @@ public class UpdateUserRequest {
     @Size(max = 20, message = "Phone tối đa 20 ký tự")
     private String phone;
 
-    /** New role name. Null = keep current. Must be STUDENT | EXAM_STAFF | LECTURER. */
+    /** New role name. Null = keep current. Must be STUDENT | EXAM_STAFF | LECTURER | SYSTEM_ADMIN. */
     private String roleName;
 }

@@ -280,11 +280,11 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         // ── 1. Validate role (strict whitelist) ────────────────────────────
         String roleName = request.getRoleName() == null ? "" : request.getRoleName().toUpperCase().trim();
-        java.util.Set<String> allowedRoles = java.util.Set.of("STUDENT", "EXAM_STAFF", "LECTURER");
+        java.util.Set<String> allowedRoles = java.util.Set.of("STUDENT", "EXAM_STAFF", "LECTURER", "SYSTEM_ADMIN");
         if (!allowedRoles.contains(roleName)) {
             throw new IllegalArgumentException(
                     "Role '" + request.getRoleName()
-                            + "' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER.");
+                            + "' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.");
         }
 
         // ── 2. Normalize fields ─────────────────────────────────────────────
@@ -378,10 +378,10 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy user với ID: " + userId));
 
-        // ── 2. Guard: cannot delete SYSTEM_ADMIN ────────────────────────────
-        if ("SYSTEM_ADMIN".equals(user.getRole().getName())) {
+        // ── 2. Guard: cannot delete the default 'admin' account ───────────
+        if ("admin".equals(user.getUsername())) {
             throw new IllegalArgumentException(
-                    "Không thể xoá tài khoản SYSTEM_ADMIN.");
+                    "Không thể xoá tài khoản quản trị mặc định ('admin').");
         }
 
         // ── 3. Guard: already deleted ───────────────────────────────────────
@@ -436,7 +436,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Override
     @Transactional(readOnly = true)
     public Page<UserDetailResponse> getAllUsers(Pageable pageable) {
-        return userRepository.findAllByDeletedAtIsNullAndRoleNameNot("SYSTEM_ADMIN", pageable)
+        return userRepository.findAllByDeletedAtIsNull(pageable)
                 .map(this::mapToUserDetailResponse);
     }
 
@@ -465,11 +465,6 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy user với ID: " + userId));
 
-        if ("SYSTEM_ADMIN".equals(user.getRole().getName())) {
-            throw new IllegalArgumentException(
-                    "Không tìm thấy user với ID: " + userId);
-        }
-
         if (user.getDeletedAt() != null) {
             throw new IllegalArgumentException(
                     "Tài khoản '" + user.getUsername() + "' đã bị xoá.");
@@ -492,10 +487,10 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy user với ID: " + userId));
 
-        // ── 2. Guard: cannot edit SYSTEM_ADMIN ──────────────────────────────
-        if ("SYSTEM_ADMIN".equals(user.getRole().getName())) {
+        // ── 2. Guard: cannot edit the default 'admin' account ───────────
+        if ("admin".equals(user.getUsername())) {
             throw new IllegalArgumentException(
-                    "Không thể chỉnh sửa tài khoản SYSTEM_ADMIN.");
+                    "Không thể chỉnh sửa tài khoản quản trị mặc định ('admin').");
         }
 
         // ── 3. Guard: cannot edit soft-deleted user ─────────────────────────
@@ -569,11 +564,11 @@ public class UserManagementServiceImpl implements UserManagementService {
         // ── 9. Update role ──────────────────────────────────────────────────
         if (request.getRoleName() != null && !request.getRoleName().isBlank()) {
             String newRoleName = request.getRoleName().trim().toUpperCase();
-            java.util.Set<String> allowedRoles = java.util.Set.of("STUDENT", "EXAM_STAFF", "LECTURER");
+            java.util.Set<String> allowedRoles = java.util.Set.of("STUDENT", "EXAM_STAFF", "LECTURER", "SYSTEM_ADMIN");
             if (!allowedRoles.contains(newRoleName)) {
                 throw new IllegalArgumentException(
                         "Role '" + request.getRoleName()
-                                + "' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER.");
+                                + "' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.");
             }
             if (!newRoleName.equals(user.getRole().getName())) {
                 Role newRole = roleRepository.findByName(newRoleName)
