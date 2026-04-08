@@ -1,5 +1,6 @@
 package agsfjope.backend.application.dtos.responses.appeal;
 
+import agsfjope.backend.application.dtos.responses.grading.GradingResultResponse;
 import agsfjope.backend.core.enums.AppealStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -28,9 +29,15 @@ public class LecturerAppealDetailResponse {
     private BigDecimal testCaseScore;
     private BigDecimal oopScore;
 
+    // Original grading detail for lecturer review UI
+    private GradingResultResponse gradingDetail;
+
     // Dates
     private OffsetDateTime createdAt;
+    private OffsetDateTime assignedAt;
     private OffsetDateTime deadlineAt;
+    private OffsetDateTime completedAt;
+    private OffsetDateTime updatedAt;
 
     // Student
     private String studentName;

@@ -108,6 +108,23 @@ public class GradingQueryService {
         return toDetailResponse(result);
     }
 
+    /**
+     * Returns the full grading result for a specific submission without requester context.
+     * Used internally by lecturer appeal detail to embed the original grading breakdown.
+     *
+     * @param submissionId the submission UUID
+     * @return detailed grading result with per-question breakdown
+     */
+    @Transactional(readOnly = true)
+    public GradingResultResponse getSubmissionResultDetail(UUID submissionId) {
+        GradingResult result = gradingResultRepository
+                .findBySubmission_SubmissionId(submissionId)
+                .orElseThrow(() -> new NotFoundException(
+                        "Bài này chưa được chấm hoặc không tồn tại kết quả chấm."));
+
+        return toDetailResponse(result);
+    }
+
     // ─── MAPPING ─────────────────────────────────────────────────────────────
 
     /** Summary response — no per-answer breakdown (used in block list). */
@@ -241,7 +258,7 @@ public class GradingQueryService {
     private AIReviewDetail toAiDetail(AIReview ai) {
         // Criteria breakdown is stored in RawResponse JSONB (no dedicated DB columns)
         BigDecimal encapsulation = null, inheritance = null, polymorphism = null,
-                   designQuality = null, codeIntegrity = null;
+                designQuality = null, codeIntegrity = null;
         List<String> violations = null, hardCodedValues = null;
 
         String raw = ai.getRawResponse();
