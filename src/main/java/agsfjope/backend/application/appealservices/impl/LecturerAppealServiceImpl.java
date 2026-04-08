@@ -6,6 +6,8 @@ import agsfjope.backend.application.dtos.responses.appeal.LecturerAppealDetailRe
 import agsfjope.backend.application.dtos.responses.appeal.LecturerAppealListItemResponse;
 import agsfjope.backend.application.dtos.responses.appeal.LecturerAppealOverviewResponse;
 import agsfjope.backend.application.dtos.responses.appeal.LecturerAppealPageResponse;
+import agsfjope.backend.application.dtos.responses.grading.GradingResultResponse;
+import agsfjope.backend.application.gradingservices.GradingQueryService;
 import agsfjope.backend.core.entities.Appeal;
 import agsfjope.backend.core.entities.GradingResult;
 import agsfjope.backend.core.entities.Submission;
@@ -34,6 +36,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
     private final AppealRepository appealRepository;
     private final GradingResultRepository gradingResultRepository;
+    private final GradingQueryService gradingQueryService;
     private final MinioService minioService;
     private final MinioConfig minioConfig;
 
@@ -78,7 +81,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     @Override
     @Transactional
     public LecturerAppealDetailResponse submitReview(UUID lecturerId, UUID appealId, ReviewAppealRequest request) {
-        log.info("[Lecturer] Submit review: lecturer={}, appeal={}, newScore={}", 
+        log.info("[Lecturer] Submit review: lecturer={}, appeal={}, newScore={}",
                 lecturerId, appealId, request.getNewScore());
 
         Appeal appeal = getAndValidateOwnership(lecturerId, appealId);
@@ -86,16 +89,17 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
         if (appeal.getStatus() != AppealStatus.PROCESSING) {
             throw new IllegalStateException(
                     "Theo quy trình, giảng viên chỉ có thể nộp báo cáo chấm phúc khảo cho các đơn đang ở trạng thái PROCESSING. " +
-                    "Trạng thái hiện tại: " + appeal.getStatus());
+                            "Trạng thái hiện tại: " + appeal.getStatus());
         }
 
         // Cập nhật thông tin chấm điểm
         appeal.setNewScore(request.getNewScore());
         appeal.setNewQuestionScores(request.getNewQuestionScores());
         appeal.setLecturerComment(request.getLecturerComment());
-        
+
         // Cập nhật status báo hiệu giảng viên gút kết quả
         appeal.setStatus(AppealStatus.COMPLETED);
+        appeal.setCompletedAt(OffsetDateTime.now());
 
         Appeal saved = appealRepository.save(appeal);
         return toDetailResponse(saved);
@@ -107,11 +111,11 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     public InputStream downloadSubmission(UUID lecturerId, UUID appealId) {
         log.info("[Lecturer] Download submission: lecturer={}, appeal={}", lecturerId, appealId);
         Appeal appeal = getAndValidateOwnership(lecturerId, appealId);
-        
+
         if (appeal.getSubmission() == null || appeal.getSubmission().getFilePath() == null) {
             throw new IllegalStateException("Không tìm thấy file bài làm đính kèm trong cơ sở dữ liệu");
         }
-        
+
         return minioService.downloadFile(
                 minioConfig.getBucket().getSubmissions(),
                 appeal.getSubmission().getFilePath()
@@ -130,15 +134,15 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
     private LecturerAppealOverviewResponse buildOverview(UUID lecturerId) {
         long totalAssigned = appealRepository.countByAssignedLecturerAndStatus(lecturerId, "PROCESSING")
-                           + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "COMPLETED")
-                           + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "APPROVED")
-                           + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "DENIED");
+                + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "COMPLETED")
+                + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "APPROVED")
+                + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "DENIED");
 
         long inReview = appealRepository.countByAssignedLecturerAndStatus(lecturerId, "PROCESSING");
-        
+
         long completed = appealRepository.countByAssignedLecturerAndStatus(lecturerId, "COMPLETED")
-                       + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "APPROVED")
-                       + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "DENIED");
+                + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "APPROVED")
+                + appealRepository.countByAssignedLecturerAndStatus(lecturerId, "DENIED");
 
         long overdue = appealRepository.countOverdueByAssignedLecturer(lecturerId, OffsetDateTime.now());
 
@@ -202,11 +206,13 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
         BigDecimal originalScore = BigDecimal.ZERO;
         BigDecimal testCaseScore = BigDecimal.ZERO;
         BigDecimal oopScore = BigDecimal.ZERO;
+        GradingResultResponse gradingDetail = null;
 
         if (gradingResult != null) {
             originalScore = gradingResult.getTotalScore();
             testCaseScore = gradingResult.getTestCaseScore();
             oopScore = gradingResult.getOopScore();
+            gradingDetail = gradingQueryService.getSubmissionResultDetail(submissionId);
         }
 
         String appealCode = "#PK-" + a.getCreatedAt().getYear()
@@ -223,8 +229,12 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
                 .oopScore(oopScore)
                 .newScore(a.getNewScore())
                 .newQuestionScores(a.getNewQuestionScores())
+                .gradingDetail(gradingDetail)
                 .createdAt(a.getCreatedAt())
+                .assignedAt(a.getAssignedAt())
                 .deadlineAt(a.getDeadlineAt())
+                .completedAt(a.getCompletedAt())
+                .updatedAt(a.getUpdatedAt())
                 .studentName(a.getStudent().getFullName())
                 .studentMssv(a.getStudent().getMssv())
                 .examName(examName)
