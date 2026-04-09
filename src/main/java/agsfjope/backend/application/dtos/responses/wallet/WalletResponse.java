@@ -14,8 +14,10 @@ import java.util.UUID;
 @Data
 @Builder
 public class WalletResponse {
+    private Boolean hasWallet;
     private UUID walletId;
     private BigDecimal balance;
+    private BigDecimal appealFee;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     private List<WalletTransactionResponse> transactions;

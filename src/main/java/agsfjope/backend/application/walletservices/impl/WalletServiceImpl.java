@@ -42,7 +42,9 @@ import java.util.UUID;
 public class WalletServiceImpl implements WalletService {
 
     private static final String KEY_PAYMENT_TIMEOUT_MINUTES = "APPEAL_PAYMENT_TIMEOUT_MINUTES";
+    private static final String KEY_APPEAL_FEE = "APPEAL_FEE";
     private static final int DEFAULT_TIMEOUT_MIN = 15;
+    private static final BigDecimal DEFAULT_APPEAL_FEE = new BigDecimal("200000");
 
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
@@ -62,7 +64,22 @@ public class WalletServiceImpl implements WalletService {
     public WalletResponse getMyWallet(UUID studentId) {
         log.info("[Wallet] Student {} xem thông tin ví", studentId);
         reconcilePendingWalletDeposits(studentId);
-        Wallet wallet = getOrCreateWallet(studentId);
+
+        BigDecimal appealFee = loadAppealFee();
+        Optional<Wallet> walletOptional = walletRepository.findByStudentId(studentId);
+        if (walletOptional.isEmpty()) {
+            return WalletResponse.builder()
+                    .hasWallet(false)
+                    .walletId(null)
+                    .balance(BigDecimal.ZERO)
+                    .appealFee(appealFee)
+                    .createdAt(null)
+                    .updatedAt(null)
+                    .transactions(List.of())
+                    .build();
+        }
+
+        Wallet wallet = walletOptional.get();
         List<WalletTransactionResponse> txList = walletTransactionRepository
                 .findByWalletIdOrderByCreatedAtDesc(wallet.getWalletId())
                 .stream()
@@ -70,8 +87,10 @@ public class WalletServiceImpl implements WalletService {
                 .toList();
 
         return WalletResponse.builder()
+                .hasWallet(true)
                 .walletId(wallet.getWalletId())
                 .balance(wallet.getBalance())
+                .appealFee(appealFee)
                 .createdAt(wallet.getCreatedAt())
                 .updatedAt(wallet.getUpdatedAt())
                 .transactions(txList)
@@ -529,6 +548,15 @@ public class WalletServiceImpl implements WalletService {
                     "WITHDRAWAL", withdrawalId);
         }
         log.info("[Wallet] Đã gửi notification cho {} admin về withdrawal {}", admins.size(), withdrawalId);
+    }
+
+    private BigDecimal loadAppealFee() {
+        return systemConfigRepository.findByConfigKey(KEY_APPEAL_FEE)
+                .map(c -> {
+                    try { return new BigDecimal(c.getConfigValue()); }
+                    catch (NumberFormatException e) { return DEFAULT_APPEAL_FEE; }
+                })
+                .orElse(DEFAULT_APPEAL_FEE);
     }
 
     private int loadTimeoutMinutes() {
