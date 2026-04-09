@@ -20,7 +20,6 @@ import agsfjope.backend.core.repositories.wallet.WithdrawalRequestRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -90,38 +89,30 @@ class WalletServiceImplTest {
 
         // Assert
         assertNotNull(response);
+        assertEquals(Boolean.TRUE, response.getHasWallet());
         assertEquals(wallet.getWalletId(), response.getWalletId());
         assertEquals(1, response.getTransactions().size());
         verify(walletRepository, never()).save(any(Wallet.class));
     }
 
     @Test
-    @DisplayName("[N] getMyWallet_WalletNotExist_CreatesNewAndReturns")
-    void getMyWallet_WalletNotExist_CreatesNewAndReturns() {
+    @DisplayName("[N] getMyWallet_WalletNotExist_ReturnsEmptyWalletView")
+    void getMyWallet_WalletNotExist_ReturnsEmptyWalletView() {
         // Arrange
         UUID studentId = UUID.randomUUID();
-        User student = new User();
-        student.setUserId(studentId);
-
         when(paymentRepository.findPendingWalletDepositsByStudentId(studentId))
                 .thenReturn(Collections.emptyList());
         when(walletRepository.findByStudentId(studentId)).thenReturn(Optional.empty());
-        when(userRepository.findById(studentId)).thenReturn(Optional.of(student));
-        
-        Wallet savedWallet = new Wallet();
-        savedWallet.setWalletId(UUID.randomUUID());
-        savedWallet.setBalance(BigDecimal.ZERO);
-        when(walletRepository.save(any(Wallet.class))).thenReturn(savedWallet);
-        when(walletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(savedWallet.getWalletId()))
-                .thenReturn(Collections.emptyList());
 
         // Act
         WalletResponse response = walletService.getMyWallet(studentId);
 
         // Assert
         assertNotNull(response);
+        assertEquals(Boolean.FALSE, response.getHasWallet());
         assertEquals(BigDecimal.ZERO, response.getBalance());
-        verify(walletRepository).save(any(Wallet.class));
+        assertTrue(response.getTransactions().isEmpty());
+        verify(walletRepository, never()).save(any(Wallet.class));
     }
 
 
