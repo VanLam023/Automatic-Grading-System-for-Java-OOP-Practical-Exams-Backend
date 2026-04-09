@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -78,6 +79,8 @@ class WalletServiceImplTest {
         tx.setBalanceBefore(BigDecimal.ZERO);
         tx.setBalanceAfter(new BigDecimal("500000"));
 
+        when(paymentRepository.findPendingWalletDepositsByStudentId(studentId))
+                .thenReturn(Collections.emptyList());
         when(walletRepository.findByStudentId(studentId)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(wallet.getWalletId()))
                 .thenReturn(List.of(tx));
@@ -100,6 +103,8 @@ class WalletServiceImplTest {
         User student = new User();
         student.setUserId(studentId);
 
+        when(paymentRepository.findPendingWalletDepositsByStudentId(studentId))
+                .thenReturn(Collections.emptyList());
         when(walletRepository.findByStudentId(studentId)).thenReturn(Optional.empty());
         when(userRepository.findById(studentId)).thenReturn(Optional.of(student));
         
@@ -117,6 +122,111 @@ class WalletServiceImplTest {
         assertNotNull(response);
         assertEquals(BigDecimal.ZERO, response.getBalance());
         verify(walletRepository).save(any(Wallet.class));
+    }
+
+
+    @Test
+    @DisplayName("[N] getMyWallet_CoPendingWalletDepositPaid_StudentOpenWallet_AutoCreditsOnce")
+    void getMyWallet_PendingWalletDepositPaid_AutoCreditsOnce() {
+        UUID studentId = UUID.randomUUID();
+        UUID walletId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+
+        Wallet wallet = new Wallet();
+        wallet.setWalletId(walletId);
+        wallet.setBalance(new BigDecimal("20000"));
+
+        User student = new User();
+        student.setUserId(studentId);
+
+        Payment pendingDeposit = Payment.builder()
+                .paymentId(paymentId)
+                .student(student)
+                .depositForStudent(student)
+                .paymentPurpose("WALLET_DEPOSIT")
+                .amount(new BigDecimal("10000"))
+                .payosOrderId("123456")
+                .status(agsfjope.backend.core.enums.PaymentStatus.PENDING)
+                .expiresAt(OffsetDateTime.now().plusMinutes(5))
+                .build();
+
+        when(paymentRepository.findPendingWalletDepositsByStudentId(studentId))
+                .thenReturn(List.of(pendingDeposit));
+        when(paymentGatewayPort.getPaymentLinkInfo("123456"))
+                .thenReturn(new PaymentGatewayPort.PaymentLinkInfo(
+                        "pl_123",
+                        123456L,
+                        10000L,
+                        10000L,
+                        0L,
+                        "PAID",
+                        "{\"status\":\"PAID\"}"
+                ));
+        when(paymentRepository.markSuccessIfPending(eq(paymentId), any(OffsetDateTime.class), anyString()))
+                .thenReturn(1);
+        when(walletRepository.findByStudentId(studentId)).thenReturn(Optional.of(wallet));
+        when(walletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(walletId))
+                .thenReturn(Collections.emptyList());
+        when(walletRepository.adjustBalance(walletId, new BigDecimal("10000"))).thenReturn(1);
+
+        WalletResponse response = walletService.getMyWallet(studentId);
+
+        assertNotNull(response);
+        verify(paymentRepository).findPendingWalletDepositsByStudentId(studentId);
+        verify(paymentRepository).markSuccessIfPending(eq(paymentId), any(OffsetDateTime.class), anyString());
+        verify(walletRepository).adjustBalance(walletId, new BigDecimal("10000"));
+        verify(walletTransactionRepository).save(any(WalletTransaction.class));
+    }
+
+    @Test
+    @DisplayName("[B] getMyWallet_CoPendingWalletDepositPaidButAlreadyProcessed_KhongCreditTrung")
+    void getMyWallet_PendingWalletDepositPaidButAlreadyProcessed_DoesNotDoubleCredit() {
+        UUID studentId = UUID.randomUUID();
+        UUID walletId = UUID.randomUUID();
+        UUID paymentId = UUID.randomUUID();
+
+        Wallet wallet = new Wallet();
+        wallet.setWalletId(walletId);
+        wallet.setBalance(new BigDecimal("20000"));
+
+        User student = new User();
+        student.setUserId(studentId);
+
+        Payment pendingDeposit = Payment.builder()
+                .paymentId(paymentId)
+                .student(student)
+                .depositForStudent(student)
+                .paymentPurpose("WALLET_DEPOSIT")
+                .amount(new BigDecimal("10000"))
+                .payosOrderId("123456")
+                .status(agsfjope.backend.core.enums.PaymentStatus.PENDING)
+                .expiresAt(OffsetDateTime.now().plusMinutes(5))
+                .build();
+
+        when(paymentRepository.findPendingWalletDepositsByStudentId(studentId))
+                .thenReturn(List.of(pendingDeposit));
+        when(paymentGatewayPort.getPaymentLinkInfo("123456"))
+                .thenReturn(new PaymentGatewayPort.PaymentLinkInfo(
+                        "pl_123",
+                        123456L,
+                        10000L,
+                        10000L,
+                        0L,
+                        "PAID",
+                        "{\"status\":\"PAID\"}"
+                ));
+        when(paymentRepository.markSuccessIfPending(eq(paymentId), any(OffsetDateTime.class), anyString()))
+                .thenReturn(0);
+        when(walletRepository.findByStudentId(studentId)).thenReturn(Optional.of(wallet));
+        when(walletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(walletId))
+                .thenReturn(Collections.emptyList());
+
+        WalletResponse response = walletService.getMyWallet(studentId);
+
+        assertNotNull(response);
+        verify(paymentRepository).markSuccessIfPending(eq(paymentId), any(OffsetDateTime.class), anyString());
+        verify(walletRepository, never()).adjustBalance(any(), eq(new BigDecimal("10000")));
+        verify(walletTransactionRepository, never()).save(any(WalletTransaction.class));
     }
 
     // =========================================================================

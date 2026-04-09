@@ -106,8 +106,17 @@ public class PaymentController {
                 payment.getStudent() != null ? payment.getStudent().getUserId() : "null",
                 payment.getDepositForStudent() != null ? payment.getDepositForStudent().getUserId() : "null");
 
-        // Cập nhật Payment → SUCCESS
-        paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.SUCCESS);
+        // Cập nhật Payment → SUCCESS đúng 1 lần
+        int updatedRows = paymentRepository.markSuccessIfPending(
+                payment.getPaymentId(),
+                java.time.OffsetDateTime.now(),
+                "{\"source\":\"dev-simulate-success\"}"
+        );
+        if (updatedRows == 0) {
+            throw new IllegalStateException(
+                    "Payment đã được xử lý trước đó. Trạng thái hiện tại: " + payment.getStatus());
+        }
+        payment.setStatus(PaymentStatus.SUCCESS);
 
         // Phân nhánh theo mục đích
         if ("WALLET_DEPOSIT".equals(payment.getPaymentPurpose())) {

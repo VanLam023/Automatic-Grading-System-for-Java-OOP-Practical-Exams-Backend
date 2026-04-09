@@ -47,6 +47,43 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, UUID> {
     @Query("SELECT p FROM Payment p WHERE p.status = 'PENDING' AND p.expiresAt < :now")
     List<Payment> findExpiredPendingPayments(@Param("now") OffsetDateTime now);
 
+    @Query("""
+            SELECT p FROM Payment p
+            WHERE p.paymentPurpose = 'WALLET_DEPOSIT'
+              AND p.depositForStudent.userId = :studentId
+              AND p.status = 'PENDING'
+            ORDER BY p.createdAt ASC
+            """)
+    List<Payment> findPendingWalletDepositsByStudentId(@Param("studentId") UUID studentId);
+
+    @Modifying
+    @Transactional
+    @Query("""
+            UPDATE Payment p
+               SET p.status = 'SUCCESS',
+                   p.paidAt = :paidAt,
+                   p.payosWebhookData = :payosWebhookData,
+                   p.updatedAt = :now
+             WHERE p.paymentId = :paymentId
+               AND p.status = 'PENDING'
+            """)
+    int markSuccessIfPending(@Param("paymentId") UUID paymentId,
+                             @Param("paidAt") OffsetDateTime paidAt,
+                             @Param("payosWebhookData") String payosWebhookData,
+                             @Param("now") OffsetDateTime now);
+
+    @Modifying
+    @Transactional
+    @Query("""
+            UPDATE Payment p
+               SET p.status = 'FAILED',
+                   p.updatedAt = :now
+             WHERE p.paymentId = :paymentId
+               AND p.status = 'PENDING'
+            """)
+    int markFailedIfPending(@Param("paymentId") UUID paymentId,
+                            @Param("now") OffsetDateTime now);
+
     /**
      * Cập nhật trạng thái Payment theo ID.
      *

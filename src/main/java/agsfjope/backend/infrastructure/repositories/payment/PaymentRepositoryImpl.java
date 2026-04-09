@@ -50,6 +50,21 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     }
 
     @Override
+    public List<Payment> findPendingWalletDepositsByStudentId(UUID studentId) {
+        return paymentJpaRepository.findPendingWalletDepositsByStudentId(studentId);
+    }
+
+    @Override
+    public int markSuccessIfPending(UUID paymentId, OffsetDateTime paidAt, String payosWebhookData) {
+        return paymentJpaRepository.markSuccessIfPending(paymentId, paidAt, payosWebhookData, OffsetDateTime.now());
+    }
+
+    @Override
+    public int markFailedIfPending(UUID paymentId) {
+        return paymentJpaRepository.markFailedIfPending(paymentId, OffsetDateTime.now());
+    }
+
+    @Override
     public void updateStatus(UUID paymentId, PaymentStatus newStatus) {
         // Gọi custom JPQL UPDATE để tránh phải load toàn bộ entity
         paymentJpaRepository.updateStatus(paymentId, newStatus, OffsetDateTime.now());

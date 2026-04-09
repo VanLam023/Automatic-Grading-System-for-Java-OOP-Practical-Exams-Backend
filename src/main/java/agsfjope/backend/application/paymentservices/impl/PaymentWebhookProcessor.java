@@ -110,8 +110,21 @@ public class PaymentWebhookProcessor {
     private void onPaymentSuccess(Payment payment, PayOSWebhookRequest.WebhookData data) {
         log.info("[Payment] SUCCESS for orderCode: {}", data.getOrderCode());
 
-        payment.setPaidAt(java.time.OffsetDateTime.now());
-        paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.SUCCESS);
+        java.time.OffsetDateTime paidAt = java.time.OffsetDateTime.now();
+        int updatedRows = paymentRepository.markSuccessIfPending(
+                payment.getPaymentId(),
+                paidAt,
+                payment.getPayosWebhookData()
+        );
+
+        if (updatedRows == 0) {
+            log.info("[Payment] Payment {} đã được xử lý trước đó trong lúc xử lý webhook success",
+                    payment.getPaymentId());
+            return;
+        }
+
+        payment.setPaidAt(paidAt);
+        payment.setStatus(PaymentStatus.SUCCESS);
 
         // Phân nánh theo mục đích payment
         if ("WALLET_DEPOSIT".equals(payment.getPaymentPurpose())) {
@@ -162,7 +175,13 @@ public class PaymentWebhookProcessor {
     private void onPaymentFailed(Payment payment) {
         log.info("[Payment] FAILED for paymentId: {}", payment.getPaymentId());
 
-        paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.FAILED);
+        int updatedRows = paymentRepository.markFailedIfPending(payment.getPaymentId());
+        if (updatedRows == 0) {
+            log.info("[Payment] Payment {} đã được xử lý trước đó trong lúc xử lý webhook failed",
+                    payment.getPaymentId());
+            return;
+        }
+        payment.setStatus(PaymentStatus.FAILED);
 
         // Cập nhật Appeal status → CANCELLED (thanh toán thất bại)
         if (payment.getAppeal() != null) {

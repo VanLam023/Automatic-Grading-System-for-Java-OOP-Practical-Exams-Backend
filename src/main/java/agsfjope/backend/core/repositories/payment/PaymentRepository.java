@@ -65,6 +65,26 @@ public interface PaymentRepository {
     List<Payment> findExpiredPendingPayments(OffsetDateTime now);
 
     /**
+     * Tìm tất cả các lệnh nạp ví còn PENDING của một sinh viên để backend
+     * có thể tự đối soát với PayOS khi student mở trang ví.
+     */
+    List<Payment> findPendingWalletDepositsByStudentId(UUID studentId);
+
+    /**
+     * Chỉ chuyển Payment từ PENDING -> SUCCESS một lần duy nhất.
+     *
+     * @return số bản ghi bị ảnh hưởng. 1 = thành công, 0 = đã bị xử lý trước đó.
+     */
+    int markSuccessIfPending(UUID paymentId, OffsetDateTime paidAt, String payosWebhookData);
+
+    /**
+     * Chỉ chuyển Payment từ PENDING -> FAILED một lần duy nhất.
+     *
+     * @return số bản ghi bị ảnh hưởng. 1 = thành công, 0 = đã bị xử lý trước đó.
+     */
+    int markFailedIfPending(UUID paymentId);
+
+    /**
      * Cập nhật trạng thái của Payment.
      *
      * @param paymentId UUID của Payment cần cập nhật
