@@ -110,6 +110,19 @@ public class PayOSAdapter implements PaymentGatewayPort {
      * PayOS API: POST /v2/payment-requests/{id}/cancel
      */
     @Override
+    public PaymentLinkInfo getPaymentLinkInfo(String id) {
+        PayOSCredentials creds = loadCredentials();
+        String responseJson = callPayOSApi(
+                "GET",
+                "/v2/payment-requests/" + id,
+                null,
+                creds.clientId(),
+                creds.apiKey()
+        );
+        return parsePaymentLinkInfo(responseJson);
+    }
+
+    @Override
     public void cancelPaymentLink(String paymentLinkId) {
         PayOSCredentials creds = loadCredentials();
 
@@ -367,6 +380,34 @@ public class PayOSAdapter implements PaymentGatewayPort {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private PaymentLinkInfo parsePaymentLinkInfo(String responseJson) {
+        try {
+            Map<String, Object> root = objectMapper.readValue(responseJson, Map.class);
+            Map<String, Object> data = (Map<String, Object>) root.get("data");
+
+            if (data == null) {
+                throw new RuntimeException("[PayOS] No 'data' field in response: " + responseJson);
+            }
+
+            return new PaymentLinkInfo(
+                    valueAsString(data.get("id")),
+                    valueAsLong(data.get("orderCode")),
+                    valueAsLong(data.get("amount")),
+                    valueAsLong(data.get("amountPaid")),
+                    valueAsLong(data.get("amountRemaining")),
+                    valueAsString(data.get("status")),
+                    responseJson
+            );
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("[PayOS] Failed to parse payment link info response: "
+                    + e.getMessage(), e);
+        }
+    }
+
     /**
      * Tính HMAC-SHA256 cho tham số tạo payment link theo spec PayOS.
      * Chuỗi data format: amount=XXX&cancelUrl=XXX&description=XXX&orderCode=XXX&returnUrl=XXX
@@ -404,6 +445,24 @@ public class PayOSAdapter implements PaymentGatewayPort {
 
         } catch (Exception e) {
             throw new RuntimeException("[PayOS] HMAC-SHA256 computation failed: " + e.getMessage(), e);
+        }
+    }
+
+    private String valueAsString(Object value) {
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    private Long valueAsLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

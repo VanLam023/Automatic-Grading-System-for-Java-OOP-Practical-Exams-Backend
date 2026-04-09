@@ -192,7 +192,11 @@ public class HandlePaymentServiceImpl implements HandlePaymentService {
                     paymentGatewayPort.cancelPaymentLink(payment.getPayosPaymentLinkId());
                 }
 
-                paymentRepository.updateStatus(payment.getPaymentId(), PaymentStatus.FAILED);
+                int updatedRows = paymentRepository.markFailedIfPending(payment.getPaymentId());
+                if (updatedRows == 0) {
+                    log.info("[Payment] Expired payment {} đã được xử lý trước đó, bỏ qua", payment.getPaymentId());
+                    continue;
+                }
                 log.info("[Payment] Expired payment cancelled: {}", payment.getPaymentId());
 
                 // Cập nhật Appeal status → CANCELLED khi payment hết hạn

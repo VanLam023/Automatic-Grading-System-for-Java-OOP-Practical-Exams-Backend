@@ -34,6 +34,19 @@ public interface PaymentGatewayPort {
                                         String returnUrl, String cancelUrl);
 
     /**
+     * Lấy thông tin mới nhất của link thanh toán từ PayOS.
+     * <p>
+     * Theo tài liệu API PayOS, path param có thể là mã đơn hàng của merchant
+     * hoặc PayOS payment link id. Backend hiện đang ưu tiên dùng {@code orderCode}
+     * đã lưu trong DB để tự đối soát các lệnh nạp tiền còn PENDING khi student mở ví.
+     * </p>
+     *
+     * @param id mã đơn hàng của merchant hoặc payment link id của PayOS
+     * @return thông tin hiện tại của link thanh toán
+     */
+    PaymentLinkInfo getPaymentLinkInfo(String id);
+
+    /**
      * Hủy link thanh toán đang tồn tại trên PayOS.
      * Thường dùng khi sinh viên hủy đơn hoặc payment timeout.
      *
@@ -73,5 +86,19 @@ public interface PaymentGatewayPort {
             String checkoutUrl,
             String qrCodeUrl,
             String status
+    ) {}
+
+    /**
+     * Thông tin chi tiết của link thanh toán trả về từ API
+     * {@code GET /v2/payment-requests/{id}} của PayOS.
+     */
+    record PaymentLinkInfo(
+            String id,
+            Long orderCode,
+            Long amount,
+            Long amountPaid,
+            Long amountRemaining,
+            String status,
+            String rawResponse
     ) {}
 }

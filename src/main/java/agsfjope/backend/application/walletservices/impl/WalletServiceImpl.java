@@ -61,6 +61,7 @@ public class WalletServiceImpl implements WalletService {
     @Transactional
     public WalletResponse getMyWallet(UUID studentId) {
         log.info("[Wallet] Student {} xem thông tin ví", studentId);
+        reconcilePendingWalletDeposits(studentId);
         Wallet wallet = getOrCreateWallet(studentId);
         List<WalletTransactionResponse> txList = walletTransactionRepository
                 .findByWalletIdOrderByCreatedAtDesc(wallet.getWalletId())
@@ -377,6 +378,94 @@ public class WalletServiceImpl implements WalletService {
     // ─────────────────────────────────────────────────────────────────────────
     // Private Helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Tự đối soát các lệnh nạp ví còn PENDING với PayOS khi student mở ví.
+     *
+     * <p>
+     * Luồng này giúp hệ thống vẫn cộng tiền vào ví ngay cả khi webhook PayOS bị chậm,
+     * không về được local, hoặc student vừa thanh toán xong rồi quay lại trang ví.
+     * </p>
+     *
+     * <p>
+     * Idempotency được giữ bằng cách chỉ cho phép Payment chuyển từ PENDING -> SUCCESS
+     * đúng một lần ở tầng repository. Chỉ lần cập nhật thành công mới được cộng ví.
+     * </p>
+     */
+    private void reconcilePendingWalletDeposits(UUID studentId) {
+        List<Payment> pendingDeposits = paymentRepository.findPendingWalletDepositsByStudentId(studentId);
+        if (pendingDeposits.isEmpty()) {
+            return;
+        }
+
+        log.info("[Wallet] Tìm thấy {} lệnh WALLET_DEPOSIT còn PENDING để đối soát cho student {}",
+                pendingDeposits.size(), studentId);
+
+        OffsetDateTime now = OffsetDateTime.now();
+
+        for (Payment payment : pendingDeposits) {
+            try {
+                String payosLookupId = payment.getPayosOrderId() != null && !payment.getPayosOrderId().isBlank()
+                        ? payment.getPayosOrderId()
+                        : payment.getPayosPaymentLinkId();
+
+                if (payosLookupId == null || payosLookupId.isBlank()) {
+                    log.warn("[Wallet] Payment {} thiếu cả payosOrderId lẫn paymentLinkId, bỏ qua đối soát",
+                            payment.getPaymentId());
+                    continue;
+                }
+
+                PaymentGatewayPort.PaymentLinkInfo paymentInfo = paymentGatewayPort.getPaymentLinkInfo(payosLookupId);
+                String payosStatus = paymentInfo.status() != null
+                        ? paymentInfo.status().trim().toUpperCase()
+                        : "UNKNOWN";
+
+                log.info("[Wallet] Đối soát payment {} / orderCode {} -> PayOS status={}",
+                        payment.getPaymentId(), payosLookupId, payosStatus);
+
+                if ("PAID".equals(payosStatus)) {
+                    int updatedRows = paymentRepository.markSuccessIfPending(
+                            payment.getPaymentId(),
+                            now,
+                            paymentInfo.rawResponse()
+                    );
+
+                    if (updatedRows == 0) {
+                        log.info("[Wallet] Payment {} đã được xử lý trước đó, bỏ qua cộng ví trùng", payment.getPaymentId());
+                        continue;
+                    }
+
+                    UUID recipientId = payment.getDepositForStudent() != null
+                            ? payment.getDepositForStudent().getUserId()
+                            : payment.getStudent().getUserId();
+
+                    creditWallet(recipientId, payment.getAmount(), payment.getPaymentId());
+                    log.info("[Wallet] Đối soát thành công payment {} -> đã cộng {} VND vào ví student {}",
+                            payment.getPaymentId(), payment.getAmount(), recipientId);
+                    continue;
+                }
+
+                if ("CANCELLED".equals(payosStatus)) {
+                    int updatedRows = paymentRepository.markFailedIfPending(payment.getPaymentId());
+                    if (updatedRows > 0) {
+                        log.info("[Wallet] Payment {} bị PayOS báo CANCELLED -> chuyển FAILED", payment.getPaymentId());
+                    }
+                    continue;
+                }
+
+                if (payment.getExpiresAt() != null && payment.getExpiresAt().isBefore(now)
+                        && ("PENDING".equals(payosStatus) || "UNKNOWN".equals(payosStatus))) {
+                    int updatedRows = paymentRepository.markFailedIfPending(payment.getPaymentId());
+                    if (updatedRows > 0) {
+                        log.info("[Wallet] Payment {} đã quá hạn mà chưa thanh toán -> chuyển FAILED", payment.getPaymentId());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("[Wallet] Không thể đối soát payment {} lúc student mở ví: {}",
+                        payment.getPaymentId(), e.getMessage());
+            }
+        }
+    }
 
     /**
      * Lấy ví của student. Nếu chưa có thì tạo mới.
