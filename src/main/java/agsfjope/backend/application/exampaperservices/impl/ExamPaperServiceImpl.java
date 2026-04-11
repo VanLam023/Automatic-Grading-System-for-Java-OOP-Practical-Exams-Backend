@@ -353,7 +353,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
                                    String fileName) {
         String semester = expandSemester(exam.getSemester());
         String folder   = semester + "-" + exam.getAcademicYear();
-        return "exam-papers/" + sanitize(folder) + "/" + sanitize(block.getName()) + "/" + fileName;
+        return sanitize(folder) + "/" + sanitize(block.getName()) + "/" + fileName;
     }
 
     /**

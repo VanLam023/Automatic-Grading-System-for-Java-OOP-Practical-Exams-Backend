@@ -11,6 +11,7 @@ import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigReques
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
 import agsfjope.backend.application.dtos.responses.config.SystemSettingsResponse;
 import agsfjope.backend.core.enums.GradingMode;
+import agsfjope.backend.infrastructure.storage.MinioPathMigrationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -33,8 +34,9 @@ import java.util.Map;
 @PreAuthorize("hasAnyRole('SYSTEM_ADMIN','ADMIN')")
 public class SystemAdminConfigController {
 
-    private final SystemConfigService systemConfigService;
-    private final GradingModeConfigService gradingModeConfigService;
+    private final SystemConfigService          systemConfigService;
+    private final GradingModeConfigService      gradingModeConfigService;
+    private final MinioPathMigrationService     minioMigrationService;
 
     /**
      * Lấy cấu hình AI hiện tại.
@@ -453,6 +455,138 @@ public class SystemAdminConfigController {
         Map<String, Object> publicData = new HashMap<>();
         publicData.put("maxUploadSizeMb", settings.getMaxUploadSizeMb());
         return ResponseEntity.ok(buildSuccessResponse("Lấy cấu hình công khai thành công", publicData));
+    }
+
+    /**
+     * Migrate MinIO object paths từ format cũ (UUID-based) sang format mới (human-readable).
+     * <p>
+     * Gọi cách đúng:
+     * <ul>
+     *   <li>Method: POST</li>
+     *   <li>URL: /api/admin/config/minio-migration?dryRun=true (preview) hoặc ?dryRun=false (thực hiện)</li>
+     *   <li>Header: Authorization: Bearer &lt;jwt_token&gt;</li>
+     * </ul>
+     *
+     * <p>Format cũ → mới:</p>
+     * <pre>
+     * ExamPaper: exam-papers/exams/{id}/blocks/{id}/{file}  →  exam-papers/{Semester}-{Year}/{Block}/{file}
+     * Submission: submissions/exams/{id}/blocks/{id}/students/{id}/{file}  →  submissions/{Semester}-{Year}/{Block}/{Name} - {MSSV}/{file}
+     * </pre>
+     *
+     * @param dryRun nếu true: chỉ log, không thực sự sửa
+     * @return báo cáo số lượng migrated / skipped / failed
+     */
+    @PostMapping("/minio-migration")
+    public ResponseEntity<Map<String, Object>> migrateMinioPath(
+            @RequestParam(defaultValue = "false") boolean dryRun) {
+        MinioPathMigrationService.MigrationReport report = minioMigrationService.migrateAll(dryRun);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("dryRun",              dryRun);
+        data.put("examPapersMigrated",  report.examPapersMigrated());
+        data.put("examPapersSkipped",   report.examPapersSkipped());
+        data.put("examPapersFailed",    report.examPapersFailed());
+        data.put("submissionsMigrated", report.submissionsMigrated());
+        data.put("submissionsSkipped",  report.submissionsSkipped());
+        data.put("submissionsFailed",   report.submissionsFailed());
+        data.put("errors",              report.errors());
+        String msg = dryRun
+                ? "Dry-run MinIO migration hoàn tất — không có thay đổi thực sự"
+                : "MinIO migration hoàn tất";
+        return ResponseEntity.ok(buildSuccessResponse(msg, data));
+    }
+
+    /**
+     * Sửa object trên MinIO từ path cũ sang path mới,
+     * khi DB đã có path mới nhưng MinIO vẫn còn file ở path cũ (UUID-based).
+     * <p>
+     * Gọi cách đúng:
+     * <ul>
+     *   <li>Method: POST</li>
+     *   <li>URL: /api/admin/config/minio-fix?dryRun=true (preview) hoặc ?dryRun=false</li>
+     *   <li>Header: Authorization: Bearer &lt;jwt_token&gt;</li>
+     * </ul>
+     *
+     * @param dryRun nếu true: chỉ log, không thực sự copy/xóa MinIO object
+     */
+    @PostMapping("/minio-fix")
+    public ResponseEntity<Map<String, Object>> fixMinioObjects(
+            @RequestParam(defaultValue = "false") boolean dryRun) {
+        MinioPathMigrationService.MigrationReport report = minioMigrationService.fixMinioObjects(dryRun);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("dryRun",              dryRun);
+        data.put("examPapersMigrated",  report.examPapersMigrated());
+        data.put("examPapersSkipped",   report.examPapersSkipped());
+        data.put("examPapersFailed",    report.examPapersFailed());
+        data.put("submissionsMigrated", report.submissionsMigrated());
+        data.put("submissionsSkipped",  report.submissionsSkipped());
+        data.put("submissionsFailed",   report.submissionsFailed());
+        data.put("errors",              report.errors());
+        String msg = dryRun
+                ? "Dry-run MinIO fix hoàn tất — không có thay đổi thực sự"
+                : "MinIO fix hoàn tất — đã dời object sang path mới";
+        return ResponseEntity.ok(buildSuccessResponse(msg, data));
+    }
+
+    /**
+     * Sửa object trên MinIO và DB bằng cách cắt bỏ phần duplicate folder 
+     * (thừa `exam-papers/` và `submissions/` khi bucket name đã trùng).
+     * <p>
+     * Gọi cách đúng:
+     * <ul>
+     *   <li>Method: POST</li>
+     *   <li>URL: /api/admin/config/minio-fix-duplicate-prefixes?dryRun=true (preview) hoặc ?dryRun=false</li>
+     *   <li>Header: Authorization: Bearer &lt;jwt_token&gt;</li>
+     * </ul>
+     *
+     * @param dryRun nếu true: chỉ log, không thực sự copy/xóa MinIO object
+     */
+    @PostMapping("/minio-fix-duplicate-prefixes")
+    public ResponseEntity<Map<String, Object>> fixDuplicatePrefixes(
+            @RequestParam(defaultValue = "false") boolean dryRun) {
+        MinioPathMigrationService.MigrationReport report = minioMigrationService.fixDuplicatePrefixes(dryRun);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("dryRun",              dryRun);
+        data.put("examPapersMigrated",  report.examPapersMigrated());
+        data.put("examPapersSkipped",   report.examPapersSkipped());
+        data.put("examPapersFailed",    report.examPapersFailed());
+        data.put("submissionsMigrated", report.submissionsMigrated());
+        data.put("submissionsSkipped",  report.submissionsSkipped());
+        data.put("submissionsFailed",   report.submissionsFailed());
+        data.put("errors",              report.errors());
+        String msg = dryRun
+                ? "Dry-run MinIO fix duplicate prefixes hoàn tất — không có thay đổi thực sự"
+                : "MinIO fix duplicate prefixes hoàn tất — đã dời object và cập nhật DB";
+        return ResponseEntity.ok(buildSuccessResponse(msg, data));
+    }
+
+    /**
+     * Backfill jarFilePath và sourceCodePath cho các Answer records còn NULL.
+     * Re-download từng submission zip từ MinIO, parse lại, và cập nhật DB.
+     * <p>
+     * Gọi cách đúng:
+     * <ul>
+     *   <li>Method: POST</li>
+     *   <li>URL: /api/admin/config/backfill-answer-paths?dryRun=true (preview) hoặc ?dryRun=false</li>
+     *   <li>Header: Authorization: Bearer &lt;jwt_token&gt;</li>
+     * </ul>
+     *
+     * @param dryRun nếu true: chỉ log, không ghi vào DB
+     */
+    @PostMapping("/backfill-answer-paths")
+    public ResponseEntity<Map<String, Object>> backfillAnswerPaths(
+            @RequestParam(defaultValue = "false") boolean dryRun) {
+        MinioPathMigrationService.BackfillReport report = minioMigrationService.backfillAnswerPaths(dryRun);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("dryRun",             dryRun);
+        data.put("submissionsScanned", report.submissionsScanned());
+        data.put("answersUpdated",     report.answersUpdated());
+        data.put("answersSkipped",     report.answersSkipped());
+        data.put("failed",             report.failed());
+        data.put("errors",             report.errors());
+        String msg = dryRun
+                ? "Dry-run backfill hoàn tất — không có thay đổi thực sự"
+                : "Backfill hoàn tất — đã cập nhật jarFilePath và sourceCodePath cho các Answer";
+        return ResponseEntity.ok(buildSuccessResponse(msg, data));
     }
 
     /**

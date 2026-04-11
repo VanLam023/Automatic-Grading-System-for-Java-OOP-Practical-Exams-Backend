@@ -19,19 +19,19 @@ import java.util.zip.ZipFile;
 /**
  * Parser for student submission archives (.zip or .rar).
  *
- * <p>Expected archive structure:
+ * <p>Expected archive structure (both with and without outer wrapper folder):
  * <pre>
- *   {n}/
- *     run/
- *       Q{n}.jar          ← compiled .jar (exactly one)
- *     src/
- *       *.java            ← student source files (zero or more)
- *       *.class           ← precompiled files from exam paper (ignored for AI review)
+ *   [WrapperFolder/]            &lt;-- optional outer wrapper folder (e.g., PRO_given_1/)
+ *     {n}/
+ *       run/
+ *         Q{n}.jar              &lt;-- compiled .jar (exactly one)
+ *       src/
+ *         *.java                &lt;-- student source files (zero or more)
  * </pre>
  *
  * <p>Parsing rules:
  * <ul>
- *   <li>Extra files/folders outside the above structure are silently ignored.</li>
+ *   <li>Outer wrapper folders (non-numeric top-level) are automatically stripped.</li>
  *   <li>If {@code run/} has no .jar → {@code jarEntryPath = null} (0 test-case score).</li>
  *   <li>If {@code src/} has no .java → {@code sourceEntryPaths} is empty (AI skipped).</li>
  *   <li>Question folders that are missing entirely are NOT reported here; the service
@@ -68,9 +68,12 @@ public class SubmissionZipParser {
     // ─── ZIP ─────────────────────────────────────────────────────────────────
 
     private ParsedSubmission parseZip(Path tmpFile) throws IOException {
-        // questionNumber → (jarPath, list of sourcePaths)
-        Map<Integer, String> jarPaths    = new TreeMap<>();
+        Map<Integer, String> jarPaths       = new TreeMap<>();
         Map<Integer, List<String>> srcPaths = new TreeMap<>();
+
+        // First pass: detect the outer wrapper folder prefix (if any)
+        String wrapperPrefix = detectWrapperPrefix(tmpFile);
+        log.debug("SubmissionParser: wrapperPrefix='{}'", wrapperPrefix);
 
         try (ZipFile zip = new ZipFile(tmpFile.toFile())) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
@@ -79,15 +82,17 @@ public class SubmissionZipParser {
                 String name = normalizeSlash(entry.getName());
                 if (entry.isDirectory()) continue;
 
-                // Match pattern: {n}/run/*.jar
-                Integer qNum = extractQuestionNumber(name);
+                // Strip outer wrapper folder to get effective path
+                String effective = stripPrefix(name, wrapperPrefix);
+
+                Integer qNum = extractQuestionNumber(effective);
                 if (qNum == null) continue;
 
-                if (isJarEntry(name, qNum)) {
-                    // Only keep the first jar found per question
-                    jarPaths.putIfAbsent(qNum, name);
-                } else if (isJavaSourceEntry(name, qNum)) {
-                    srcPaths.computeIfAbsent(qNum, k -> new ArrayList<>()).add(name);
+                if (isJarEntry(effective, qNum)) {
+                    // Store effective path (logical path inside zip, stripped of wrapper)
+                    jarPaths.putIfAbsent(qNum, effective);
+                } else if (isJavaSourceEntry(effective, qNum)) {
+                    srcPaths.computeIfAbsent(qNum, k -> new ArrayList<>()).add(effective);
                 }
                 // Other files (nbproject, build, .class) are silently ignored
             }
@@ -99,21 +104,35 @@ public class SubmissionZipParser {
     // ─── RAR ─────────────────────────────────────────────────────────────────
 
     private ParsedSubmission parseRar(Path tmpFile) throws Exception {
-        Map<Integer, String> jarPaths    = new TreeMap<>();
+        Map<Integer, String> jarPaths       = new TreeMap<>();
         Map<Integer, List<String>> srcPaths = new TreeMap<>();
+
+        // Collect all entry paths first to detect wrapper prefix
+        List<String> allPaths = new ArrayList<>();
+        try (Archive archive = new Archive(tmpFile.toFile())) {
+            for (FileHeader fh : archive.getFileHeaders()) {
+                if (!fh.isDirectory()) {
+                    allPaths.add(normalizeSlash(fh.getFileName()));
+                }
+            }
+        }
+
+        String wrapperPrefix = detectWrapperPrefixFromPaths(allPaths);
+        log.debug("SubmissionParser (RAR): wrapperPrefix='{}'", wrapperPrefix);
 
         try (Archive archive = new Archive(tmpFile.toFile())) {
             for (FileHeader fh : archive.getFileHeaders()) {
                 if (fh.isDirectory()) continue;
                 String name = normalizeSlash(fh.getFileName());
+                String effective = stripPrefix(name, wrapperPrefix);
 
-                Integer qNum = extractQuestionNumber(name);
+                Integer qNum = extractQuestionNumber(effective);
                 if (qNum == null) continue;
 
-                if (isJarEntry(name, qNum)) {
-                    jarPaths.putIfAbsent(qNum, name);
-                } else if (isJavaSourceEntry(name, qNum)) {
-                    srcPaths.computeIfAbsent(qNum, k -> new ArrayList<>()).add(name);
+                if (isJarEntry(effective, qNum)) {
+                    jarPaths.putIfAbsent(qNum, effective);
+                } else if (isJavaSourceEntry(effective, qNum)) {
+                    srcPaths.computeIfAbsent(qNum, k -> new ArrayList<>()).add(effective);
                 }
             }
         }
@@ -121,14 +140,88 @@ public class SubmissionZipParser {
         return buildResult(jarPaths, srcPaths);
     }
 
+    // ─── Wrapper Detection ────────────────────────────────────────────────────
+
+    /**
+     * Detects an outer (non-numeric) wrapper folder that wraps all question folders.
+     * E.g., if all entries start with "PRO_given_1/", returns "PRO_given_1/".
+     * Returns "" (empty string) if there's no wrapper.
+     */
+    private String detectWrapperPrefix(Path tmpFile) throws IOException {
+        List<String> paths = new ArrayList<>();
+        try (ZipFile zip = new ZipFile(tmpFile.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry e = entries.nextElement();
+                if (!e.isDirectory()) {
+                    paths.add(normalizeSlash(e.getName()));
+                }
+            }
+        }
+        return detectWrapperPrefixFromPaths(paths);
+    }
+
+    private String detectWrapperPrefixFromPaths(List<String> paths) {
+        if (paths.isEmpty()) return "";
+
+        // Get all unique top-level folders
+        java.util.Set<String> topFolders = new java.util.HashSet<>();
+        for (String p : paths) {
+            int slash = p.indexOf('/');
+            if (slash > 0) {
+                topFolders.add(p.substring(0, slash));
+            }
+        }
+
+        // If there is exactly ONE non-numeric top-level folder, treat it as wrapper
+        if (topFolders.size() == 1) {
+            String folder = topFolders.iterator().next();
+            try {
+                Integer.parseInt(folder);
+                return ""; // It IS a number (e.g., "1") — no wrapper
+            } catch (NumberFormatException e) {
+                log.debug("SubmissionParser: detected outer wrapper folder '{}'", folder);
+                return folder + "/";
+            }
+        }
+
+        // Multiple top-level folders — check if any are non-numeric (could be partial wrapper)
+        // Look for a common prefix shared by all entries
+        if (!paths.isEmpty()) {
+            String firstPath = paths.get(0);
+            int slash = firstPath.indexOf('/');
+            if (slash > 0) {
+                String candidateFolder = firstPath.substring(0, slash);
+                String candidatePrefix = candidateFolder + "/";
+                boolean allMatch = paths.stream().allMatch(p -> p.startsWith(candidatePrefix));
+                if (allMatch) {
+                    // Check this is non-numeric
+                    try {
+                        Integer.parseInt(candidateFolder);
+                        return ""; // It IS a number — no wrapper
+                    } catch (NumberFormatException e) {
+                        log.debug("SubmissionParser: detected common wrapper prefix '{}'", candidatePrefix);
+                        return candidatePrefix;
+                    }
+                }
+            }
+        }
+
+        return "";
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private String stripPrefix(String path, String prefix) {
+        if (prefix.isEmpty() || !path.startsWith(prefix)) return path;
+        return path.substring(prefix.length());
+    }
 
     /**
      * Extracts the question number from an entry path like "3/run/Q3.jar" → 3.
      * Returns null if the entry is not inside a numeric top-level folder.
      */
     private Integer extractQuestionNumber(String path) {
-        // Expect: "{digits}/..." at start of path
         int slash = path.indexOf('/');
         if (slash <= 0) return null;
         String folder = path.substring(0, slash);
@@ -145,7 +238,6 @@ public class SubmissionZipParser {
      * E.g., "3/run/Q3.jar" → true; ignores jar files in any other folder.
      */
     private boolean isJarEntry(String path, int qNum) {
-        // Must be: {qNum}/run/*.jar (only one level deep under run/)
         String prefix = qNum + "/run/";
         if (!path.startsWith(prefix)) return false;
         String rest = path.substring(prefix.length());
@@ -154,13 +246,11 @@ public class SubmissionZipParser {
 
     /**
      * Returns true if the entry is a .java file inside the {@code src/} folder of a question.
-     * Nested sub-folders inside src/ are ignored (only direct children).
      */
     private boolean isJavaSourceEntry(String path, int qNum) {
         String prefix = qNum + "/src/";
         if (!path.startsWith(prefix)) return false;
         String rest = path.substring(prefix.length());
-        // Accept direct .java children only (skip sub-folders like src/subpkg/Foo.java is ok too)
         return rest.toLowerCase().endsWith(".java") && !rest.isBlank();
     }
 
@@ -172,7 +262,6 @@ public class SubmissionZipParser {
             Map<Integer, String> jarPaths,
             Map<Integer, List<String>> srcPaths) {
 
-        // Merge: collect all question numbers found in either map
         java.util.Set<Integer> allQuestions = new java.util.TreeSet<>();
         allQuestions.addAll(jarPaths.keySet());
         allQuestions.addAll(srcPaths.keySet());

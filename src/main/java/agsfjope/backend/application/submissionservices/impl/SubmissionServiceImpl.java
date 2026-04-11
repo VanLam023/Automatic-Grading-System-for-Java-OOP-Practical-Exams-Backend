@@ -346,8 +346,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         String folder     = semester + "-" + exam.getAcademicYear();
         String studentDir = student.getFullName()
                 + (student.getMssv() != null ? " - " + student.getMssv() : "");
-        return "submissions/"
-                + sanitize(folder) + "/"
+        return sanitize(folder) + "/"
                 + sanitize(block.getName()) + "/"
                 + sanitize(studentDir) + "/"
                 + fileName;
