@@ -141,7 +141,36 @@ public class MinioService {
         }
     }
 
-    // ─── FILE EXISTS ─────────────────────────────────────────────────────
+    // ─── COPY ────────────────────────────────────────────────────────────────
+
+    /**
+     * Sao chép object trong cùng một bucket sang một key mới.
+     * Dùng native MinIO copy API — không cần download/reupload.
+     *
+     * @param bucketName   tên bucket (source và destination giống nhau)
+     * @param sourceObject đường dẫn nguồn trong bucket
+     * @param destObject   đường dẫn đích trong bucket
+     */
+    public void copyObject(String bucketName, String sourceObject, String destObject) {
+        try {
+            minioClient.copyObject(
+                    CopyObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(destObject)
+                            .source(CopySource.builder()
+                                    .bucket(bucketName)
+                                    .object(sourceObject)
+                                    .build())
+                            .build()
+            );
+            log.info("MinIO: Copied '{}' → '{}' in bucket '{}'", sourceObject, destObject, bucketName);
+        } catch (Exception e) {
+            log.error("MinIO: Failed to copy '{}' → '{}': {}", sourceObject, destObject, e.getMessage());
+            throw new RuntimeException("Không thể copy object trong MinIO: " + e.getMessage(), e);
+        }
+    }
+
+    // ─── FILE EXISTS ─────────────────────────────────────────────────────────
 
     /**
      * Kiểm tra file có tồn tại trong bucket không.
