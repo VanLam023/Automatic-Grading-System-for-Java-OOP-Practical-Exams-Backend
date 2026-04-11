@@ -45,6 +45,16 @@ public interface StaffAppealService {
      */
     StaffAppealDetailResponse assignLecturer(UUID appealId, AssignAppealRequest request, UUID staffId);
 
+
+    /**
+     * Staff hủy đơn phúc khảo đang chờ xử lý.
+     *
+     * @param appealId id đơn phúc khảo
+     * @param staffId  id staff thực hiện
+     * @return chi tiết đơn sau khi hủy
+     */
+    StaffAppealDetailResponse cancelAppeal(UUID appealId, UUID staffId);
+
     /**
      * Lấy danh sách giảng viên có thể phân công (cho dropdown).
      * Kèm số appeal đang xử lý của từng giảng viên.

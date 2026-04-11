@@ -183,7 +183,12 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
                 .status(a.getStatus())
                 .originalScore(originalScore)
                 .newScore(a.getNewScore())
+                .newQuestionScores(a.getNewQuestionScores())
+                .assignedLecturerId(a.getAssignedLecturer() != null ? a.getAssignedLecturer().getUserId() : null)
+                .assignedLecturerName(a.getAssignedLecturer() != null ? a.getAssignedLecturer().getFullName() : null)
+                .assignedLecturerEmail(a.getAssignedLecturer() != null ? a.getAssignedLecturer().getEmail() : null)
                 .createdAt(a.getCreatedAt())
+                .assignedAt(a.getAssignedAt())
                 .deadlineAt(a.getDeadlineAt())
                 .isOverdue(isOverdue)
                 .build();

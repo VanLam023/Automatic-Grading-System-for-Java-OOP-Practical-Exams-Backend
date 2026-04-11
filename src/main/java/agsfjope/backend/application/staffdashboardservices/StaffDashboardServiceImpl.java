@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -107,7 +108,7 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
                     .examId(exam.getExamId())
                     .name(exam.getName())
                     .semester(exam.getSemester())
-                    .status(exam.getStatus())
+                    .status(resolveExamStatus(exam))
                     .build());
         }
         return result;
@@ -160,8 +161,8 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
         PageRequest page = PageRequest.of(0, limit);
 
         List<Appeal> appeals = filtered
-                ? appealRepository.findPendingAndProcessingBySemesterOrderByCreatedAtDesc(semester, page)
-                : appealRepository.findPendingAndProcessingOrderByCreatedAtDesc(page);
+                ? appealRepository.findPendingBySemesterOrderByCreatedAtDesc(semester, page)
+                : appealRepository.findPendingOrderByCreatedAtDesc(page);
 
 
         List<PendingAppealResponse> result = new ArrayList<>();
@@ -169,10 +170,12 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
             String studentName = appeal.getStudent() != null ? appeal.getStudent().getFullName() : "";
             String studentMssv = appeal.getStudent() != null ? appeal.getStudent().getMssv() : "";
             String examName    = "";
+            String semesterName = "";
             if (appeal.getSubmission() != null
                     && appeal.getSubmission().getBlock() != null
                     && appeal.getSubmission().getBlock().getExam() != null) {
                 examName = appeal.getSubmission().getBlock().getExam().getName();
+                semesterName = appeal.getSubmission().getBlock().getExam().getSemester();
             }
 
             result.add(PendingAppealResponse.builder()
@@ -180,10 +183,26 @@ public class StaffDashboardServiceImpl implements StaffDashboardService {
                     .studentName(studentName)
                     .studentMssv(studentMssv)
                     .examName(examName)
+                    .semester(semesterName)
                     .status(appeal.getStatus())
                     .createdAt(appeal.getCreatedAt())
                     .build());
         }
         return result;
+    }
+
+    private ExamStatus resolveExamStatus(Exam exam) {
+        if (exam == null || exam.getStartTime() == null || exam.getEndTime() == null) {
+            return ExamStatus.UPCOMING;
+        }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        if (now.isBefore(exam.getStartTime())) {
+            return ExamStatus.UPCOMING;
+        }
+        if (!now.isAfter(exam.getEndTime())) {
+            return ExamStatus.ONGOING;
+        }
+        return ExamStatus.COMPLETED;
     }
 }

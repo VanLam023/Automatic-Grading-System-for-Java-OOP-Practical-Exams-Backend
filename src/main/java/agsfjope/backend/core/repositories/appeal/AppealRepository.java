@@ -208,42 +208,32 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
 
 
     /**
-     * Finds appeals with PENDING or PROCESSING status, ordered by creation date descending.
-     * Uses native SQL with explicit CAST to handle PostgreSQL custom enum type (appeal_status).
+     * Finds only appeals with PENDING status, ordered by creation date descending.
      * Used by Staff Dashboard "Đơn phúc khảo cần xử lý" table.
-     *
-     * @param pageable paging parameters (limit)
-     * @return list of matching appeals
      */
     @Query(value = """
             SELECT * FROM Appeals a
-            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+            WHERE a.Status = CAST('PENDING' AS appeal_status)
             ORDER BY a.CreatedAt DESC
             """,
            nativeQuery = true)
-    List<Appeal> findPendingAndProcessingOrderByCreatedAtDesc(
+    List<Appeal> findPendingOrderByCreatedAtDesc(
             org.springframework.data.domain.Pageable pageable);
 
     /**
-     * Finds appeals with PENDING or PROCESSING status for a specific semester.
-     * Navigates Appeal → Submission → Block → Exam to check semester.
-     * Uses native SQL with explicit CAST for PostgreSQL custom enum type.
-     *
-     * @param semester semester code to filter by
-     * @param pageable paging parameters (limit)
-     * @return list of matching appeals
+     * Finds only appeals with PENDING status for a specific semester.
      */
     @Query(value = """
             SELECT a.* FROM Appeals a
             JOIN Submissions s ON a.SubmissionID = s.SubmissionID
             JOIN Blocks b ON s.BlockID = b.BlockID
             JOIN Exams e ON b.ExamID = e.ExamID
-            WHERE a.Status IN (CAST('PENDING' AS appeal_status), CAST('PROCESSING' AS appeal_status))
+            WHERE a.Status = CAST('PENDING' AS appeal_status)
               AND e.Semester = :semester
             ORDER BY a.CreatedAt DESC
             """,
            nativeQuery = true)
-    List<Appeal> findPendingAndProcessingBySemesterOrderByCreatedAtDesc(
+    List<Appeal> findPendingBySemesterOrderByCreatedAtDesc(
             @Param("semester") String semester,
             org.springframework.data.domain.Pageable pageable);
 
@@ -280,6 +270,10 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             JOIN Blocks b ON s.BlockID = b.BlockID
             JOIN Exams e ON b.ExamID = e.ExamID
             WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status NOT IN (
+                CAST('PENDING_PAYMENT' AS appeal_status),
+                CAST('PENDING' AS appeal_status)
+              )
               AND (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
               AND (:keyword = '' OR
                    LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
@@ -294,6 +288,10 @@ public interface AppealRepository extends JpaRepository<Appeal, UUID> {
             JOIN Blocks b ON s.BlockID = b.BlockID
             JOIN Exams e ON b.ExamID = e.ExamID
             WHERE a.AssignedLecturerID = :lecturerId
+              AND a.Status NOT IN (
+                CAST('PENDING_PAYMENT' AS appeal_status),
+                CAST('PENDING' AS appeal_status)
+              )
               AND (:status IS NULL OR a.Status = CAST(:status AS appeal_status))
               AND (:keyword = '' OR
                    LOWER(u.FullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
