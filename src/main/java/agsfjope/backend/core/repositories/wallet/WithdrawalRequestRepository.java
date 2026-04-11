@@ -28,9 +28,18 @@ public interface WithdrawalRequestRepository {
     List<WithdrawalRequest> findByStudentIdOrderByCreatedAtDesc(UUID studentId);
 
     /**
-     * Lấy toàn bộ yêu cầu rút tiền, có filter theo status (dành cho Admin).
-     *
-     * @param status null = tất cả
+     * Tổng số tiền rút đang ở trạng thái PENDING của một sinh viên.
+     * Dùng để chặn gửi nhiều yêu cầu vượt quá số dư có thể rút.
      */
-    List<WithdrawalRequest> findAllByStatus(WithdrawalStatus status);
+    java.math.BigDecimal sumPendingAmountByStudentId(UUID studentId);
+
+    /**
+     * Lấy toàn bộ yêu cầu rút tiền, mới nhất trước.
+     */
+    List<WithdrawalRequest> findAllOrderByCreatedAtDesc();
+
+    /**
+     * Lấy toàn bộ yêu cầu rút tiền theo status, mới nhất trước.
+     */
+    List<WithdrawalRequest> findByStatusOrderByCreatedAtDesc(WithdrawalStatus status);
 }
