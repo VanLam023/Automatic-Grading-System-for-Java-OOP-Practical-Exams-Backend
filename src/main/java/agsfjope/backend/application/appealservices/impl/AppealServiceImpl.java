@@ -187,6 +187,7 @@ public class AppealServiceImpl implements AppealService {
                     .status(a.getStatus())
                     .originalScore(originalScore)
                     .newScore(a.getNewScore())
+                    .newQuestionScores(a.getNewQuestionScores())
                     .reason(a.getReason())
                     .lecturerComment(a.getLecturerComment())
                     .assignedLecturerName(

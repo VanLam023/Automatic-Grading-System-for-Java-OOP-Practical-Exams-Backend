@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -42,6 +43,9 @@ public class MyAppealItemResponse {
 
     /** Điểm sau phúc khảo (null nếu chưa chấm lại). */
     private BigDecimal newScore;
+
+    /** Điểm chấm lại theo từng câu (nếu giảng viên đã chấm lại từng câu). */
+    private Map<String, BigDecimal> newQuestionScores;
 
     /** Lý do phúc khảo của sinh viên. */
     private String reason;

@@ -30,6 +30,9 @@ public class PendingAppealResponse {
     /** Exam name associated with this appeal. */
     private String examName;
 
+    /** Semester associated with this appeal. */
+    private String semester;
+
     /** Current appeal status (PENDING, PROCESSING, etc.). */
     private AppealStatus status;
 

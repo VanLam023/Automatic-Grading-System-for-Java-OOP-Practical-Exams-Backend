@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -29,12 +30,15 @@ public class StaffAppealListItemResponse {
 
     // Exam info
     private String examName;
+    private String semester;
     private String blockName;
+    private UUID submissionId;
 
     // Appeal info
     private AppealStatus status;
     private BigDecimal originalScore;
     private BigDecimal newScore;
+    private Map<String, BigDecimal> newQuestionScores;
     private OffsetDateTime createdAt;
     private OffsetDateTime deadlineAt;
 

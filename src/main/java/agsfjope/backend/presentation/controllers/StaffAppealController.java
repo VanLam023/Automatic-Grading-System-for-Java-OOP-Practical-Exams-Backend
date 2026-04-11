@@ -103,6 +103,20 @@ public class StaffAppealController {
                 "Phân công giảng viên thành công. Đơn phúc khảo đang được xử lý.", response));
     }
 
+
+    @PutMapping("/{appealId}/cancel")
+    @PreAuthorize("hasAnyAuthority('EXAM_STAFF', 'ROLE_EXAM_STAFF')")
+    public ResponseEntity<Map<String, Object>> cancelAppeal(
+            @PathVariable("appealId") UUID appealId,
+            Authentication authentication) {
+
+        UUID staffId = extractUserId(authentication);
+        log.info("[StaffAppealController] Staff {} hủy appeal {}", staffId, appealId);
+
+        var response = staffAppealService.cancelAppeal(appealId, staffId);
+        return ResponseEntity.ok(buildResponse(true, "Đã hủy đơn phúc khảo.", response));
+    }
+
     /**
      * Staff Xác nhận kết quả phúc khảo (Approve / Deny).
      *

@@ -18,6 +18,7 @@ import agsfjope.backend.core.enums.GradingResultStatus;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.configuration.storage.MinioConfig;
@@ -53,6 +54,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
     private final GradingResultRepository gradingResultRepository;
+    private final AnswerRepository answerRepository;
     private final SystemConfigRepository systemConfigRepository;
     private final MinioService minioService;
     private final MinioConfig minioConfig;
@@ -156,6 +158,35 @@ public class StaffAppealServiceImpl implements StaffAppealService {
 
         Appeal saved = appealRepository.save(appeal);
         log.info("[Staff] Appeal {} đã phân công cho {}, deadline {}", appealId, lecturer.getFullName(), deadline);
+
+        return toDetailResponse(saved);
+    }
+
+
+    @Override
+    @Transactional
+    public StaffAppealDetailResponse cancelAppeal(UUID appealId, UUID staffId) {
+        log.info("[Staff] Hủy appeal {} bởi staff {}", appealId, staffId);
+
+        Appeal appeal = findAppealOrThrow(appealId);
+
+        if (appeal.getStatus() != AppealStatus.PENDING && appeal.getStatus() != AppealStatus.PROCESSING) {
+            throw new IllegalStateException(
+                    "Chỉ có thể hủy đơn phúc khảo ở trạng thái PENDING hoặc PROCESSING. Trạng thái hiện tại: "
+                            + appeal.getStatus());
+        }
+
+        appeal.setStatus(AppealStatus.CANCELLED);
+        appeal.setCompletedAt(OffsetDateTime.now());
+
+        Appeal saved = appealRepository.save(appeal);
+
+        notificationService.createNotification(
+                appeal.getStudent().getUserId(),
+                "Đơn phúc khảo đã bị hủy",
+                "Đơn phúc khảo của bạn đã được Exam Staff hủy xử lý.",
+                "APPEAL",
+                appeal.getAppealId());
 
         return toDetailResponse(saved);
     }
@@ -284,17 +315,17 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     }
 
     private StaffAppealListItemResponse toListItem(Appeal a) {
-        String examName = "", blockName = "";
+        String examName = "", semester = "", blockName = "";
+        UUID submissionId = null;
         try {
             examName = a.getSubmission().getBlock().getExam().getName();
+            semester = a.getSubmission().getBlock().getExam().getSemester();
             blockName = a.getSubmission().getBlock().getName();
+            submissionId = a.getSubmission().getSubmissionId();
         } catch (Exception ignored) {
         }
 
-        BigDecimal originalScore = gradingResultRepository
-                .findBySubmission_SubmissionId(a.getSubmission().getSubmissionId())
-                .map(gr -> gr.getTotalScore())
-                .orElse(BigDecimal.ZERO);
+        BigDecimal originalScore = getOriginalScore(submissionId);
 
         String appealCode = "#PK-" + a.getCreatedAt().getYear()
                 + "-" + a.getAppealId().toString().substring(0, 4).toUpperCase();
@@ -305,10 +336,13 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .studentName(a.getStudent().getFullName())
                 .studentMssv(a.getStudent().getMssv())
                 .examName(examName)
+                .semester(semester)
                 .blockName(blockName)
+                .submissionId(submissionId)
                 .status(a.getStatus())
                 .originalScore(originalScore)
                 .newScore(a.getNewScore())
+                .newQuestionScores(a.getNewQuestionScores())
                 .createdAt(a.getCreatedAt())
                 .deadlineAt(a.getDeadlineAt())
                 .assignedLecturerName(
@@ -329,10 +363,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         } catch (Exception ignored) {
         }
 
-        BigDecimal originalScore = gradingResultRepository
-                .findBySubmission_SubmissionId(submissionId)
-                .map(gr -> gr.getTotalScore())
-                .orElse(BigDecimal.ZERO);
+        BigDecimal originalScore = getOriginalScore(submissionId);
 
         // Payment info
         var payment = paymentRepository.findByAppealId(a.getAppealId()).orElse(null);
@@ -375,6 +406,26 @@ public class StaffAppealServiceImpl implements StaffAppealService {
                 .paymentStatus(payment != null ? payment.getStatus() : null)
                 .paidAt(payment != null ? payment.getPaidAt() : null)
                 .build();
+    }
+
+
+    private BigDecimal getOriginalScore(UUID submissionId) {
+        if (submissionId == null) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal sumAnswerScores = answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId)
+                .stream()
+                .map(answer -> answer.getAnswerScore() != null ? answer.getAnswerScore() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (sumAnswerScores.compareTo(BigDecimal.ZERO) > 0) {
+            return sumAnswerScores;
+        }
+
+        return gradingResultRepository.findBySubmission_SubmissionId(submissionId)
+                .map(GradingResult::getTotalScore)
+                .orElse(BigDecimal.ZERO);
     }
 
     private int loadDeadlineDays() {
