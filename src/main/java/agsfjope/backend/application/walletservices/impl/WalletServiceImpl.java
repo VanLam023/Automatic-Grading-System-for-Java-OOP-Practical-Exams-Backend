@@ -21,12 +21,15 @@ import agsfjope.backend.core.repositories.wallet.WithdrawalRequestRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,6 +48,12 @@ public class WalletServiceImpl implements WalletService {
     private static final String KEY_APPEAL_FEE = "APPEAL_FEE";
     private static final int DEFAULT_TIMEOUT_MIN = 15;
     private static final BigDecimal DEFAULT_APPEAL_FEE = new BigDecimal("200000");
+    private static final List<String> DEFAULT_ALLOWED_REDIRECT_ORIGINS = List.of(
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:4173",
+            "http://127.0.0.1:4173"
+    );
 
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository walletTransactionRepository;
@@ -54,6 +63,9 @@ public class WalletServiceImpl implements WalletService {
     private final PaymentGatewayPort paymentGatewayPort;
     private final NotificationService notificationService;
     private final SystemConfigRepository systemConfigRepository;
+
+    @Value("${app.cors.allowed-origins:}")
+    private String allowedOrigins;
 
     // ─────────────────────────────────────────────────────────────────────────
     // 1. Xem ví
@@ -112,6 +124,8 @@ public class WalletServiceImpl implements WalletService {
         long orderCode = System.currentTimeMillis() / 1000L;
         int timeoutMinutes = loadTimeoutMinutes();
         OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(timeoutMinutes);
+        String safeReturnUrl = validateRedirectUrl(request.getReturnUrl(), "returnUrl");
+        String safeCancelUrl = validateRedirectUrl(request.getCancelUrl(), "cancelUrl");
 
         // ① Lưu Payment vào DB TRƯỚC khi gọi PayOS
         //    → Đảm bảo orderCode luôn tồn tại trong DB dù PayOS timeout
@@ -134,7 +148,7 @@ public class WalletServiceImpl implements WalletService {
         try {
             PaymentGatewayPort.PaymentLinkResult result = paymentGatewayPort.createPaymentLink(
                     orderCode, request.getAmount(), description,
-                    request.getReturnUrl(), request.getCancelUrl());
+                    safeReturnUrl, safeCancelUrl);
 
             // Cập nhật Payment với thông tin PayOS
             payment.setPayosPaymentLinkId(result.paymentLinkId());
@@ -154,20 +168,18 @@ public class WalletServiceImpl implements WalletService {
                     .build();
 
         } catch (Exception e) {
-            // PayOS timeout / không accessible: Payment đã lưu DB, trả về orderCode để simulate
-            log.warn("[Wallet] PayOS không phản hồi ({}). Payment đã lưu DB với orderCode={}. Dùng /dev/simulate-success để test.",
-                    e.getMessage(), orderCode);
+            paymentRepository.markFailedIfPending(payment.getPaymentId());
+            log.warn("[Wallet] Không thể tạo link thanh toán PayOS cho orderCode={}: {}", orderCode, e.getMessage());
 
             return DepositResponse.builder()
                     .depositPaymentId(payment.getPaymentId())
                     .payosOrderId(String.valueOf(orderCode))
                     .amount(request.getAmount())
                     .currency("VND")
-                    .qrCodeUrl(null)        // PayOS chưa trả về
+                    .qrCodeUrl(null)
                     .checkoutUrl(null)
                     .expiresAt(expiresAt)
-                    .payosError("[DEV] PayOS không accessible. Dùng payosOrderId=" + orderCode
-                            + " với endpoint /api/v1/payments/dev/simulate-success để hoàn tất nạp tiền.")
+                    .payosError("Không thể tạo liên kết thanh toán vào lúc này. Vui lòng thử lại sau ít phút.")
                     .build();
         }
     }
@@ -188,11 +200,18 @@ public class WalletServiceImpl implements WalletService {
         Wallet wallet = walletRepository.findByStudentId(studentId)
                 .orElseThrow(() -> new IllegalStateException("Bạn chưa có ví. Vui lòng nạp tiền trước."));
 
-        // Kiểm tra số dư đủ không
-        if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
+        BigDecimal pendingWithdrawalAmount = Optional.ofNullable(
+                withdrawalRequestRepository.sumPendingAmountByStudentId(studentId)
+        ).orElse(BigDecimal.ZERO);
+        BigDecimal withdrawableBalance = wallet.getBalance().subtract(pendingWithdrawalAmount);
+        if (withdrawableBalance.compareTo(BigDecimal.ZERO) < 0) {
+            withdrawableBalance = BigDecimal.ZERO;
+        }
+
+        if (withdrawableBalance.compareTo(request.getAmount()) < 0) {
             throw new IllegalStateException(
-                    String.format("Số dư ví không đủ. Số dư hiện tại: %,.0f VND, số tiền muốn rút: %,.0f VND",
-                            wallet.getBalance(), request.getAmount()));
+                    String.format("Số dư có thể rút hiện tại không đủ. Số dư ví: %,.0f VND, đang chờ xử lý: %,.0f VND, còn có thể rút: %,.0f VND, số tiền muốn rút: %,.0f VND",
+                            wallet.getBalance(), pendingWithdrawalAmount, withdrawableBalance, request.getAmount()));
         }
 
         // Tạo WithdrawalRequest
@@ -238,8 +257,11 @@ public class WalletServiceImpl implements WalletService {
                 throw new IllegalArgumentException("Trạng thái không hợp lệ: " + statusFilter);
             }
         }
-        return withdrawalRequestRepository.findAllByStatus(status)
-                .stream()
+        List<WithdrawalRequest> requests = (status == null)
+                ? withdrawalRequestRepository.findAllOrderByCreatedAtDesc()
+                : withdrawalRequestRepository.findByStatusOrderByCreatedAtDesc(status);
+
+        return requests.stream()
                 .map(this::toWithdrawalResponseWithStudent)
                 .toList();
     }
@@ -548,6 +570,64 @@ public class WalletServiceImpl implements WalletService {
                     "WITHDRAWAL", withdrawalId);
         }
         log.info("[Wallet] Đã gửi notification cho {} admin về withdrawal {}", admins.size(), withdrawalId);
+    }
+
+    private String validateRedirectUrl(String rawUrl, String fieldName) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " không được để trống.");
+        }
+
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) {
+                throw new IllegalArgumentException(fieldName + " không hợp lệ.");
+            }
+
+            String normalizedScheme = scheme.toLowerCase(Locale.ROOT);
+            if (!"http".equals(normalizedScheme) && !"https".equals(normalizedScheme)) {
+                throw new IllegalArgumentException(fieldName + " không hợp lệ.");
+            }
+
+            String origin = normalizedScheme + "://" + host.toLowerCase(Locale.ROOT)
+                    + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+
+            boolean whitelisted = resolveAllowedRedirectOrigins().stream()
+                    .anyMatch(candidate -> originMatches(origin, candidate));
+            if (!whitelisted) {
+                throw new IllegalArgumentException(fieldName + " không hợp lệ.");
+            }
+
+            return uri.toString();
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalArgumentException(fieldName + " không hợp lệ.");
+        }
+    }
+
+    private List<String> resolveAllowedRedirectOrigins() {
+        if (allowedOrigins == null || allowedOrigins.isBlank()) {
+            return DEFAULT_ALLOWED_REDIRECT_ORIGINS;
+        }
+
+        List<String> resolved = java.util.Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+
+        return resolved.isEmpty() ? DEFAULT_ALLOWED_REDIRECT_ORIGINS : resolved;
+    }
+
+    private boolean originMatches(String origin, String candidate) {
+        if (candidate.contains("*")) {
+            String regex = java.util.regex.Pattern.quote(candidate)
+                    .replace("\\*", ".*");
+            return origin.matches(regex);
+        }
+        return origin.equalsIgnoreCase(candidate);
     }
 
     private BigDecimal loadAppealFee() {

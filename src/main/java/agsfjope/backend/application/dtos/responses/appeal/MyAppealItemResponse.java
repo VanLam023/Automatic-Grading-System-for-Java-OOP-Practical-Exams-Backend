@@ -22,6 +22,9 @@ public class MyAppealItemResponse {
     /** UUID đơn phúc khảo. */
     private UUID appealId;
 
+    /** UUID bài nộp được phúc khảo. */
+    private UUID submissionId;
+
     /** Mã yêu cầu phúc khảo (hiển thị dạng #PK-2023-xxxx). */
     private String appealCode;
 

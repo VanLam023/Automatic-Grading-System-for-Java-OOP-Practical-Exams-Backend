@@ -17,6 +17,17 @@ public interface WithdrawalRequestJpaRepository extends JpaRepository<Withdrawal
     @Query("SELECT w FROM WithdrawalRequest w WHERE w.student.userId = :studentId ORDER BY w.createdAt DESC")
     List<WithdrawalRequest> findByStudentIdOrderByCreatedAtDesc(@Param("studentId") UUID studentId);
 
-    @Query("SELECT w FROM WithdrawalRequest w WHERE :status IS NULL OR w.status = :status ORDER BY w.createdAt DESC")
-    List<WithdrawalRequest> findAllByStatus(@Param("status") WithdrawalStatus status);
+    @Query("SELECT w FROM WithdrawalRequest w ORDER BY w.createdAt DESC")
+    List<WithdrawalRequest> findAllOrderByCreatedAtDesc();
+
+    @Query("SELECT w FROM WithdrawalRequest w WHERE w.status = :status ORDER BY w.createdAt DESC")
+    List<WithdrawalRequest> findByStatusOrderByCreatedAtDesc(@Param("status") WithdrawalStatus status);
+
+    @Query("""
+            SELECT COALESCE(SUM(w.amount), 0)
+              FROM WithdrawalRequest w
+             WHERE w.student.userId = :studentId
+               AND w.status = agsfjope.backend.core.enums.WithdrawalStatus.PENDING
+            """)
+    java.math.BigDecimal sumPendingAmountByStudentId(@Param("studentId") UUID studentId);
 }

@@ -407,7 +407,7 @@ class WalletServiceImplTest {
         WithdrawalRequest wr = new WithdrawalRequest();
         User student = new User();
         wr.setStudent(student);
-        when(withdrawalRequestRepository.findAllByStatus(WithdrawalStatus.PENDING))
+        when(withdrawalRequestRepository.findByStatusOrderByCreatedAtDesc(WithdrawalStatus.PENDING))
                 .thenReturn(List.of(wr));
 
         // Act

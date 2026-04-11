@@ -35,7 +35,17 @@ public class WithdrawalRequestRepositoryImpl implements WithdrawalRequestReposit
     }
 
     @Override
-    public List<WithdrawalRequest> findAllByStatus(WithdrawalStatus status) {
-        return jpaRepository.findAllByStatus(status);
+    public java.math.BigDecimal sumPendingAmountByStudentId(UUID studentId) {
+        return jpaRepository.sumPendingAmountByStudentId(studentId);
+    }
+
+    @Override
+    public List<WithdrawalRequest> findAllOrderByCreatedAtDesc() {
+        return jpaRepository.findAllOrderByCreatedAtDesc();
+    }
+
+    @Override
+    public List<WithdrawalRequest> findByStatusOrderByCreatedAtDesc(WithdrawalStatus status) {
+        return jpaRepository.findByStatusOrderByCreatedAtDesc(status);
     }
 }

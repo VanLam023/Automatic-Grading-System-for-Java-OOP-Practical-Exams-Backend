@@ -149,6 +149,7 @@ public class AppealServiceImpl implements AppealService {
         // 1. Count stats
         long pendingCount    = appealRepository.countByStudentAndStatus(studentId, "PENDING");
         long processingCount = appealRepository.countByStudentAndStatus(studentId, "PROCESSING");
+        long completedCount  = appealRepository.countByStudentAndStatus(studentId, "COMPLETED");
         long approvedCount   = appealRepository.countByStudentAndStatus(studentId, "APPROVED");
         long deniedCount     = appealRepository.countByStudentAndStatus(studentId, "DENIED");
 
@@ -179,6 +180,7 @@ public class AppealServiceImpl implements AppealService {
 
             return MyAppealItemResponse.builder()
                     .appealId(a.getAppealId())
+                    .submissionId(a.getSubmission() != null ? a.getSubmission().getSubmissionId() : null)
                     .appealCode(appealCode)
                     .examName(examName)
                     .semester(semester)
@@ -199,7 +201,7 @@ public class AppealServiceImpl implements AppealService {
 
         return MyAppealsPageResponse.builder()
                 .totalAppeals(appeals.size())
-                .processingCount(pendingCount + processingCount)
+                .processingCount(pendingCount + processingCount + completedCount)
                 .approvedCount(approvedCount)
                 .deniedCount(deniedCount)
                 .appeals(items)

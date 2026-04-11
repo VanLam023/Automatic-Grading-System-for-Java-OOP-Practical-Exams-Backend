@@ -299,6 +299,7 @@ class AppealServiceImplTest {
 
         when(appealRepository.countByStudentAndStatus(studentId, "PENDING")).thenReturn(1L);
         when(appealRepository.countByStudentAndStatus(studentId, "PROCESSING")).thenReturn(0L);
+        when(appealRepository.countByStudentAndStatus(studentId, "COMPLETED")).thenReturn(1L);
         when(appealRepository.countByStudentAndStatus(studentId, "APPROVED")).thenReturn(1L);
         when(appealRepository.countByStudentAndStatus(studentId, "DENIED")).thenReturn(0L);
         when(appealRepository.findByStudentOrderByCreatedAtDesc(studentId)).thenReturn(List.of(a));
@@ -311,9 +312,10 @@ class AppealServiceImplTest {
         // Assert
         assertNotNull(response);
         assertEquals(1, response.getTotalAppeals());
-        assertEquals(1, response.getProcessingCount()); // pending + processing
+        assertEquals(2, response.getProcessingCount()); // pending + processing + completed
         assertEquals(1, response.getApprovedCount());
         assertEquals(1, response.getAppeals().size());
+        assertEquals(a.getSubmission().getSubmissionId(), response.getAppeals().get(0).getSubmissionId());
     }
 
     @Test
