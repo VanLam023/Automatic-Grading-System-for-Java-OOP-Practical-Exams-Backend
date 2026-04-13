@@ -39,7 +39,7 @@ import java.util.Map;
 @Component
 public class ScoreCalculator {
 
-    private static final BigDecimal PASS_THRESHOLD  = new BigDecimal("4.0");
+    private static final BigDecimal PASS_THRESHOLD  = BigDecimal.ZERO;
     private static final BigDecimal OOP_MAX         = new BigDecimal("10");
     private static final int        SCALE            = 2;
     private static final RoundingMode ROUNDING       = RoundingMode.HALF_UP;
@@ -83,7 +83,7 @@ public class ScoreCalculator {
         BigDecimal oopTotal  = sumOopRaw.multiply(oopWeight).setScale(SCALE, ROUNDING);
         BigDecimal finalScore = tcTotal.add(oopTotal).setScale(SCALE, ROUNDING);
 
-        boolean passed = finalScore.compareTo(PASS_THRESHOLD) >= 0;
+        boolean passed = finalScore.compareTo(PASS_THRESHOLD) > 0;
 
         String globalNote = null;
         if (config.getOopCommentOnly()) {

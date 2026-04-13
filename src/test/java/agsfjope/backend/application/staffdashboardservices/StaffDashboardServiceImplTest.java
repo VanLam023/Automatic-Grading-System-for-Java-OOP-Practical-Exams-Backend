@@ -132,7 +132,7 @@ class StaffDashboardServiceImplTest {
         assertEquals(1, response.size());
         assertEquals("Test Exam", response.get(0).getName());
         assertEquals("SP25", response.get(0).getSemester());
-        assertEquals(ExamStatus.ONGOING, response.get(0).getStatus());
+        assertEquals(ExamStatus.UPCOMING, response.get(0).getStatus());
 
         verify(examRepository, never()).findAllBySemesterAndDeletedAtIsNullOrderByCreatedAtDesc(any(), any());
     }
@@ -278,7 +278,7 @@ class StaffDashboardServiceImplTest {
                 .createdAt(OffsetDateTime.now())
                 .build();
 
-        when(appealRepository.findPendingAndProcessingOrderByCreatedAtDesc(page)).thenReturn(List.of(appeal));
+        when(appealRepository.findPendingOrderByCreatedAtDesc(page)).thenReturn(List.of(appeal));
 
         // Act
         List<PendingAppealResponse> response = staffDashboardService.getPendingAppeals(limit, "  "); // blank parameter treats as null
@@ -291,7 +291,7 @@ class StaffDashboardServiceImplTest {
         assertEquals("Final Exam", response.get(0).getExamName());
         assertEquals(AppealStatus.PENDING, response.get(0).getStatus());
 
-        verify(appealRepository, never()).findPendingAndProcessingBySemesterOrderByCreatedAtDesc(any(), any());
+        verify(appealRepository, never()).findPendingBySemesterOrderByCreatedAtDesc(any(), any());
     }
 
     @Test
@@ -308,7 +308,7 @@ class StaffDashboardServiceImplTest {
                 .createdAt(OffsetDateTime.now())
                 .build();
 
-        when(appealRepository.findPendingAndProcessingOrderByCreatedAtDesc(page)).thenReturn(List.of(appeal));
+        when(appealRepository.findPendingOrderByCreatedAtDesc(page)).thenReturn(List.of(appeal));
 
         // Act
         List<PendingAppealResponse> response = staffDashboardService.getPendingAppeals(limit, null);
@@ -328,7 +328,7 @@ class StaffDashboardServiceImplTest {
         int limit = 5;
         String semester = "FA25";
         PageRequest page = PageRequest.of(0, limit);
-        when(appealRepository.findPendingAndProcessingBySemesterOrderByCreatedAtDesc(semester, page)).thenReturn(Collections.emptyList());
+        when(appealRepository.findPendingBySemesterOrderByCreatedAtDesc(semester, page)).thenReturn(Collections.emptyList());
 
         // Act
         List<PendingAppealResponse> response = staffDashboardService.getPendingAppeals(limit, semester);
@@ -337,7 +337,7 @@ class StaffDashboardServiceImplTest {
         assertNotNull(response);
         assertTrue(response.isEmpty());
 
-        verify(appealRepository).findPendingAndProcessingBySemesterOrderByCreatedAtDesc(semester, page);
-        verify(appealRepository, never()).findPendingAndProcessingOrderByCreatedAtDesc(any());
+        verify(appealRepository).findPendingBySemesterOrderByCreatedAtDesc(semester, page);
+        verify(appealRepository, never()).findPendingOrderByCreatedAtDesc(any());
     }
 }

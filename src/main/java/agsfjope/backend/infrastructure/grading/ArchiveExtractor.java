@@ -1,8 +1,7 @@
 package agsfjope.backend.infrastructure.grading;
 
 import agsfjope.backend.infrastructure.storage.MinioService;
-import com.github.junrar.Archive;
-import com.github.junrar.rarfile.FileHeader;
+import agsfjope.backend.infrastructure.storage.parser.RarExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -338,45 +337,28 @@ public class ArchiveExtractor {
 
     private Path extractFirstFromRar(Path archivePath, Path dest,
                                      java.util.function.Predicate<String> matcher) throws IOException {
-        try (Archive rar = new Archive(archivePath.toFile())) {
-            FileHeader fh;
-            while ((fh = rar.nextFileHeader()) != null) {
-                if (!fh.isDirectory() && matcher.test(normalizeSlash(fh.getFileName()))) {
-                    try (InputStream in = rar.getInputStream(fh)) {
-                        Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                    return dest;
-                }
-            }
-        } catch (IOException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IOException("Failed to read RAR: " + e.getMessage(), e);
-        }
-        return null;
+        byte[] data = RarExtractor.extractFirstMatching(archivePath, matcher);
+        if (data == null) return null;
+        java.nio.file.Files.write(dest, data);
+        return dest;
     }
 
     private int extractAllFromRar(Path archivePath, Path destDir,
                                   java.util.function.Predicate<String> matcher) throws IOException {
-        int count = 0;
-        try (Archive rar = new Archive(archivePath.toFile())) {
-            FileHeader fh;
-            while ((fh = rar.nextFileHeader()) != null) {
-                if (!fh.isDirectory() && matcher.test(normalizeSlash(fh.getFileName()))) {
-                    String fileName = Paths.get(fh.getFileName()).getFileName().toString();
-                    Path dest = destDir.resolve(fileName);
-                    try (InputStream in = rar.getInputStream(fh)) {
-                        Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                    count++;
-                }
+        int[] count = {0};
+        RarExtractor.iterateEntries(archivePath, (name, bytes) -> {
+            if (bytes.length == 0 && name.endsWith("/")) return; // directory
+            if (!matcher.test(name)) return;
+            String fileName = java.nio.file.Paths.get(name).getFileName().toString();
+            Path dest = destDir.resolve(fileName);
+            try {
+                java.nio.file.Files.write(dest, bytes);
+                count[0]++;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to write " + fileName + ": " + e.getMessage(), e);
             }
-        } catch (IOException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IOException("Failed to read RAR: " + e.getMessage(), e);
-        }
-        return count;
+        });
+        return count[0];
     }
 
     private String normalizeSlash(String path) {

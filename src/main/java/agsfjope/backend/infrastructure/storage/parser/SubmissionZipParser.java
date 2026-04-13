@@ -1,8 +1,6 @@
 package agsfjope.backend.infrastructure.storage.parser;
 
 import agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException;
-import com.github.junrar.Archive;
-import com.github.junrar.rarfile.FileHeader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -101,41 +99,41 @@ public class SubmissionZipParser {
         return buildResult(jarPaths, srcPaths);
     }
 
-    // ─── RAR ─────────────────────────────────────────────────────────────────
+    // ─── RAR ───────────────────────────────────────────────────────────────────────────────
 
-    private ParsedSubmission parseRar(Path tmpFile) throws Exception {
+    /**
+     * Parses a RAR archive (RAR4 or RAR5) using sevenzipjbinding (7-Zip JNI wrapper).
+     * Single-pass: reads all entry names first (from map keys), then classifies.
+     */
+    private ParsedSubmission parseRar(Path tmpFile) throws IOException {
         Map<Integer, String> jarPaths       = new TreeMap<>();
         Map<Integer, List<String>> srcPaths = new TreeMap<>();
 
-        // Collect all entry paths first to detect wrapper prefix
+        // Collect all entry names first (for wrapper detection)
         List<String> allPaths = new ArrayList<>();
-        try (Archive archive = new Archive(tmpFile.toFile())) {
-            for (FileHeader fh : archive.getFileHeaders()) {
-                if (!fh.isDirectory()) {
-                    allPaths.add(normalizeSlash(fh.getFileName()));
-                }
+        RarExtractor.iterateEntries(tmpFile, (name, bytes) -> {
+            if (bytes.length > 0 || !name.endsWith("/")) {
+                allPaths.add(name);
             }
-        }
+        });
 
         String wrapperPrefix = detectWrapperPrefixFromPaths(allPaths);
         log.debug("SubmissionParser (RAR): wrapperPrefix='{}'", wrapperPrefix);
 
-        try (Archive archive = new Archive(tmpFile.toFile())) {
-            for (FileHeader fh : archive.getFileHeaders()) {
-                if (fh.isDirectory()) continue;
-                String name = normalizeSlash(fh.getFileName());
-                String effective = stripPrefix(name, wrapperPrefix);
+        // Classify entries
+        RarExtractor.iterateEntries(tmpFile, (name, bytes) -> {
+            if (bytes.length == 0 && name.endsWith("/")) return; // directory
+            String effective = stripPrefix(name, wrapperPrefix);
 
-                Integer qNum = extractQuestionNumber(effective);
-                if (qNum == null) continue;
+            Integer qNum = extractQuestionNumber(effective);
+            if (qNum == null) return;
 
-                if (isJarEntry(effective, qNum)) {
-                    jarPaths.putIfAbsent(qNum, effective);
-                } else if (isJavaSourceEntry(effective, qNum)) {
-                    srcPaths.computeIfAbsent(qNum, k -> new ArrayList<>()).add(effective);
-                }
+            if (isJarEntry(effective, qNum)) {
+                jarPaths.putIfAbsent(qNum, effective);
+            } else if (isJavaSourceEntry(effective, qNum)) {
+                srcPaths.computeIfAbsent(qNum, k -> new ArrayList<>()).add(effective);
             }
-        }
+        });
 
         return buildResult(jarPaths, srcPaths);
     }

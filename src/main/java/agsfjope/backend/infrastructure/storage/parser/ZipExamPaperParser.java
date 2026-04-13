@@ -149,24 +149,12 @@ public class ZipExamPaperParser {
 
     // ─── RAR Parsing ─────────────────────────────────────────────────────────
 
+    /**
+     * Parses a RAR archive (RAR4 or RAR5) using sevenzipjbinding (7-Zip JNI wrapper).
+     * Supports both RAR generations without any external tool installation.
+     */
     private ParsedExamPaper parseRarFile(Path rarPath) throws IOException {
-        Map<String, byte[]> entries = new LinkedHashMap<>();
-        try (com.github.junrar.Archive archive = new com.github.junrar.Archive(rarPath.toFile())) {
-            com.github.junrar.rarfile.FileHeader fh;
-            while ((fh = archive.nextFileHeader()) != null) {
-                String name = normalizeSlash(fh.getFileName());
-                if (!fh.isDirectory()) {
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    archive.extractFile(fh, baos);
-                    entries.put(name, baos.toByteArray());
-                } else {
-                    entries.put(name, new byte[0]);
-                }
-            }
-        } catch (com.github.junrar.exception.RarException e) {
-            throw new InvalidZipStructureException(
-                    "Không thể đọc file .rar. File có thể bị hỏng hoặc được mã hoá (RAR5+): " + e.getMessage(), e);
-        }
+        Map<String, byte[]> entries = RarExtractor.readAllEntries(rarPath);
 
         if (entries.isEmpty()) {
             throw new InvalidZipStructureException("File nén rỗng — không tìm thấy nội dung bên trong.");

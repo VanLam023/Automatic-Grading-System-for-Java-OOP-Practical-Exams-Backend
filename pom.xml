@@ -141,12 +141,18 @@
             <artifactId>commons-compress</artifactId>
             <version>1.26.1</version>
         </dependency>
-        <!-- Junrar: read .rar archives (commons-compress does not natively support RAR write/extract) -->
+        <!-- sevenzipjbinding: JNI wrapper của 7-Zip, hỗ trợ RAR4 + RAR5 -->
         <dependency>
-            <groupId>com.github.junrar</groupId>
-            <artifactId>junrar</artifactId>
-            <version>7.5.5</version>
+            <groupId>net.sf.sevenzipjbinding</groupId>
+            <artifactId>sevenzipjbinding</artifactId>
+            <version>16.02-2.01</version>
         </dependency>
+        <dependency>
+            <groupId>net.sf.sevenzipjbinding</groupId>
+            <artifactId>sevenzipjbinding-all-platforms</artifactId>
+            <version>16.02-2.01</version>
+        </dependency>
+
     </dependencies>
 
     <build>
