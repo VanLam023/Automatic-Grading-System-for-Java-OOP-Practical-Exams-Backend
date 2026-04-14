@@ -7,6 +7,11 @@
 .springBeans
 .sts4-cache/
 
+compile_err.txt
+*.log
+*.tmp
+
+
 ### IntelliJ IDEA ###
 .idea
 *.iws
