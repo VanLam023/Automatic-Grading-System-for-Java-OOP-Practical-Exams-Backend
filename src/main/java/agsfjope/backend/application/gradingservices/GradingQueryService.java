@@ -6,6 +6,7 @@ import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.grading.AIReviewRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
+import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,6 +37,7 @@ public class GradingQueryService {
     private final GradingResultRepository  gradingResultRepository;
     private final TestCaseResultRepository testCaseResultRepository;
     private final AIReviewRepository       aiReviewRepository;
+    private final AnswerRepository         answerRepository;
     private final SubmissionRepository     submissionRepository;
     private final ObjectMapper             objectMapper;
 
@@ -178,6 +180,11 @@ public class GradingQueryService {
     }
 
     private List<AnswerGradingDetail> buildAnswerDetails(UUID submissionId) {
+        // Load all Answer rows for this submission so questions without testcase results
+        // are still returned to the lecturer/student UI.
+        List<Answer> answers = answerRepository
+                .findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId);
+
         // Load all TestCaseResults for this submission
         List<TestCaseResult> allTcResults = testCaseResultRepository
                 .findByAnswer_Submission_SubmissionIdOrderByTestCase_TestCaseNumberAsc(submissionId);
@@ -198,14 +205,19 @@ public class GradingQueryService {
                         (a, b) -> a));
 
         // Build per-answer details from distinct answers, sorted by question number
-        return allTcResults.stream()
-                .map(TestCaseResult::getAnswer)
-                .distinct()
+        return answers.stream()
                 .sorted(Comparator.comparingInt(a -> a.getQuestion().getQuestionNumber()))
                 .map(answer -> {
                     UUID aid = answer.getAnswerId();
                     List<TestCaseResult> tcrs = tcByAnswer.getOrDefault(aid, List.of());
                     AIReview ai = aiByAnswer.get(aid);
+
+                    boolean hasJar = answer.getJarFilePath() != null && !answer.getJarFilePath().isBlank();
+                    boolean hasSource = answer.getSourceCodePath() != null && !answer.getSourceCodePath().isBlank();
+                    boolean scoreEditable = hasJar || hasSource;
+                    String scoreEditBlockedReason = scoreEditable
+                            ? null
+                            : "Không thể điều chỉnh điểm cho câu này vì hệ thống không tìm thấy bài làm của sinh viên. Vui lòng giữ nguyên điểm hiện tại và kiểm tra lại dữ liệu nộp bài trước khi gửi kết quả phúc khảo.";
 
                     // rawTestCaseScore = sum of scoreEarned from all TC results for this answer
                     BigDecimal rawTcScore = tcrs.stream()
@@ -231,6 +243,10 @@ public class GradingQueryService {
                             .maxScore(answer.getQuestion().getMaxScore())
                             // Scores persisted by pipeline in V6 columns (null if not yet re-graded)
                             .questionScore(answer.getAnswerScore())
+                            .hasJar(hasJar)
+                            .hasSource(hasSource)
+                            .scoreEditable(scoreEditable)
+                            .scoreEditBlockedReason(scoreEditBlockedReason)
                             .rawTestCaseScore(rawTcScore)
                             .rawOopScore(rawOopScore)
                             .guardRuleTriggered(answer.isGuardRuleTriggered())

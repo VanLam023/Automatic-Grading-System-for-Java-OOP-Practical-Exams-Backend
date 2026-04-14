@@ -9,11 +9,13 @@ import agsfjope.backend.application.dtos.responses.appeal.LecturerAppealPageResp
 import agsfjope.backend.application.dtos.responses.grading.GradingResultResponse;
 import agsfjope.backend.application.gradingservices.GradingQueryService;
 import agsfjope.backend.core.entities.Appeal;
+import agsfjope.backend.core.entities.Answer;
 import agsfjope.backend.core.entities.GradingResult;
 import agsfjope.backend.core.entities.Submission;
 import agsfjope.backend.core.enums.AppealStatus;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.configuration.storage.MinioConfig;
 import agsfjope.backend.infrastructure.storage.MinioService;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -37,6 +41,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     private final AppealRepository appealRepository;
     private final GradingResultRepository gradingResultRepository;
     private final GradingQueryService gradingQueryService;
+    private final AnswerRepository answerRepository;
     private final MinioService minioService;
     private final MinioConfig minioConfig;
 
@@ -92,6 +97,8 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
                             "Trạng thái hiện tại: " + appeal.getStatus());
         }
 
+        validateRequestedQuestionScoreUpdates(appeal, request);
+
         // Cập nhật thông tin chấm điểm
         appeal.setNewScore(request.getNewScore());
         appeal.setNewQuestionScores(request.getNewQuestionScores());
@@ -120,6 +127,62 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
                 minioConfig.getBucket().getSubmissions(),
                 appeal.getSubmission().getFilePath()
         );
+    }
+
+    private void validateRequestedQuestionScoreUpdates(Appeal appeal, ReviewAppealRequest request) {
+        Submission submission = appeal.getSubmission();
+        if (submission == null || submission.getSubmissionId() == null) {
+            return;
+        }
+
+        Map<String, BigDecimal> requestedScores = request.getNewQuestionScores();
+        if (requestedScores == null || requestedScores.isEmpty()) {
+            return;
+        }
+
+        List<Answer> answers = answerRepository
+                .findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submission.getSubmissionId());
+
+        Map<String, Answer> answerByQuestionKey = new LinkedHashMap<>();
+        for (Answer answer : answers) {
+            if (answer == null || answer.getQuestion() == null) {
+                continue;
+            }
+            String questionKey = "q" + answer.getQuestion().getQuestionNumber();
+            answerByQuestionKey.put(questionKey.toLowerCase(), answer);
+        }
+
+        for (Map.Entry<String, BigDecimal> entry : requestedScores.entrySet()) {
+            String rawKey = entry.getKey();
+            if (rawKey == null || rawKey.isBlank()) {
+                continue;
+            }
+
+            Answer answer = answerByQuestionKey.get(rawKey.trim().toLowerCase());
+            if (answer == null) {
+                continue;
+            }
+
+            boolean hasJar = answer.getJarFilePath() != null && !answer.getJarFilePath().isBlank();
+            boolean hasSource = answer.getSourceCodePath() != null && !answer.getSourceCodePath().isBlank();
+            if (hasJar || hasSource) {
+                continue;
+            }
+
+            BigDecimal requestedScore = entry.getValue();
+            BigDecimal originalScore = answer.getAnswerScore() != null ? answer.getAnswerScore() : BigDecimal.ZERO;
+            if (requestedScore == null || requestedScore.compareTo(originalScore) == 0) {
+                continue;
+            }
+
+            int questionNumber = answer.getQuestion().getQuestionNumber();
+            throw new IllegalStateException(
+                    String.format(
+                            "Không thể điều chỉnh điểm cho câu %d vì hệ thống không tìm thấy bài làm của sinh viên ở câu này. Vui lòng giữ nguyên điểm hiện tại và kiểm tra lại dữ liệu nộp bài trước khi gửi kết quả phúc khảo.",
+                            questionNumber
+                    )
+            );
+        }
     }
 
     private Appeal getAndValidateOwnership(UUID lecturerId, UUID appealId) {
