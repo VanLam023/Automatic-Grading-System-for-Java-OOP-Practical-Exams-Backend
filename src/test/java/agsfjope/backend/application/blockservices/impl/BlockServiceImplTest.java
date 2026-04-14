@@ -267,6 +267,34 @@ class BlockServiceImplTest {
         verify(blockRepository).save(block);
     }
 
+
+    @Test
+    @DisplayName("[A] updateBlock - StartTime không lớn hơn hiện tại → IllegalArgumentException")
+    void updateBlock_StartTimeNotAfterNow_ThrowsIllegalArgumentException() {
+        // ── Arrange ──────────────────────────────────────────────────────────
+        Exam exam = Exam.builder()
+                .examId(UUID.randomUUID())
+                .name("Realtime Exam")
+                .semester("SP2026")
+                .academicYear("2025-2026")
+                .startTime(OffsetDateTime.now(VN).minusDays(1))
+                .endTime(OffsetDateTime.now(VN).plusDays(1))
+                .gradingMode(GradingMode.MODE_1)
+                .build();
+        Block block = buildBlock(exam, "Block 10");
+
+        when(blockRepository.findByBlockId(block.getBlockId())).thenReturn(Optional.of(block));
+
+        UpdateBlockRequest request = new UpdateBlockRequest();
+        request.setExamDate(LocalDate.now(VN));
+        request.setStartTime(OffsetDateTime.now(VN).minusMinutes(1));
+        request.setEndTime(OffsetDateTime.now(VN).plusMinutes(10));
+
+        // ── Act & Assert ──────────────────────────────────────────────────────
+        assertThrows(IllegalArgumentException.class,
+                () -> blockService.updateBlock(exam.getExamId(), block.getBlockId(), request));
+    }
+
     @Test
     @DisplayName("[A] updateBlock - Block ID không tồn tại → NotFoundException")
     void updateBlock_BlockNotFound_ThrowsNotFoundException() {

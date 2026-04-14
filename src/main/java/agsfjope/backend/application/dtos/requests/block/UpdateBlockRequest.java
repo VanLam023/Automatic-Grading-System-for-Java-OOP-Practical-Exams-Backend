@@ -1,7 +1,7 @@
 package agsfjope.backend.application.dtos.requests.block;
 
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -23,7 +23,7 @@ public class UpdateBlockRequest {
 
     /** The date on which this block's exam takes place. */
     @NotNull(message = "Ngày thi không được để trống")
-    @Future(message = "Ngày thi phải lớn hơn ngày hiện tại")
+    @FutureOrPresent(message = "Ngày thi không được nhỏ hơn ngày hiện tại")
     private LocalDate examDate;
 
     /** Start time when students can begin submitting. */
