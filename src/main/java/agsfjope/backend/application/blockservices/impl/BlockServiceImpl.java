@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -138,7 +139,7 @@ public class BlockServiceImpl implements BlockService {
 
         Exam exam = block.getExam();
 
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
 
         // If block already passed, use a dedicated message
         if (block.getEndTime() != null && now.isAfter(block.getEndTime())) {
@@ -151,6 +152,14 @@ public class BlockServiceImpl implements BlockService {
             if (!now.isBefore(lockAt)) {
                 throw new IllegalArgumentException("Không thể chỉnh sửa lịch trong vòng 7 ngày trước khi ca thi bắt đầu.");
             }
+        }
+
+        if (!request.getStartTime().isAfter(now)) {
+            throw new IllegalArgumentException("Nếu chọn ngày hôm nay, thời gian bắt đầu phải lớn hơn thời điểm hiện tại.");
+        }
+
+        if (!request.getEndTime().isAfter(now)) {
+            throw new IllegalArgumentException("Nếu chọn ngày hôm nay, thời gian kết thúc phải lớn hơn thời điểm hiện tại.");
         }
 
         // Validate block times fall within the parent exam's window
