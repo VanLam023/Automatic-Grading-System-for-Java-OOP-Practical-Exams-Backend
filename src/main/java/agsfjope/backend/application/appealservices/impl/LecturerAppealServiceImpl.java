@@ -17,7 +17,7 @@ import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.configuration.storage.MinioConfig;
-import agsfjope.backend.infrastructure.storage.MinioService;
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -42,7 +42,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     private final GradingResultRepository gradingResultRepository;
     private final GradingQueryService gradingQueryService;
     private final AnswerRepository answerRepository;
-    private final MinioService minioService;
+    private final FileStoragePort minioService;
     private final MinioConfig minioConfig;
 
     @Override

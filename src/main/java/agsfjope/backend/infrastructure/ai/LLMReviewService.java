@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -110,11 +111,11 @@ public class LLMReviewService {
             // [OLD] String resultJson = adapter.chatJson(
             //         buildResultPrompt(analysis, config.language()), config.apiKey(), config.model());
             // Prompt 2: Bước này dùng chatJson() — với Gemini sẽ bật JSON mode để tránh markdown wrapper
-            String resultJson = callWithRetry(adapter, buildResultPrompt(analysis, config.language()),
+            String resultJson = callWithRetry(adapter, buildResultPrompt(analysis, config.language(), request.maxScore()),
                     config.apiKey(), config.model(), true, request.questionTitle());
 
             // Phân tích JSON trả về thành AIReviewResult object
-            return parseResult(resultJson);
+            return parseResult(resultJson, request.maxScore());
 
         } catch (Exception e) {
             // Mọi lỗi đều được bắt ở đây — trả về failure không crash luồng chấm bài
@@ -216,46 +217,51 @@ public class LLMReviewService {
                 %s
 
                 ═══════════════════════════════════════════════
-                ANALYSIS REQUIRED — Evaluate against these 5 criteria (0–2 points each):
+                GRADING INSTRUCTIONS
                 ═══════════════════════════════════════════════
+                The exam description above specifies the OOP criteria for THIS specific question.
+                Read and follow ONLY those criteria. Do NOT evaluate any OOP criterion that is
+                not mentioned in the exam description.
 
-                A. ENCAPSULATION (0–2):
-                   • Are all fields marked private as required by the diagram?
-                   • Are getter/setter methods provided for ALL private fields?
-                   • Is data hidden and accessed only through methods?
+                // ─── DEFAULT 5-CRITERIA REMOVED — criteria now come from the exam description ──────────────
+                // A. ENCAPSULATION (0–2):
+                //    • Are all fields marked private as required by the diagram?
+                //    • Are getter/setter methods provided for ALL private fields?
+                //    • Is data hidden and accessed only through methods?
+                //
+                // B. INHERITANCE & RELATIONSHIPS (0–2):
+                //    • Are "has-a" relationships implemented using the correct data structure — NOT extends?
+                //    • Are "is-a" relationships implemented using extends/implements — NOT a collection field?
+                //    • Check ALL data structures and relationships, not just ArrayList
+                //    • Are extends/implements used exactly as specified in the diagram?
+                //
+                // C. POLYMORPHISM (0–2):
+                //    • Are abstract classes/methods used correctly per the diagram?
+                //    • Are interfaces implemented correctly per the diagram?
+                //    • Is method overriding correct (same signature, @Override annotation)?
+                //
+                // D. DESIGN QUALITY (0–2):
+                //    • Are methods placed in the correct class (no misplaced logic)?
+                //    • Does the code follow Single Responsibility per the diagram?
+                //    • Is the naming consistent and structure clean?
+                // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-                B. INHERITANCE & RELATIONSHIPS (0–2):
-                   • Are "has-a" relationships implemented using the correct data structure — NOT extends?
-                   • Are "is-a" relationships implemented using extends/implements — NOT a collection field?
-                   • Check ALL data structures and relationships, not just ArrayList
-                   • Are extends/implements used exactly as specified in the diagram?
+                ANTI-CHEAT RULE (ALWAYS APPLY for every question, regardless of exam criteria):
+                Hardcode means the student DELIBERATELY returns a fixed value to pass a test
+                instead of implementing the correct algorithm.
 
-                C. POLYMORPHISM (0–2):
-                   • Are abstract classes/methods used correctly per the diagram?
-                   • Are interfaces implemented correctly per the diagram?
-                   • Is method overriding correct (same signature, @Override annotation)?
+                ✅ NOT hardcode (LEGITIMATE constants — do NOT flag):
+                • Error/format messages required by the problem: e.g., wrong format, Invalid
+                • String prefixes/suffixes from the spec: e.g., New_, DATA_
+                • File extensions or filenames: e.g., .txt, data.txt, New_DATA.txt
+                • Status labels from the problem: e.g., PASS, FAIL, ACTIVE
+                • toString() format strings matching the required output format in the spec
 
-                D. DESIGN QUALITY (0–2):
-                   • Are methods placed in the correct class (no misplaced logic)?
-                   • Does the code follow Single Responsibility per the diagram?
-                   • Is the naming consistent and structure clean?
-
-                 E. CODE INTEGRITY / ANTI-CHEAT (0–2):
-                    Hardcode means the student DELIBERATELY returns a fixed value to pass a test
-                    instead of implementing the correct algorithm.
-                 
-                    ✅ NOT hardcode (LEGITIMATE constants — do NOT flag):
-                    • Error/format messages required by the problem: e.g., wrong format, Invalid
-                    • String prefixes/suffixes from the spec: e.g., New_, DATA_
-                    • File extensions or filenames: e.g., .txt, data.txt, New_DATA.txt
-                    • Status labels from the problem: e.g., PASS, FAIL, ACTIVE
-                    • toString() format strings matching the required output format in the spec
-                 
-                    ❌ TRUE hardcode (flag ONLY these):
-                    • Returning exact expected output without computation: e.g., return Student[S001, John, 3.5]
-                    • Returning a fixed number instead of computing it: e.g., return 8.5 instead of return this.score
-                    • Checking specific input to return specific answer: e.g., if (id.equals(S001)) return 3.5
-                    • All meaningful logic placed inside main() to bypass class structure
+                ❌ TRUE hardcode (flag ONLY these):
+                • Returning exact expected output without computation: e.g., return Student[S001, John, 3.5]
+                • Returning a fixed number instead of computing it: e.g., return 8.5 instead of return this.score
+                • Checking specific input to return specific answer: e.g., if (id.equals(S001)) return 3.5
+                • All meaningful logic placed inside main() to bypass class structure
 
                 Perform a thorough analysis. Note ALL violations with specific examples from the code.
                 """.formatted(
@@ -265,7 +271,10 @@ public class LLMReviewService {
         );
     }
 
-    private String buildResultPrompt(String analysis, String language) {
+    private String buildResultPrompt(String analysis, String language, java.math.BigDecimal maxScore) {
+        // Lấy điểm tối đa của câu từ đề thi; fallback về 10 nếu null (không nên xảy ra)
+        String maxScoreStr = (maxScore != null) ? maxScore.stripTrailingZeros().toPlainString() : "10";
+
         return """
                 Below is your OOP analysis of a student's Java submission:
 
@@ -278,32 +287,101 @@ public class LLMReviewService {
                 RULES:
                 1. Return ONLY valid JSON — no markdown, no text outside JSON
                 2. All comments and violation descriptions must be in: %s
-                3. oopScore = sum of all 5 criteria scores (max 10)
-                4. isOopViolated = true if oopScore <= 4 OR any criterion E violation found
-                5. Criterion scores: 0 = wrong, 1 = partially correct, 2 = fully correct
-                6. The "comment" field MUST be structured with exactly 5 numbered bullets corresponding to each criterion (A. Encapsulation, B. Inheritance & Relationships, C. Polymorphism, D. Design Quality, E. Code Integrity/Anti-Cheat). Do NOT write a single block of text.
+                3. oopScore = total earned score for this question (max = %s as defined in the exam).
+                   Distribute points proportionally across the applicable criteria listed in the exam description.
+                4. isOopViolated = true if the student earned LESS THAN 50%% of the max score
+                   (i.e., oopScore < %s * 0.5) OR any hardcode/anti-cheat violation found
+                5. The "comment" field MUST list each graded criterion on a separate numbered line:
+                   - Student meets the criterion:  "[N]. [CriterionName]: [score] điểm - [specific positive feedback, cite class/method names]"
+                   - Student violates the criterion: "[N]. [CriterionName]: -[deduction] điểm - [specific violation with code example]"
+                   - Anti-cheat (Code Integrity) MUST always be the LAST item in the list.
+                6. "violations" list: each entry is a specific violation with a code snippet example.
+                7. "hardCodedValues": list ONLY TRUE cheat values (fixed returns that bypass logic).
+                   Do NOT include error messages, format strings, or spec-required constants.
 
                 Return exactly this JSON:
                 {
-                  "oopScore": <number 0-10>,
-                  "criteriaBreakdown": {
-                    "encapsulation": <0|1|2>,
-                    "inheritance": <0|1|2>,
-                    "polymorphism": <0|1|2>,
-                    "designQuality": <0|1|2>,
-                    "codeIntegrity": <0|1|2>
-                  },
+                  "oopScore": <number 0-%s>,
                   "violations": ["<specific violation with code example>"],
-                  "hardCodedValues": ["<only TRUE cheat values: fixed returns that bypass logic — NOT error messages, prefixes, or format strings required by the problem>"],
-                  "comment": "<comprehensive review in %s — MUST follow the 5-point structure (A, B, C, D, E). Be specific, cite class/method names>",
+                  "hardCodedValues": ["<only TRUE cheat values — NOT error messages or spec-required constants>"],
+                  "comment": "<numbered list of criteria results in %s — follow format from RULE 5. Each criterion on a new line.>",
                   "isOopViolated": <true|false>
                 }
-                """.formatted(analysis, language, language);
+                """.formatted(analysis, language, maxScoreStr, maxScoreStr, maxScoreStr, language);
     }
 
     // ─── RESULT PARSING ──────────────────────────────────────────────────────
 
-    private AIReviewResult parseResult(String rawJson) {
+    /**
+     * Parses the AI response for the new flexible prompt format.
+     *
+     * <p>The new format does NOT include a {@code criteriaBreakdown} block —
+     * criteria results are embedded in the free-text {@code comment} field
+     * as a numbered list. All breakdown fields are set to ZERO.
+     * Use {@link #parseResultLegacy(String)} if you need per-criterion scores.
+     */
+    private AIReviewResult parseResult(String rawJson, BigDecimal maxScore) {
+        try {
+            String json = extractJsonBlock(rawJson);
+            JsonNode node = objectMapper.readTree(json);
+
+            // Validate bắt buộc field quan trọng
+            JsonNode oopScoreNode = node.path("oopScore");
+            String comment = node.path("comment").asText("");
+            if (oopScoreNode.isMissingNode() || oopScoreNode.isNull() || comment.isBlank()) {
+                throw new IllegalArgumentException("Missing required fields: oopScore/comment");
+            }
+
+            // Lấy tổng điểm OOP và ép về miền hợp lệ [0..maxScore]
+            BigDecimal parsedScore = asBigDecimal(oopScoreNode);
+            BigDecimal safeMax = (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
+                    ? maxScore : BigDecimal.TEN;
+            BigDecimal oopScore = parsedScore.max(BigDecimal.ZERO).min(safeMax);
+            boolean oopViolated  = node.path("isOopViolated").asBoolean(false);
+
+            // Danh sách vi phạm và hardcode (null-safe)
+            List<String> violations = objectMapper.convertValue(
+                    node.path("violations"), new TypeReference<>() {});
+            if (violations == null) {
+                violations = Collections.emptyList();
+            }
+
+            List<String> hardCoded  = objectMapper.convertValue(
+                    node.path("hardCodedValues"), new TypeReference<>() {});
+            if (hardCoded == null) {
+                hardCoded = Collections.emptyList();
+            }
+
+            // criteriaBreakdown không còn trong format mới — đặt về ZERO
+            return new AIReviewResult(
+                    oopScore,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO,
+                    violations, hardCoded,
+                    comment, oopViolated,
+                    false, null
+            );
+        } catch (Exception e) {
+            log.warn("Flexible parser failed, trying legacy parser: {}", e.getMessage());
+            AIReviewResult legacy = parseResultLegacy(rawJson);
+            if (!legacy.aiError()) {
+                // Legacy parser thành công
+                return legacy;
+            }
+            log.error("Failed to parse AI result JSON (both flexible and legacy): {}", e.getMessage());
+            return AIReviewResult.failure("Failed to parse AI JSON: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Legacy parser — kept for backward compatibility or rollback.
+     *
+     * <p>Parses the OLD 5-criteria fixed prompt format which includes a
+     * {@code criteriaBreakdown} JSON block with per-criterion scores
+     * (encapsulation, inheritance, polymorphism, designQuality, codeIntegrity).
+     * Use this if you need to switch back to the old rigid grading format.
+     */
+    private AIReviewResult parseResultLegacy(String rawJson) {
         try {
             String json = extractJsonBlock(rawJson);
             JsonNode node = objectMapper.readTree(json);
@@ -318,8 +396,14 @@ public class LLMReviewService {
 
             List<String> violations = objectMapper.convertValue(
                     node.path("violations"), new TypeReference<>() {});
+            if (violations == null) {
+                violations = Collections.emptyList();
+            }
             List<String> hardCoded  = objectMapper.convertValue(
                     node.path("hardCodedValues"), new TypeReference<>() {});
+            if (hardCoded == null) {
+                hardCoded = Collections.emptyList();
+            }
             String  comment         = node.path("comment").asText("");
             boolean oopViolated     = node.path("isOopViolated").asBoolean(false);
 
@@ -331,7 +415,7 @@ public class LLMReviewService {
                     false, null
             );
         } catch (Exception e) {
-            log.error("Failed to parse AI result JSON: {}", e.getMessage());
+            log.error("Failed to parse AI result JSON (legacy): {}", e.getMessage());
             return AIReviewResult.failure("Failed to parse AI JSON: " + e.getMessage());
         }
     }

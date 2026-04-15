@@ -1,5 +1,6 @@
 package agsfjope.backend.infrastructure.storage;
 
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import io.minio.*;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class MinioService {
+public class MinioService implements FileStoragePort {
 
     private final MinioClient minioClient;
 
@@ -114,10 +115,6 @@ public class MinioService {
 
     /**
      * Tạo URL tạm thời để download file (có thời hạn).
-     * <p>
-     * URL này có thể gửi cho client/browser để download trực tiếp
-     * từ MinIO mà không cần đi qua Spring Boot.
-     * </p>
      *
      * @param bucketName    tên bucket
      * @param objectName    đường dẫn file trong bucket
@@ -145,7 +142,6 @@ public class MinioService {
 
     /**
      * Sao chép object trong cùng một bucket sang một key mới.
-     * Dùng native MinIO copy API — không cần download/reupload.
      *
      * @param bucketName   tên bucket (source và destination giống nhau)
      * @param sourceObject đường dẫn nguồn trong bucket

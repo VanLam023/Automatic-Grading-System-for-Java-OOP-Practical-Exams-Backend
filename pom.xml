@@ -47,11 +47,17 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
         </dependency>
-        <!-- MinIO Object Storage (S3-compatible) -->
+        <!-- MinIO Object Storage SDK (local dev) -->
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>8.5.7</version>
+        </dependency>
+        <!-- AWS SDK v2 S3 — dùng cho Supabase Storage (path-style endpoint) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.25.23</version>
         </dependency>
         <!-- PostgreSQL Driver -->
         <dependency>

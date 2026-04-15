@@ -1,6 +1,6 @@
 package agsfjope.backend.infrastructure.grading;
 
-import agsfjope.backend.infrastructure.storage.MinioService;
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import agsfjope.backend.infrastructure.storage.parser.RarExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +24,7 @@ import java.util.zip.ZipFile;
 @RequiredArgsConstructor
 public class ArchiveExtractor {
 
-    private final MinioService minioService;
+    private final FileStoragePort minioService;
 
     private static final String TEMP_BASE = System.getProperty("java.io.tmpdir") + "/grading/";
 

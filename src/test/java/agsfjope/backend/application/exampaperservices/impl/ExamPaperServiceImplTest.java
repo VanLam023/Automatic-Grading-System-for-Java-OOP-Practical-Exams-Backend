@@ -12,6 +12,7 @@ import agsfjope.backend.core.repositories.exampaper.QuestionRepository;
 import agsfjope.backend.core.repositories.exampaper.TestCaseRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
+import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.infrastructure.storage.MinioService;
 import agsfjope.backend.infrastructure.storage.parser.ParsedExamPaper;
 import agsfjope.backend.infrastructure.storage.parser.ZipExamPaperParser;
@@ -59,6 +60,7 @@ class ExamPaperServiceImplTest {
     @Mock private TestCaseRepository   testCaseRepository;
     @Mock private SubmissionRepository submissionRepository;
     @Mock private UserRepository       userRepository;
+    @Mock private SystemConfigRepository systemConfigRepository;
     @Mock private MinioService         minioService;
     @Mock private MinioConfig          minioConfig;
     @Mock private ZipExamPaperParser   parser;
@@ -109,6 +111,10 @@ class ExamPaperServiceImplTest {
         // Default MinioConfig bucket stub (used across multiple tests)
         MinioConfig.BucketConfig bucketConfig = new MinioConfig.BucketConfig();
         lenient().when(minioConfig.getBucket()).thenReturn(bucketConfig);
+
+        // Default: MAX_EXAM_PAPER_MB is absent in SystemConfigs -> service falls back to 20 MB
+        lenient().when(systemConfigRepository.findByConfigKey("MAX_EXAM_PAPER_MB"))
+            .thenReturn(Optional.empty());
     }
 
     // =========================================================================
@@ -293,6 +299,30 @@ class ExamPaperServiceImplTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("20 MB (BR-16)");
     }
+
+        @Test
+        @DisplayName("[B] upload - Lấy max size từ SystemConfigs (MAX_EXAM_PAPER_MB=1) và chặn file > 1 MB")
+        void upload_FileTooLarge_UseMaxSizeFromSystemConfig() throws IOException {
+        // Arrange
+        SystemConfig maxSizeConfig = new SystemConfig();
+        maxSizeConfig.setConfigKey("MAX_EXAM_PAPER_MB");
+        maxSizeConfig.setConfigValue("1");
+
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("TooLarge.zip");
+        when(file.getSize()).thenReturn(2L * 1024L * 1024L); // 2 MB > 1 MB config
+
+        when(systemConfigRepository.findByConfigKey("MAX_EXAM_PAPER_MB"))
+            .thenReturn(Optional.of(maxSizeConfig));
+        when(examRepository.existsById(examId)).thenReturn(true);
+        when(blockRepository.findByBlockId(blockId)).thenReturn(Optional.of(block));
+        when(submissionRepository.existsByBlock_BlockId(blockId)).thenReturn(false);
+
+        // Act & Assert
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("1 MB (BR-16)");
+        }
 
     @Test
     @DisplayName("[A] upload - Throw IllegalStateException khi file không phải .zip hoặc .rar (ví dụ: .docx)")
