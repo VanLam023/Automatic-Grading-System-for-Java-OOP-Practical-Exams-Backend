@@ -5,6 +5,7 @@ import agsfjope.backend.application.dtos.requests.config.TestAiConnectionRequest
 import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateEmailConfigRequest;
+import agsfjope.backend.application.dtos.requests.config.UpdatePassThresholdRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
 import agsfjope.backend.application.dtos.responses.config.AiConfigResponse;
@@ -69,7 +70,8 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     private static final List<String> SYSTEM_KEYS = List.of(
             "MAX_UPLOAD_SIZE_MB", "MAX_EXAM_PAPER_MB",
             "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM_EMAIL",
-            "DEFAULT_GRADING_MODE", "APPEAL_DEADLINE_DAYS"
+            "DEFAULT_GRADING_MODE", "APPEAL_DEADLINE_DAYS",
+            "GRADING_PASS_THRESHOLD"
     );
 
     private final SystemConfigRepository systemConfigRepository;
@@ -347,6 +349,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
                 .smtpFromEmail(readConfigValue(map.get("SMTP_FROM_EMAIL")))
                 .defaultGradingMode(agsfjope.backend.core.enums.GradingMode.valueOf(readConfigValue(map.get("DEFAULT_GRADING_MODE"))))
                 .appealDeadlineDays(toInteger(readConfigValue(map.get("APPEAL_DEADLINE_DAYS"))))
+                .gradingPassThreshold(toBigDecimal(readConfigValue(map.get("GRADING_PASS_THRESHOLD"))))
                 .build();
     }
 
@@ -355,7 +358,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     public void updateSystemSettings(UpdateSystemSettingsRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
 
-        // Only update general settings (upload limits and default grading mode)
+        // Update general settings: upload limits and default grading mode
         saveConfig("MAX_UPLOAD_SIZE_MB", String.valueOf(request.getMaxUploadSizeMb()), false, updatedBy);
         saveConfig("MAX_EXAM_PAPER_MB", String.valueOf(request.getMaxExamPaperMb()), false, updatedBy);
         saveConfig("DEFAULT_GRADING_MODE", request.getDefaultGradingMode().name(), false, updatedBy);
@@ -372,6 +375,13 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         saveConfig("SMTP_USERNAME", request.getSmtpUsername(), true, updatedBy);
         saveConfig("SMTP_PASSWORD", request.getSmtpPassword(), true, updatedBy);
         saveConfig("SMTP_FROM_EMAIL", request.getSmtpFromEmail(), false, updatedBy);
+    }
+
+    @Override
+    @Transactional
+    public void updatePassThreshold(UpdatePassThresholdRequest request, String updatedByUsername) {
+        User updatedBy = getUserOrThrow(updatedByUsername);
+        saveConfig("GRADING_PASS_THRESHOLD", request.getPassThreshold().toPlainString(), false, updatedBy);
     }
 
     private Map<String, SystemConfig> getRequiredConfigMap(List<String> keys) {

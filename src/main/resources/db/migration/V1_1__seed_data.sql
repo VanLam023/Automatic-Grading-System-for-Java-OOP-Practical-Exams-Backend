@@ -43,3 +43,4 @@ INSERT INTO SystemConfigs (ConfigKey, ConfigValue, IsEncrypted, Description) VAL
     ('SMTP_FROM_EMAIL',      'noreply@oopexam.fpt.edu.vn', FALSE, 'Sender email address'),
     ('DEFAULT_GRADING_MODE', 'MODE_1',                     FALSE, 'Default grading mode')
 ON CONFLICT (ConfigKey) DO NOTHING;
+

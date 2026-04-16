@@ -50,6 +50,8 @@ spring:
     out-of-order: true            # Cho phep apply migration chua theo thu tu version
     validate-on-migrate: true     # Kiem tra migration chua bi chinh sua
 
+
+
   # Mail / SMTP Configuration (Gmail)
   mail:
     host: smtp.gmail.com
