@@ -7,6 +7,7 @@ import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequ
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateEmailConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateGradingModeRequest;
+import agsfjope.backend.application.dtos.requests.config.UpdatePassThresholdRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
 import agsfjope.backend.application.dtos.responses.config.SystemSettingsResponse;
@@ -250,6 +251,43 @@ public class SystemAdminConfigController {
             Authentication authentication) {
         systemConfigService.updateSystemSettings(request, authentication.getName());
         return ResponseEntity.ok(buildSuccessResponse("MSG-83: Cập nhật System Settings thành công", null));
+    }
+
+    /**
+     * Cập nhật ngưỡng điểm đạt (Grading Pass Threshold) cho hệ thống.
+     * <p>
+     * Cách nhập dữ liệu để chạy đúng:
+     * <ul>
+     * <li>Method: PUT</li>
+     * <li>URL: /api/admin/config/system/pass-threshold</li>
+     * <li>Header bắt buộc: Authorization: Bearer &lt;jwt_token&gt;</li>
+     * <li>Header bắt buộc: Content-Type: application/json</li>
+     * </ul>
+     *
+     * <pre>
+     * {
+     *   "passThreshold": 4.0
+     * }
+     * </pre>
+     *
+     * Quy tắc dữ liệu:
+     * <ul>
+     * <li>{@code passThreshold}: bắt buộc, &gt;= 0.</li>
+     * <li>Điểm cuối của sinh viên phải GREATER THAN giá trị này mới được PASS.</li>
+     * <li>Thay đổi có hiệu lực ngay lập tức — không cần restart server.</li>
+     * </ul>
+     *
+     * @param request        dữ liệu ngưỡng điểm mới
+     * @param authentication người dùng đã xác thực
+     * @return phản hồi thành công
+     */
+    @PutMapping("/system/pass-threshold")
+    public ResponseEntity<Map<String, Object>> updatePassThreshold(
+            @Valid @RequestBody UpdatePassThresholdRequest request,
+            Authentication authentication) {
+        systemConfigService.updatePassThreshold(request, authentication.getName());
+        return ResponseEntity.ok(buildSuccessResponse(
+                "MSG-85: Cập nhật ngưỡng điểm đạt thành công", null));
     }
 
     /**

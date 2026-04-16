@@ -4,6 +4,7 @@ import agsfjope.backend.application.dtos.requests.config.TestAiConnectionRequest
 import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateEmailConfigRequest;
+import agsfjope.backend.application.dtos.requests.config.UpdatePassThresholdRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdatePayosConfigRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsRequest;
 import agsfjope.backend.application.dtos.responses.config.AiConfigResponse;
@@ -85,4 +86,15 @@ public interface SystemConfigService {
      * @param updatedByUsername username performing the update
      */
     void updateEmailConfig(UpdateEmailConfigRequest request, String updatedByUsername);
+
+    /**
+     * Update the grading pass threshold.
+     *
+     * <p>The student's final score must be GREATER THAN this value to be considered PASS.
+     * Takes effect immediately on the next grading call without server restart.</p>
+     *
+     * @param request           new pass threshold value
+     * @param updatedByUsername username performing the update
+     */
+    void updatePassThreshold(UpdatePassThresholdRequest request, String updatedByUsername);
 }

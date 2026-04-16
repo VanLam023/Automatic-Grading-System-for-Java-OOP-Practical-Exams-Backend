@@ -1,7 +1,9 @@
 package agsfjope.backend.domain.grading;
 
 import agsfjope.backend.core.entities.GradingModeConfig;
+import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.infrastructure.ai.AIReviewResult;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
@@ -29,22 +31,42 @@ import java.util.Map;
  *   tcTotal   = Σ tcRaw  (each question)
  *   oopTotal  = Σ effectiveOopRaw (each question, 0 if OopCommentOnly)
  *   finalScore = tcTotal × TestCaseWeight + oopTotal × OopWeight
- *   passed     = finalScore >= 4.0
+ *   passed     = finalScore > GRADING_PASS_THRESHOLD  (configurable via SystemConfigs, default = 0)
  * </pre>
  *
  * <p>Guard rules force the QUESTION score to 0 but the global weight-based calculation
  * still uses the (effectively 0) contribution from that question.</p>
+ *
+ * <p>The pass threshold is read dynamically from {@code SystemConfigs} table
+ * (key: {@code GRADING_PASS_THRESHOLD}) on each grading call, so Admin changes
+ * take effect immediately without restarting the server.</p>
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ScoreCalculator {
 
-    private static final BigDecimal PASS_THRESHOLD  = BigDecimal.ZERO;
-    private static final int        SCALE            = 2;
-    private static final RoundingMode ROUNDING       = RoundingMode.HALF_UP;
+    /** Config key for the pass threshold stored in SystemConfigs table. */
+    private static final String   PASS_THRESHOLD_KEY = "GRADING_PASS_THRESHOLD";
+
+    /** Fallback threshold when the config key is missing from DB (any score > 0 passes). */
+    private static final BigDecimal DEFAULT_PASS_THRESHOLD = BigDecimal.ZERO;
+
+    private static final int          SCALE    = 2;
+    private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
+
+    /**
+     * Repository for reading system-level key-value configuration.
+     * Injected via constructor (Clean Architecture: core layer depends only on core interfaces).
+     */
+    private final SystemConfigRepository systemConfigRepository;
 
     /**
      * Calculates the full grading result for a submission.
+     *
+     * <p>The pass threshold is loaded dynamically from {@code SystemConfigs}
+     * (key: {@code GRADING_PASS_THRESHOLD}) on each call, so Admin changes
+     * take effect immediately without server restart.</p>
      *
      * @param config          the grading mode config (weights + guard rules)
      * @param questionInputs  per-question data keyed by question number
@@ -52,6 +74,10 @@ public class ScoreCalculator {
      */
     public FinalGradingScore calculate(GradingModeConfig config,
                                        Map<Integer, QuestionInput> questionInputs) {
+
+        // Load pass threshold from DB; fall back to DEFAULT_PASS_THRESHOLD (0) if key missing.
+        // This allows Admin to change the threshold in SystemConfigs without restarting the server.
+        BigDecimal passThreshold = loadPassThreshold();
 
         List<QuestionScore> questionScores = new ArrayList<>();
         BigDecimal sumTcRaw  = BigDecimal.ZERO;
@@ -74,25 +100,55 @@ public class ScoreCalculator {
             );
         }
 
-        // Apply weights
+        // Apply weights to get the two weighted totals
         BigDecimal tcWeight  = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
         BigDecimal oopWeight = config.getOopWeight().divide(new BigDecimal("100"), 4, ROUNDING);
 
-        BigDecimal tcTotal   = sumTcRaw.multiply(tcWeight).setScale(SCALE, ROUNDING);
-        BigDecimal oopTotal  = sumOopRaw.multiply(oopWeight).setScale(SCALE, ROUNDING);
+        BigDecimal tcTotal    = sumTcRaw.multiply(tcWeight).setScale(SCALE, ROUNDING);
+        BigDecimal oopTotal   = sumOopRaw.multiply(oopWeight).setScale(SCALE, ROUNDING);
         BigDecimal finalScore = tcTotal.add(oopTotal).setScale(SCALE, ROUNDING);
 
-        boolean passed = finalScore.compareTo(PASS_THRESHOLD) > 0;
+        // Compare against threshold read from DB: finalScore > passThreshold → PASS
+        boolean passed = finalScore.compareTo(passThreshold) > 0;
 
         String globalNote = null;
         if (config.getOopCommentOnly()) {
             globalNote = "Chế độ: OOP chỉ nhận xét, không tính điểm.";
         }
 
-        log.debug("Score calculated: tc={}, oop={}, final={}, passed={}",
-                tcTotal, oopTotal, finalScore, passed);
+        log.debug("Score calculated: tc={}, oop={}, final={}, passThreshold={}, passed={}",
+                tcTotal, oopTotal, finalScore, passThreshold, passed);
 
         return new FinalGradingScore(questionScores, finalScore, tcTotal, oopTotal, passed, globalNote);
+    }
+
+    /**
+     * Reads the pass threshold from {@code SystemConfigs}.
+     *
+     * <p>If the key {@code GRADING_PASS_THRESHOLD} is missing or cannot be parsed,
+     * falls back to {@code DEFAULT_PASS_THRESHOLD} (0) and logs a warning.
+     * This ensures the grading pipeline never fails due to a missing config.
+     *
+     * @return the configured pass threshold, or 0 as fallback
+     */
+    private BigDecimal loadPassThreshold() {
+        try {
+            return systemConfigRepository
+                    .findByConfigKey(PASS_THRESHOLD_KEY)
+                    .map(config -> new BigDecimal(config.getConfigValue()))
+                    .orElseGet(() -> {
+                        log.warn("[GRADING] Config key '{}' not found in SystemConfigs — "
+                                + "falling back to default threshold: {}",
+                                PASS_THRESHOLD_KEY, DEFAULT_PASS_THRESHOLD);
+                        return DEFAULT_PASS_THRESHOLD;
+                    });
+        } catch (NumberFormatException e) {
+            // Config value is not a valid number — log and use safe default
+            log.warn("[GRADING] Config key '{}' has invalid numeric value — "
+                    + "falling back to default threshold: {}. Error: {}",
+                    PASS_THRESHOLD_KEY, DEFAULT_PASS_THRESHOLD, e.getMessage());
+            return DEFAULT_PASS_THRESHOLD;
+        }
     }
 
     // ─── PER-QUESTION SCORING ─────────────────────────────────────────────────
