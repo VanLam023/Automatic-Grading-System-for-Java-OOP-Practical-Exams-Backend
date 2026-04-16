@@ -224,16 +224,16 @@ public class GradingQueryService {
                             .map(t -> t.getScoreEarned() != null ? t.getScoreEarned() : BigDecimal.ZERO)
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-                    // rawOopScore = (aiReview.oopScore / 10) * maxScore
+                                        // rawOopScore = aiReview.oopScore (AI now returns score directly on question maxScore scale)
                     BigDecimal rawOopScore = BigDecimal.ZERO;
                     if (ai != null && ai.getOopScore() != null) {
-                        BigDecimal maxScore = answer.getQuestion().getMaxScore();
-                        if (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0) {
-                            rawOopScore = ai.getOopScore()
-                                    .divide(new BigDecimal("10"), 6, java.math.RoundingMode.HALF_UP)
-                                    .multiply(maxScore)
-                                    .setScale(2, java.math.RoundingMode.HALF_UP);
-                        }
+                                                BigDecimal maxScore = answer.getQuestion().getMaxScore();
+                                                BigDecimal safeMax = (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
+                                                                ? maxScore : BigDecimal.ZERO;
+                                                rawOopScore = ai.getOopScore()
+                                                                .max(BigDecimal.ZERO)
+                                                                .min(safeMax)
+                                                                .setScale(2, java.math.RoundingMode.HALF_UP);
                     }
 
                     return AnswerGradingDetail.builder()

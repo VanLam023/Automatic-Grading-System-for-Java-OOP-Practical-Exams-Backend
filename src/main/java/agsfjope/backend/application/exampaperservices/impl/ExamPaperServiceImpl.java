@@ -20,7 +20,8 @@ import agsfjope.backend.core.repositories.exampaper.QuestionRepository;
 import agsfjope.backend.core.repositories.exampaper.TestCaseRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
-import agsfjope.backend.infrastructure.storage.MinioService;
+import agsfjope.backend.core.repositories.config.SystemConfigRepository;
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import agsfjope.backend.infrastructure.storage.parser.ParsedExamPaper;
 import agsfjope.backend.infrastructure.storage.parser.ZipExamPaperParser;
 import jakarta.transaction.Transactional;
@@ -56,7 +57,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ExamPaperServiceImpl implements ExamPaperService {
 
-    private static final long MAX_FILE_SIZE_BYTES = 20L * 1024 * 1024; // 20 MB
+    private static final String CONFIG_KEY_MAX_EXAM_PAPER_MB = "MAX_EXAM_PAPER_MB";
+    private static final int DEFAULT_MAX_EXAM_PAPER_MB = 20;
     private static final int  DEFAULT_TIME_LIMIT_MS = 5000;
 
     private final ExamRepository       examRepository;
@@ -66,8 +68,9 @@ public class ExamPaperServiceImpl implements ExamPaperService {
     private final TestCaseRepository   testCaseRepository;
     private final SubmissionRepository submissionRepository;
     private final UserRepository       userRepository;
+    private final SystemConfigRepository systemConfigRepository;
 
-    private final MinioService         minioService;
+    private final FileStoragePort        minioService;
     private final MinioConfig          minioConfig;
     private final ZipExamPaperParser   parser;
 
@@ -105,10 +108,13 @@ public class ExamPaperServiceImpl implements ExamPaperService {
         if (fileSize == 0) {
             throw new IllegalStateException("File upload rỗng — vui lòng chọn file hợp lệ.");
         }
-        if (fileSize > MAX_FILE_SIZE_BYTES) {
+        int maxUploadMb = resolveMaxExamPaperMb();
+        long maxFileSizeBytes = maxUploadMb * 1024L * 1024L;
+        if (fileSize > maxFileSizeBytes) {
             throw new IllegalStateException(String.format(
-                    "File quá lớn: %.1f MB. Kích thước tối đa cho phép là 20 MB (BR-16).",
-                    fileSize / (1024.0 * 1024.0)));
+                "File quá lớn: %.1f MB. Kích thước tối đa cho phép là %d MB (BR-16).",
+                fileSize / (1024.0 * 1024.0),
+                maxUploadMb));
         }
 
         // ── 5. Validate file extension ────────────────────────────────────────
@@ -124,15 +130,9 @@ public class ExamPaperServiceImpl implements ExamPaperService {
         }
         String extension = lowerName.endsWith(".zip") ? ".zip" : ".rar";
 
-        // ── 6. BR-09: If block already has an exam paper → delete old one ─────
-        examPaperRepository.findByBlock_BlockId(blockId).ifPresent(old -> {
-            log.info("ExamPaperService: Found existing exam paper {} for block {}. Overwriting (BR-09).",
-                    old.getExamPaperId(), blockId);
-            overwriteOldPaper(old);
-            // Flush immediately so the DELETE is sent to DB before the INSERT below,
-            // otherwise Hibernate batches them and the UNIQUE constraint fires first.
-            examPaperRepository.flush();
-        });
+        // ── 6. BR-09: Prepare overwrite info (do NOT delete old paper yet) ────
+        // Safety fix: parse/upload new file first. If parse/upload fails, old paper remains intact.
+        ExamPaper existingPaper = examPaperRepository.findByBlock_BlockId(blockId).orElse(null);
 
         // ── 7. Parse the archive ──────────────────────────────────────────────
         ParsedExamPaper parsedExamPaper = parseArchive(file, extension, originalFilename);
@@ -155,6 +155,17 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             throw new RuntimeException("Không thể đọc file upload: " + e.getMessage(), e);
         }
         log.info("ExamPaperService: Uploaded archive to MinIO: {}", objectPath);
+
+        // ── 8.5 BR-09: Delete old data only after new archive upload succeeded ─
+        if (existingPaper != null) {
+            log.info("ExamPaperService: Found existing exam paper {} for block {}. Overwriting (BR-09).",
+                existingPaper.getExamPaperId(), blockId);
+            // If old path equals new path, skip MinIO delete to avoid removing the newly uploaded file.
+            overwriteOldPaper(existingPaper, objectPath);
+            // Flush immediately so the DELETE is sent to DB before the INSERT below,
+            // otherwise Hibernate batches them and the UNIQUE constraint fires first.
+            examPaperRepository.flush();
+        }
 
         // ── 9. Persist ExamPaper entity ───────────────────────────────────────
         User staff = userRepository.findById(staffId)
@@ -219,7 +230,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
                     "Không thể xóa đề thi: Block này đã có sinh viên nộp bài (BR-11).");
         }
 
-        overwriteOldPaper(paper);
+        overwriteOldPaper(paper, null);
         log.info("ExamPaperService: Deleted exam paper {} for block {}.", paper.getExamPaperId(), blockId);
     }
 
@@ -260,19 +271,24 @@ public class ExamPaperServiceImpl implements ExamPaperService {
      * Deletes an old exam paper: TestCases → Questions → ExamPaper (DB) + MinIO file.
      * Order matters to avoid FK constraint violations.
      */
-    private void overwriteOldPaper(ExamPaper old) {
+    private void overwriteOldPaper(ExamPaper old, String preservedObjectPath) {
         UUID oldId = old.getExamPaperId();
         // Delete in FK order: TestCases first, then Questions, then ExamPaper
         testCaseRepository.deleteByQuestion_ExamPaper_ExamPaperId(oldId);
         questionRepository.deleteByExamPaper_ExamPaperId(oldId);
         examPaperRepository.deleteById(oldId);
 
-        // Delete from MinIO
-        try {
-            minioService.deleteFile(minioConfig.getBucket().getExamPapers(), old.getFilePath());
-        } catch (Exception e) {
-            // Log but don't fail — the DB record is already gone
-            log.warn("ExamPaperService: Could not delete old MinIO file '{}': {}", old.getFilePath(), e.getMessage());
+        // Delete from MinIO, except when old path == new path (new file already uploaded there)
+        if (preservedObjectPath != null && preservedObjectPath.equals(old.getFilePath())) {
+            log.info("ExamPaperService: Keep MinIO object '{}' because it was replaced by new upload.",
+                    old.getFilePath());
+        } else {
+            try {
+                minioService.deleteFile(minioConfig.getBucket().getExamPapers(), old.getFilePath());
+            } catch (Exception e) {
+                // Log but don't fail — the DB record is already gone
+                log.warn("ExamPaperService: Could not delete old MinIO file '{}': {}", old.getFilePath(), e.getMessage());
+            }
         }
     }
 
@@ -302,7 +318,8 @@ public class ExamPaperServiceImpl implements ExamPaperService {
 
     /**
      * Persists all questions and their test cases to the database.
-     * Score per test case = maxScore / totalTestCases (rounded HALF_UP to 2 decimal places).
+     * Test case scores are distributed with 2-decimal precision while guaranteeing
+     * the total equals question maxScore exactly.
      *
      * @return ordered list of saved Question entities (with IDs populated)
      */
@@ -323,17 +340,17 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             );
 
             int totalTCs = pq.testCases().size();
-            BigDecimal scorePerTc = pq.maxScore()
-                    .divide(BigDecimal.valueOf(totalTCs), 2, RoundingMode.HALF_UP);
+            List<BigDecimal> distributedScores = distributeTestCaseScores(pq.maxScore(), totalTCs);
 
-            for (ParsedExamPaper.ParsedTestCase ptc : pq.testCases()) {
+            for (int i = 0; i < pq.testCases().size(); i++) {
+                ParsedExamPaper.ParsedTestCase ptc = pq.testCases().get(i);
                 testCaseRepository.save(
                         TestCase.builder()
                                 .question(q)
                                 .testCaseNumber(ptc.testCaseNumber())
                                 .inputData(ptc.inputData())
                                 .expectedOutput(ptc.expectedOutput())
-                                .score(scorePerTc)
+                                .score(distributedScores.get(i))
                                 .timeLimitMs(DEFAULT_TIME_LIMIT_MS)
                                 .build()
                 );
@@ -341,6 +358,39 @@ public class ExamPaperServiceImpl implements ExamPaperService {
             savedQuestions.add(q);
         }
         return savedQuestions;
+    }
+
+    /**
+     * Distributes question max score across test cases while guaranteeing:
+     * <ul>
+     *   <li>Every test case score has scale 2.</li>
+     *   <li>Total sum equals question max score exactly.</li>
+     * </ul>
+     *
+     * <p>Strategy: assign base score (ROUND_DOWN) for the first N-1 test cases,
+     * and put the remainder into the last test case.</p>
+     */
+    private List<BigDecimal> distributeTestCaseScores(BigDecimal maxScore, int totalTCs) {
+        if (totalTCs <= 0) {
+            throw new IllegalStateException("Số lượng test case phải lớn hơn 0 để chia điểm.");
+        }
+
+        if (totalTCs == 1) {
+            return List.of(maxScore.setScale(2, RoundingMode.HALF_UP));
+        }
+
+        BigDecimal base = maxScore.divide(BigDecimal.valueOf(totalTCs), 2, RoundingMode.DOWN);
+        List<BigDecimal> scores = new ArrayList<>(totalTCs);
+
+        for (int i = 0; i < totalTCs - 1; i++) {
+            scores.add(base);
+        }
+
+        BigDecimal allocated = base.multiply(BigDecimal.valueOf(totalTCs - 1L));
+        BigDecimal lastScore = maxScore.subtract(allocated).setScale(2, RoundingMode.HALF_UP);
+        scores.add(lastScore);
+
+        return scores;
     }
 
     /**
@@ -371,12 +421,52 @@ public class ExamPaperServiceImpl implements ExamPaperService {
     }
 
     /**
-     * Sanitizes a string for safe use in a MinIO object path.
-     * Replaces characters that may cause issues in object keys.
+     * Normalizes a string for safe use in a Supabase Storage object path.
+     * <p>
+     * AWS SDK v2 reject Unicode trong object key nên cần chuyển về ASCII trước.
+     * Bước 1: NFD decompose → tách dấu ra khỏi chữ cái
+     * Bước 2: Strip combining diacritics
+     * Bước 3: Xử lý Đ/đ (không decompose được bằng NFD)
+     * Bước 4: Thay các kí tự ngưi hiểm bằng underscore
+     * </p>
      */
     private String sanitize(String value) {
         if (value == null) return "unknown";
-        return value.trim().replaceAll("[^a-zA-Z0-9\\-_. ]", "_");
+        String normalized = java.text.Normalizer
+                .normalize(value.trim(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        normalized = normalized.replace("Đ", "D").replace("đ", "d");
+        return normalized.replaceAll("[^a-zA-Z0-9\\-_. ]", "_");
+    }
+
+    /**
+     * Reads max upload size (MB) from SystemConfigs with key {@code MAX_EXAM_PAPER_MB}.
+     * Falls back to 20 MB if missing, invalid, or non-positive.
+     */
+    private int resolveMaxExamPaperMb() {
+        try {
+            return systemConfigRepository.findByConfigKey(CONFIG_KEY_MAX_EXAM_PAPER_MB)
+                    .map(cfg -> {
+                        try {
+                            int value = Integer.parseInt(cfg.getConfigValue().trim());
+                            if (value <= 0) {
+                                log.warn("{} must be > 0. Found '{}'. Use default {} MB.",
+                                        CONFIG_KEY_MAX_EXAM_PAPER_MB, cfg.getConfigValue(), DEFAULT_MAX_EXAM_PAPER_MB);
+                                return DEFAULT_MAX_EXAM_PAPER_MB;
+                            }
+                            return value;
+                        } catch (NumberFormatException e) {
+                            log.warn("Invalid {} value '{}'. Use default {} MB.",
+                                    CONFIG_KEY_MAX_EXAM_PAPER_MB, cfg.getConfigValue(), DEFAULT_MAX_EXAM_PAPER_MB);
+                            return DEFAULT_MAX_EXAM_PAPER_MB;
+                        }
+                    })
+                    .orElse(DEFAULT_MAX_EXAM_PAPER_MB);
+        } catch (Exception e) {
+            log.warn("Could not read {} from SystemConfigs. Use default {} MB. Error: {}",
+                    CONFIG_KEY_MAX_EXAM_PAPER_MB, DEFAULT_MAX_EXAM_PAPER_MB, e.getMessage());
+            return DEFAULT_MAX_EXAM_PAPER_MB;
+        }
     }
 
     // ─── Mappers ─────────────────────────────────────────────────────────────

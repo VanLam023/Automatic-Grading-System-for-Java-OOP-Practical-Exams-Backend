@@ -12,13 +12,12 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 15         # Đủ cho grading + API requests đồng thời
+      maximum-pool-size: 5             # Supabase free plan giới hạn ~15 connections
       minimum-idle: 1               # Chỉ giữ 1 idle — tránh chiếm quá nhiều connection khi startup
       connection-timeout: 60000     # Chờ tối đa 60s để lấy connection từ pool
       max-lifetime: 1500000         # 25 phút — đóng connection cũ trước khi PostgreSQL idle timeout
       idle-timeout: 300000          # 5 phút — thu hồi connection idle
       keepalive-time: 60000         # Ping 60s/lần để detect stale connection sớm
-      initialization-fail-timeout: -1  # Không fail khi startup nếu DB tạm thời đầy connection
       pool-name: OopExamPool
 
 
@@ -81,14 +80,22 @@ spring:
   cors:
     allowed-origins: ${ALLOWED_ORIGINS}
 
-# MinIO Object Storage (S3-compatible)
+# MinIO Object Storage (local / ngrok) + Supabase S3
 minio:
+  # MinIO local — dùng bởi MinioService
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  region: ${MINIO_REGION:}
   bucket:
     exam-papers: exam-papers
     submissions: submissions
+  # Supabase S3 — dùng bởi SupabaseStorageService (AWS SDK v2)
+  supabase:
+    endpoint: ${SUPABASE_S3_ENDPOINT:https://localhost}
+    access-key: ${SUPABASE_S3_ACCESS_KEY:}
+    secret-key: ${SUPABASE_S3_SECRET_KEY:}
+    region: ${SUPABASE_S3_REGION:ap-southeast-1}
 
 # OpenAPI / Swagger UI
 springdoc:

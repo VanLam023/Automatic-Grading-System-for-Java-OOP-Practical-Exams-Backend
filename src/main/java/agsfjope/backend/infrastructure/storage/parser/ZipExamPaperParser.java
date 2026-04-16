@@ -4,8 +4,13 @@ import agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
+import org.apache.poi.xwpf.usermodel.BodyElementType;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -341,16 +346,18 @@ public class ZipExamPaperParser {
     /**
      * Parses a Q{n}.docx file to extract:
      * <ul>
-     *   <li>Title: first non-empty paragraph line</li>
+     *   <li>Title: first non-empty text block (paragraph or table text)</li>
      *   <li>MaxScore: first number adjacent to keywords "marks", "score", "points", "điểm"</li>
-     *   <li>Description: all remaining paragraphs joined</li>
+     *   <li>Description: all remaining text blocks (paragraph + table cells) joined</li>
      * </ul>
      */
     private DocxContent parseDocx(byte[] docxBytes, int qNum) throws IOException {
         try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(docxBytes))) {
-            List<XWPFParagraph> paragraphs = doc.getParagraphs();
+            // Read both normal paragraphs and table contents in document order.
+            // Why: many exam papers place core requirements in Word tables.
+            List<String> textBlocks = extractDocxTextBlocks(doc);
 
-            if (paragraphs.isEmpty()) {
+            if (textBlocks.isEmpty()) {
                 throw new InvalidZipStructureException(
                         "Câu " + qNum + ": File Q" + qNum + ".docx không có nội dung.");
             }
@@ -360,8 +367,7 @@ public class ZipExamPaperParser {
             StringBuilder descBuilder = new StringBuilder();
             boolean titleSet = false;
 
-            for (XWPFParagraph para : paragraphs) {
-                String text = para.getText().trim();
+            for (String text : textBlocks) {
                 if (text.isEmpty()) continue;
 
                 if (!titleSet) {
@@ -398,6 +404,70 @@ public class ZipExamPaperParser {
             throw new InvalidZipStructureException(
                     "Câu " + qNum + ": Không thể đọc file Q" + qNum + ".docx. File có thể bị hỏng: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Extracts visible text blocks from a DOCX in body order.
+     * Includes:
+     * <ul>
+     *   <li>Paragraph text</li>
+     *   <li>Table text (flattened row-by-row, cell-by-cell)</li>
+     * </ul>
+     */
+    private List<String> extractDocxTextBlocks(XWPFDocument doc) {
+        List<String> blocks = new ArrayList<>();
+
+        for (IBodyElement element : doc.getBodyElements()) {
+            if (element.getElementType() == BodyElementType.PARAGRAPH) {
+                XWPFParagraph para = (XWPFParagraph) element;
+                String text = para.getText() != null ? para.getText().trim() : "";
+                if (!text.isEmpty()) {
+                    blocks.add(text);
+                }
+            } else if (element.getElementType() == BodyElementType.TABLE) {
+                String tableText = flattenTableText((XWPFTable) element);
+                if (!tableText.isBlank()) {
+                    blocks.add(tableText);
+                }
+            }
+        }
+
+        return blocks;
+    }
+
+    /**
+     * Flattens a Word table into plain text.
+     *
+     * <p>Format used:</p>
+     * <ul>
+     *   <li>Each row becomes one line.</li>
+     *   <li>Cells in the same row are joined by {@code " | "} to preserve column boundaries.</li>
+     * </ul>
+     */
+    private String flattenTableText(XWPFTable table) {
+        StringBuilder sb = new StringBuilder();
+
+        for (XWPFTableRow row : table.getRows()) {
+            List<String> cellTexts = new ArrayList<>();
+
+            for (XWPFTableCell cell : row.getTableCells()) {
+                // Use getText() to capture all paragraph runs inside the cell.
+                String cellText = cell.getText() != null
+                        ? cell.getText().replace("\r\n", "\n").replace("\r", "\n").trim()
+                        : "";
+
+                // Keep placeholder for empty cell to preserve table shape.
+                cellTexts.add(cellText);
+            }
+
+            // Skip rows that are truly empty (all cells blank).
+            boolean hasAnyText = cellTexts.stream().anyMatch(text -> !text.isBlank());
+            if (!hasAnyText) continue;
+
+            sb.append(String.join(" | ", cellTexts)).append("\n");
+        }
+
+        return sb.toString().trim();
     }
 
     /**

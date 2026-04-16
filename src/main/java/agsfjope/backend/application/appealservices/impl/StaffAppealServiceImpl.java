@@ -22,7 +22,7 @@ import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.configuration.storage.MinioConfig;
-import agsfjope.backend.infrastructure.storage.MinioService;
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -56,7 +56,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
     private final GradingResultRepository gradingResultRepository;
     private final AnswerRepository answerRepository;
     private final SystemConfigRepository systemConfigRepository;
-    private final MinioService minioService;
+    private final FileStoragePort minioService;
     private final MinioConfig minioConfig;
     private final WalletService walletService;
     private final NotificationService notificationService;

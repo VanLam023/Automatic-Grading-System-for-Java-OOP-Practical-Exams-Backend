@@ -18,7 +18,7 @@ import java.util.Map;
  * <pre>
  * Step 1 — Raw Per-Question Score:
  *   tcRaw  = (passCount / totalTcCount) × maxScore
- *   oopRaw = (aiOopScore / 10.0) × maxScore    (0 if AI unavailable)
+ *   oopRaw = aiOopScore    (AI now returns score directly on question maxScore scale)
  *
  * Step 2 — Apply Guard Rules (from GradingModeConfig):
  *   ┌─ FailIfOopViolated && isOopViolated  → questionFinal = 0, record note with original scores
@@ -40,7 +40,6 @@ import java.util.Map;
 public class ScoreCalculator {
 
     private static final BigDecimal PASS_THRESHOLD  = BigDecimal.ZERO;
-    private static final BigDecimal OOP_MAX         = new BigDecimal("10");
     private static final int        SCALE            = 2;
     private static final RoundingMode ROUNDING       = RoundingMode.HALF_UP;
 
@@ -159,13 +158,18 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2e. OopCommentOnly — include OOP analysis but score = TC only
-        BigDecimal finalQ;
-        if (Boolean.TRUE.equals(config.getOopCommentOnly())) {
-            finalQ = tcRaw.setScale(SCALE, ROUNDING);
-        } else {
-            finalQ = tcRaw.add(oopRaw).setScale(SCALE, ROUNDING);
-        }
+                // 2e. Apply grading-mode weights to per-question score.
+                // This ensures AnswerScore of each question reflects the selected mode
+                // (e.g. MODE_2 = 50% TC + 50% OOP) instead of raw unweighted sum.
+                BigDecimal tcWeight  = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
+                BigDecimal oopWeight = config.getOopWeight().divide(new BigDecimal("100"), 4, ROUNDING);
+
+                BigDecimal weightedTc  = tcRaw.multiply(tcWeight);
+                BigDecimal weightedOop = Boolean.TRUE.equals(config.getOopCommentOnly())
+                                ? BigDecimal.ZERO
+                                : oopRaw.multiply(oopWeight);
+
+                BigDecimal finalQ = weightedTc.add(weightedOop).setScale(SCALE, ROUNDING);
 
         return new QuestionScore(questionNumber, maxScore,
                 tcRaw, oopRaw, finalQ, false, null, passed, total);
@@ -186,19 +190,20 @@ public class ScoreCalculator {
                 .setScale(SCALE, ROUNDING);
     }
 
-    /**
-     * Raw OOP score for a question:
-     * {@code (aiOopScore / 10) × maxScore}.
-     * Returns 0 if AI evaluation failed (graceful degradation).
-     */
+        /**
+         * Raw OOP score for a question:
+         * {@code aiOopScore} (AI prompt now returns score directly on this question's maxScore scale).
+         * Returns 0 if AI evaluation failed (graceful degradation).
+         */
     private BigDecimal calculateOopRaw(AIReviewResult ai, BigDecimal maxScore) {
         if (ai == null || ai.aiError() || ai.oopScore() == null) {
             return BigDecimal.ZERO;
         }
-        return ai.oopScore()
-                .divide(OOP_MAX, 6, ROUNDING)
-                .multiply(maxScore)
-                .setScale(SCALE, ROUNDING);
+                BigDecimal safeMax = maxScore != null ? maxScore : BigDecimal.ZERO;
+                return ai.oopScore()
+                                .max(BigDecimal.ZERO)
+                                .min(safeMax)
+                                .setScale(SCALE, ROUNDING);
     }
 
     // ─── NOTE BUILDERS ────────────────────────────────────────────────────────

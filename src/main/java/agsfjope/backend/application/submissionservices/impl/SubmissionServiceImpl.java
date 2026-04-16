@@ -21,7 +21,7 @@ import agsfjope.backend.core.repositories.exampaper.ExamPaperRepository;
 import agsfjope.backend.core.repositories.exampaper.QuestionRepository;
 import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
-import agsfjope.backend.infrastructure.storage.MinioService;
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import agsfjope.backend.infrastructure.storage.parser.ParsedSubmission;
 import agsfjope.backend.infrastructure.storage.parser.SubmissionZipParser;
 import jakarta.transaction.Transactional;
@@ -71,7 +71,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final UserRepository       userRepository;
     private final SystemConfigRepository systemConfigRepository;
 
-    private final MinioService         minioService;
+    private final FileStoragePort        minioService;
     private final MinioConfig          minioConfig;
     private final SubmissionZipParser  parser;
 
@@ -367,11 +367,22 @@ public class SubmissionServiceImpl implements SubmissionService {
     }
 
     /**
-     * Sanitizes a string for safe use in a MinIO object path.
+     * Normalizes a string for safe use in a Supabase Storage object path.
+     * <p>
+     * AWS SDK v2 reject Unicode trong object key nên cần chuyển về ASCII trước.
+     * Bước 1: NFD decompose → tách dấu ra khỏi chữ cái ("Nguyễn" → "Nguyèn")
+     * Bước 2: Strip combining diacritics → "Nguyen"
+     * Bước 3: Xử lý Đ/đ (không decompose được bằng NFD)
+     * Bước 4: Thay các kí tự ngày hiểm bằng underscore
+     * </p>
      */
     private String sanitize(String value) {
         if (value == null) return "unknown";
-        return value.trim().replaceAll("[^a-zA-Z0-9\\-_. ]", "_");
+        String normalized = java.text.Normalizer
+                .normalize(value.trim(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        normalized = normalized.replace("Đ", "D").replace("đ", "d");
+        return normalized.replaceAll("[^a-zA-Z0-9\\-_. ]", "_");
     }
 
     private SubmissionResponse toResponse(

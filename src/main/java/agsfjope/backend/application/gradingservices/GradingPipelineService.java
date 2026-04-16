@@ -14,7 +14,6 @@ import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
-import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.domain.grading.FinalGradingScore;
 import agsfjope.backend.domain.grading.QuestionScore;
 import agsfjope.backend.domain.grading.ScoreCalculator;
@@ -80,7 +79,6 @@ public class GradingPipelineService {
     private final AnswerRepository           answerRepository;
     private final SubmissionRepository       submissionRepository;
     private final UserRepository             userRepository;
-    private final SystemConfigRepository     systemConfigRepository;
     private final TestCaseRepository         testCaseRepository;
     private final TestCaseResultRepository   testCaseResultRepository;
     private final AIReviewRepository         aiReviewRepository;
@@ -257,7 +255,7 @@ public class GradingPipelineService {
                     log.warn("[PRE-CHECK] Q{}: src extraction failed: {}", qNum, e.getMessage());
                 }
 
-                // ── Early fail if JAR or src is missing ───────────────────────
+                // ── Missing-file handling ─────────────────────────────────────
                 if (preJar == null || preSrcDir == null) {
                     String missingNote;
                     if (preJar == null && preSrcDir == null) {
@@ -267,7 +265,7 @@ public class GradingPipelineService {
                     } else {
                         missingNote = "Sinh viên không có mã nguồn .java cho câu " + qNum;
                     }
-                    log.warn("[MISSING-FILE] Q{}: {} — skipping TC + AI", qNum, missingNote);
+                    log.warn("[MISSING-FILE] Q{}: {}", qNum, missingNote);
 
                     List<TestCase> tcList = testCaseRepository
                             .findByQuestion_QuestionIdOrderByTestCaseNumberAsc(question.getQuestionId());
@@ -280,8 +278,33 @@ public class GradingPipelineService {
                     final BigDecimal maxSc = question.getMaxScore();
                     final String note      = missingNote;
 
-                    // Use QuestionInput.missing() so ScoreCalculator applies mandatory FailIfMissingFile rule
-                    questionInputs.put(qNum, QuestionInput.missing(maxSc, totalTc, note));
+                    // Force 0 ONLY in 2 cases requested:
+                    // 1) Missing both .jar + /src
+                    // 2) Missing /src (even if .jar exists)
+                    boolean forceMissingRule =
+                            (preJar == null && preSrcDir == null)
+                            || (preJar != null && preSrcDir == null);
+
+                    if (forceMissingRule) {
+                        log.warn("[MISSING-FILE] Q{}: áp dụng rule thiếu file => ép 0 điểm", qNum);
+                        // Use QuestionInput.missing() so ScoreCalculator applies mandatory FailIfMissingFile rule
+                        questionInputs.put(qNum, QuestionInput.missing(maxSc, totalTc, note));
+                        continue;
+                    }
+
+                    // Case còn lại: thiếu .jar nhưng vẫn có /src
+                    // -> không chạy được test case (pass=0), nhưng vẫn AI review và KHÔNG ép 0 bởi missing rule.
+                    final Path finalSrcDir = preSrcDir;
+                    CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
+                        AIReviewResult aiResult = runAIReview(
+                                finalSubmission, answer, question, finalSrcDir);
+
+                        transactionTemplate.executeWithoutResult(tx -> {
+                            saveAIReview(answer, modeConfig.getMode().name(), aiResult);
+                            questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult));
+                        });
+                    }, aiExecutor);
+                    aiTasks.add(aiTask);
                     continue;
 
                 }
@@ -472,7 +495,8 @@ public class GradingPipelineService {
                     question.getTitle(),
                     question.getDescription(),
                     sourceCode,
-                    "Vietnamese"  // language resolved from SystemConfig inside LLMReviewService
+                    "Vietnamese",  // language resolved from SystemConfig inside LLMReviewService
+                    question.getMaxScore()
             );
 
             return llmReviewService.review(aiRequest);
@@ -754,38 +778,38 @@ public class GradingPipelineService {
     // ─── UTILITY ─────────────────────────────────────────────────────────────
 
     private GradingModeConfig resolveGradingModeConfig(Block block) {
-        // 1. Read active grading mode from SystemConfigs (configKey = "DEFAULT_GRADING_MODE")
-        GradingMode activeMode = systemConfigRepository
-                .findByConfigKey("DEFAULT_GRADING_MODE")
-                .map(cfg -> {
-                    try {
-                        return GradingMode.valueOf(cfg.getConfigValue().trim());
-                    } catch (IllegalArgumentException e) {
-                        log.warn("Invalid DEFAULT_GRADING_MODE value '{}', falling back to MODE_1",
-                                cfg.getConfigValue());
-                        return GradingMode.MODE_1;
-                    }
-                })
-                .orElseGet(() -> {
-                    log.warn("DEFAULT_GRADING_MODE not found in SystemConfigs, falling back to MODE_1");
-                    return GradingMode.MODE_1;
-                });
+        // 1. Read grading mode directly from Exam.GradingMode
+        // Business requirement: grading mode is per exam, not global system default.
+        GradingMode examMode = (block != null && block.getExam() != null)
+                ? block.getExam().getGradingMode()
+                : null;
 
-        // 2. Look up GradingModeConfig by mode
+        if (examMode == null) {
+            log.warn("Exam grading mode is null for block {} — falling back to MODE_1",
+                    block != null ? block.getBlockId() : null);
+        }
+        final GradingMode activeMode = examMode != null ? examMode : GradingMode.MODE_1;
+
+        // 2. Look up GradingModeConfig by exam mode
         return gradingModeConfigRepository.findByMode(activeMode)
-                .orElseGet(() -> {
-                    log.warn("No GradingModeConfig found for mode {} — using built-in MODE_1 default", activeMode);
+            .orElseGet(() -> {
+                // If specific mode config is missing, try MODE_1 from DB first.
+                // This avoids relying on hard-coded defaults when admin data is partially seeded.
+                return gradingModeConfigRepository.findByMode(GradingMode.MODE_1)
+                    .orElseGet(() -> {
+                    log.warn("No GradingModeConfig found for mode {} and MODE_1 — using built-in MODE_1 default", activeMode);
                     return GradingModeConfig.builder()
-                            .mode(GradingMode.MODE_1)
-                            .displayName("Default (100% Test Cases)")
-                            .testCaseWeight(BigDecimal.ONE)
-                            .oopWeight(BigDecimal.ZERO)
-                            .oopCommentOnly(false)
-                            .failIfZeroTestCase(false)
-                            .failIfOopViolated(false)
-                            .isActive(true)
-                            .build();
-                });
+                        .mode(GradingMode.MODE_1)
+                        .displayName("Default (100% Test Cases)")
+                        .testCaseWeight(new BigDecimal("100"))
+                        .oopWeight(BigDecimal.ZERO)
+                        .oopCommentOnly(false)
+                        .failIfZeroTestCase(false)
+                        .failIfOopViolated(false)
+                        .isActive(true)
+                        .build();
+                    });
+            });
     }
 
     private String getFileExtension(String filePath) {
