@@ -138,19 +138,7 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2c. FailIfHardCoded (MANDATORY) — override to 0 if AI detected any hard-coded values.
-        // Hard-coding is academic dishonesty; this rule cannot be disabled by config.
-        if (input.aiResult() != null
-                && !input.aiResult().aiError()
-                && input.aiResult().hardCodedValues() != null
-                && !input.aiResult().hardCodedValues().isEmpty()) {
-            String note = buildHardCodeNote(tcRaw, oopRaw, input.aiResult().hardCodedValues());
-            return new QuestionScore(questionNumber, maxScore,
-                    tcRaw, oopRaw,
-                    BigDecimal.ZERO, true, note, passed, total);
-        }
-
-        // 2d. FailIfZeroTestCase — override to 0 if not a single test case passed
+        // 2c. FailIfZeroTestCase — override to 0 if not a single test case passed
         if (Boolean.TRUE.equals(config.getFailIfZeroTestCase()) && passed == 0 && total > 0) {
             String note = buildGuardNote("FailIfZeroTestCase", tcRaw, oopRaw);
             return new QuestionScore(questionNumber, maxScore,
@@ -158,7 +146,7 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-                // 2e. Apply grading-mode weights to per-question score.
+                // 2d. Apply grading-mode weights to per-question score.
                 // This ensures AnswerScore of each question reflects the selected mode
                 // (e.g. MODE_2 = 50% TC + 50% OOP) instead of raw unweighted sum.
                 BigDecimal tcWeight  = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
@@ -225,16 +213,6 @@ public class ScoreCalculator {
         return "Điểm gốc: TC=%s, OOP=%s → 0đ do phát hiện sửa file đề (%s)"
                 .formatted(tcRaw.toPlainString(), oopRaw.toPlainString(),
                         detail != null ? detail : "checksum mismatch");
-    }
-
-    private String buildHardCodeNote(BigDecimal tcRaw, BigDecimal oopRaw, List<String> hardCoded) {
-        String values = hardCoded.stream()
-                .limit(5) // cap to avoid overly long notes
-                .map(v -> "`" + v + "`")
-                .collect(java.util.stream.Collectors.joining(", "));
-        return ("Điểm gốc: TC=%s, OOP=%s → 0đ do phát hiện hardcode giá trị trả về " +
-                "(FailIfHardCoded — bắt buộc). Giá trị bị phát hiện: %s")
-                .formatted(tcRaw.toPlainString(), oopRaw.toPlainString(), values);
     }
 
     // ─── INPUT DATA CLASS ─────────────────────────────────────────────────────
