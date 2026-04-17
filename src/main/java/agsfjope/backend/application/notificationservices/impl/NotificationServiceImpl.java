@@ -2,6 +2,7 @@ package agsfjope.backend.application.notificationservices.impl;
 
 import agsfjope.backend.application.dtos.responses.notification.NotificationResponse;
 import agsfjope.backend.application.dtos.responses.notification.UnreadCountResponse;
+import agsfjope.backend.application.notificationservices.NotificationRealtimeService;
 import agsfjope.backend.application.notificationservices.NotificationService;
 import agsfjope.backend.core.entities.Notification;
 import agsfjope.backend.core.entities.User;
@@ -10,6 +11,9 @@ import agsfjope.backend.core.repositories.notification.NotificationRepository;
 import agsfjope.backend.infrastructure.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +35,7 @@ import java.util.UUID;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final NotificationRealtimeService notificationRealtimeService;
 
     // ─── Read Operations ─────────────────────────────────────────────────────
 
@@ -44,25 +49,26 @@ public class NotificationServiceImpl implements NotificationService {
      */
     @Override
     @Transactional(readOnly = true)
-    public List<NotificationResponse> getMyNotifications(String filter) {
+        public Page<NotificationResponse> getMyNotifications(String filter, int page, int size) {
         // Get the currently authenticated user
         User currentUser = SecurityUtils.getCurrentUser();
         UUID userId = currentUser.getUserId();
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        Pageable pageable = PageRequest.of(safePage, safeSize);
 
         // Fetch based on filter param
-        List<Notification> notifications = switch (filter.toLowerCase()) {
+        Page<Notification> notifications = switch (filter.toLowerCase()) {
             case "unread" -> notificationRepository
-                    .findByUser_UserIdAndIsReadOrderByCreatedAtDesc(userId, false);
+                .findByUser_UserIdAndIsReadOrderByCreatedAtDesc(userId, false, pageable);
             case "read" -> notificationRepository
-                    .findByUser_UserIdAndIsReadOrderByCreatedAtDesc(userId, true);
+                .findByUser_UserIdAndIsReadOrderByCreatedAtDesc(userId, true, pageable);
             default -> notificationRepository
-                    .findByUser_UserIdOrderByCreatedAtDesc(userId);
+                .findByUser_UserIdOrderByCreatedAtDesc(userId, pageable);
         };
 
         // Map entities to response DTOs
-        return notifications.stream()
-                .map(this::mapToResponse)
-                .toList();
+        return notifications.map(this::mapToResponse);
     }
 
     /**
@@ -99,6 +105,7 @@ public class NotificationServiceImpl implements NotificationService {
             notification.setIsRead(true);
             notification.setReadAt(OffsetDateTime.now());
             notificationRepository.save(notification);
+            notificationRealtimeService.notifyChanged(currentUser.getUserId());
             log.debug("Marked notification {} as read for user {}", notificationId, currentUser.getUserId());
         }
     }
@@ -128,7 +135,23 @@ public class NotificationServiceImpl implements NotificationService {
         });
 
         notificationRepository.saveAll(unreadNotifications);
+        notificationRealtimeService.notifyChanged(userId);
         log.debug("Marked {} notifications as read for user {}", unreadNotifications.size(), userId);
+    }
+
+    @Override
+    @Transactional
+    public void deleteMyNotification(UUID notificationId) {
+        User currentUser = SecurityUtils.getCurrentUser();
+        long deleted = notificationRepository
+                .deleteByNotificationIdAndUser_UserId(notificationId, currentUser.getUserId());
+
+        if (deleted == 0) {
+            throw new NotificationNotFoundException(notificationId);
+        }
+
+        notificationRealtimeService.notifyChanged(currentUser.getUserId());
+        log.debug("Deleted notification {} for user {}", notificationId, currentUser.getUserId());
     }
 
     // ─── Internal Creation ─────────────────────────────────────────────────────
@@ -162,6 +185,7 @@ public class NotificationServiceImpl implements NotificationService {
                 .build();
 
         notificationRepository.save(notification);
+        notificationRealtimeService.notifyChanged(userId);
         log.info("Dispatched notification '{}' to user {}", title, userId);
     }
 

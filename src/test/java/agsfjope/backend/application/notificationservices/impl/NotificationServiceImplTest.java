@@ -2,6 +2,7 @@ package agsfjope.backend.application.notificationservices.impl;
 
 import agsfjope.backend.application.dtos.responses.notification.NotificationResponse;
 import agsfjope.backend.application.dtos.responses.notification.UnreadCountResponse;
+import agsfjope.backend.application.notificationservices.NotificationRealtimeService;
 import agsfjope.backend.core.entities.Notification;
 import agsfjope.backend.core.entities.User;
 import agsfjope.backend.core.exceptions.notification.NotificationNotFoundException;
@@ -18,6 +19,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.OffsetDateTime;
 import java.util.Collections;
@@ -40,6 +45,9 @@ class NotificationServiceImplTest {
     @Mock
     private NotificationRepository notificationRepository;
 
+    @Mock
+    private NotificationRealtimeService notificationRealtimeService;
+
     @InjectMocks
     private NotificationServiceImpl notificationService;
 
@@ -57,7 +65,7 @@ class NotificationServiceImplTest {
     void setUp() {
         currentUserId = UUID.randomUUID();
         mockCurrentUser = User.builder().userId(currentUserId).username("mock_user").build();
-        
+
         mockedSecurityUtils = mockStatic(SecurityUtils.class);
         // Default mock for getCurrentUser
         mockedSecurityUtils.when(SecurityUtils::getCurrentUser).thenReturn(mockCurrentUser);
@@ -73,79 +81,109 @@ class NotificationServiceImplTest {
     // =========================================================================
 
     @Test
-    @DisplayName("[N] getMyNotifications - filter 'unread' -> Trả về danh sách NotificationResponse")
-    void getMyNotifications_FilterUnread_ReturnsUnreadList() {
+    @DisplayName("[N] getMyNotifications - filter 'unread' -> Trả về Page<NotificationResponse> chỉ chứa unread")
+    void getMyNotifications_FilterUnread_ReturnsUnreadPage() {
         // Arrange
         Notification notif = Notification.builder()
                 .notificationId(UUID.randomUUID())
                 .isRead(false)
                 .title("Unread Title")
                 .build();
-        when(notificationRepository.findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, false))
-                .thenReturn(List.of(notif));
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Notification> notifPage = new PageImpl<>(List.of(notif), pageable, 1);
+
+        when(notificationRepository.findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, false, pageable))
+                .thenReturn(notifPage);
 
         // Act
-        List<NotificationResponse> result = notificationService.getMyNotifications("unread");
+        Page<NotificationResponse> result = notificationService.getMyNotifications("unread", 0, 10);
 
         // Assert
-        assertEquals(1, result.size());
-        assertEquals("Unread Title", result.get(0).getTitle());
-        assertFalse(result.get(0).getIsRead());
-        verify(notificationRepository).findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, false);
+        assertEquals(1, result.getTotalElements());
+        assertEquals("Unread Title", result.getContent().get(0).getTitle());
+        assertFalse(result.getContent().get(0).getIsRead());
+        verify(notificationRepository).findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, false, pageable);
     }
 
     @Test
-    @DisplayName("[N] getMyNotifications - filter 'read' -> Trả về danh sách NotificationResponse")
-    void getMyNotifications_FilterRead_ReturnsReadList() {
+    @DisplayName("[N] getMyNotifications - filter 'read' -> Trả về Page<NotificationResponse> chỉ chứa read")
+    void getMyNotifications_FilterRead_ReturnsReadPage() {
         // Arrange
         Notification notif = Notification.builder()
                 .notificationId(UUID.randomUUID())
                 .isRead(true)
                 .title("Read Title")
                 .build();
-        when(notificationRepository.findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, true))
-                .thenReturn(List.of(notif));
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Notification> notifPage = new PageImpl<>(List.of(notif), pageable, 1);
+
+        when(notificationRepository.findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, true, pageable))
+                .thenReturn(notifPage);
 
         // Act
-        List<NotificationResponse> result = notificationService.getMyNotifications("read");
+        Page<NotificationResponse> result = notificationService.getMyNotifications("read", 0, 10);
 
         // Assert
-        assertEquals(1, result.size());
-        assertEquals("Read Title", result.get(0).getTitle());
-        assertTrue(result.get(0).getIsRead());
-        verify(notificationRepository).findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, true);
+        assertEquals(1, result.getTotalElements());
+        assertEquals("Read Title", result.getContent().get(0).getTitle());
+        assertTrue(result.getContent().get(0).getIsRead());
+        verify(notificationRepository).findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, true, pageable);
     }
 
     @Test
-    @DisplayName("[N] getMyNotifications - filter 'all' -> Trả về tất cả NotificationResponse")
-    void getMyNotifications_FilterAll_ReturnsAllList() {
+    @DisplayName("[N] getMyNotifications - filter 'all' -> Trả về tất cả Page<NotificationResponse>")
+    void getMyNotifications_FilterAll_ReturnsAllPage() {
         // Arrange
         Notification notif1 = Notification.builder().notificationId(UUID.randomUUID()).build();
         Notification notif2 = Notification.builder().notificationId(UUID.randomUUID()).build();
-        when(notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(currentUserId))
-                .thenReturn(List.of(notif1, notif2));
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Notification> notifPage = new PageImpl<>(List.of(notif1, notif2), pageable, 2);
+
+        when(notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(currentUserId, pageable))
+                .thenReturn(notifPage);
 
         // Act
-        List<NotificationResponse> result = notificationService.getMyNotifications("all");
+        Page<NotificationResponse> result = notificationService.getMyNotifications("all", 0, 10);
 
         // Assert
-        assertEquals(2, result.size());
-        verify(notificationRepository).findByUser_UserIdOrderByCreatedAtDesc(currentUserId);
+        assertEquals(2, result.getTotalElements());
+        verify(notificationRepository).findByUser_UserIdOrderByCreatedAtDesc(currentUserId, pageable);
     }
 
     @Test
-    @DisplayName("[B] getMyNotifications - Database rỗng -> Trả về list rỗng")
-    void getMyNotifications_EmptyDatabase_ReturnsEmptyList() {
+    @DisplayName("[B] getMyNotifications - Database rỗng -> Trả về Page rỗng")
+    void getMyNotifications_EmptyDatabase_ReturnsEmptyPage() {
         // Arrange
-        when(notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(currentUserId))
-                .thenReturn(Collections.emptyList());
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Notification> emptyPage = Page.empty(pageable);
+
+        when(notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(currentUserId, pageable))
+                .thenReturn(emptyPage);
 
         // Act
-        List<NotificationResponse> result = notificationService.getMyNotifications("any_other");
+        Page<NotificationResponse> result = notificationService.getMyNotifications("any_other", 0, 10);
 
         // Assert
         assertNotNull(result);
         assertTrue(result.isEmpty());
+    }
+
+    @Test
+    @DisplayName("[B] getMyNotifications - page âm -> Chuẩn hoá về 0")
+    void getMyNotifications_NegativePage_NormalizesToZero() {
+        // Arrange – page=-1 should be treated as 0 internally
+        Pageable expectedPageable = PageRequest.of(0, 10);
+        Page<Notification> emptyPage = Page.empty(expectedPageable);
+
+        when(notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(currentUserId, expectedPageable))
+                .thenReturn(emptyPage);
+
+        // Act
+        Page<NotificationResponse> result = notificationService.getMyNotifications("all", -1, 10);
+
+        // Assert
+        assertNotNull(result);
+        verify(notificationRepository).findByUser_UserIdOrderByCreatedAtDesc(currentUserId, expectedPageable);
     }
 
     // =========================================================================
@@ -191,7 +229,7 @@ class NotificationServiceImplTest {
                 .notificationId(notificationId)
                 .isRead(false)
                 .build();
-                
+
         when(notificationRepository.findByNotificationIdAndUser_UserId(notificationId, currentUserId))
                 .thenReturn(Optional.of(notification));
 
@@ -203,6 +241,7 @@ class NotificationServiceImplTest {
         Notification saved = notificationCaptor.getValue();
         assertTrue(saved.getIsRead());
         assertNotNull(saved.getReadAt());
+        verify(notificationRealtimeService).notifyChanged(currentUserId);
     }
 
     @Test
@@ -214,7 +253,7 @@ class NotificationServiceImplTest {
                 .notificationId(notificationId)
                 .isRead(true)
                 .build();
-                
+
         when(notificationRepository.findByNotificationIdAndUser_UserId(notificationId, currentUserId))
                 .thenReturn(Optional.of(notification));
 
@@ -223,6 +262,7 @@ class NotificationServiceImplTest {
 
         // Assert
         verify(notificationRepository, never()).save(any());
+        verify(notificationRealtimeService, never()).notifyChanged(any());
     }
 
     @Test
@@ -237,7 +277,7 @@ class NotificationServiceImplTest {
         assertThrows(NotificationNotFoundException.class, () -> {
             notificationService.markAsRead(notificationId);
         });
-        
+
         verify(notificationRepository, never()).save(any());
     }
 
@@ -251,7 +291,7 @@ class NotificationServiceImplTest {
         // Arrange
         Notification n1 = Notification.builder().isRead(false).build();
         Notification n2 = Notification.builder().isRead(false).build();
-        
+
         when(notificationRepository.findByUser_UserIdAndIsReadOrderByCreatedAtDesc(currentUserId, false))
                 .thenReturn(List.of(n1, n2));
 
@@ -261,12 +301,13 @@ class NotificationServiceImplTest {
         // Assert
         verify(notificationRepository).saveAll(notificationListCaptor.capture());
         List<Notification> savedList = notificationListCaptor.getValue();
-        
+
         assertEquals(2, savedList.size());
         assertTrue(savedList.get(0).getIsRead());
         assertNotNull(savedList.get(0).getReadAt());
         assertTrue(savedList.get(1).getIsRead());
         assertNotNull(savedList.get(1).getReadAt());
+        verify(notificationRealtimeService).notifyChanged(currentUserId);
     }
 
     @Test
@@ -281,6 +322,7 @@ class NotificationServiceImplTest {
 
         // Assert
         verify(notificationRepository, never()).saveAll(any());
+        verify(notificationRealtimeService, never()).notifyChanged(any());
     }
 
     // =========================================================================
@@ -293,7 +335,7 @@ class NotificationServiceImplTest {
         // Arrange
         UUID targetUserId = UUID.randomUUID();
         UUID entityId = UUID.randomUUID();
-        
+
         // Act
         notificationService.createNotification(
                 targetUserId, "Title", "Body Msg", "EXAM", entityId);
@@ -301,13 +343,14 @@ class NotificationServiceImplTest {
         // Assert
         verify(notificationRepository).save(notificationCaptor.capture());
         Notification saved = notificationCaptor.getValue();
-        
+
         assertEquals("Title", saved.getTitle());
         assertEquals("Body Msg", saved.getBody());
         assertEquals("EXAM", saved.getRelatedEntityType());
         assertEquals(entityId, saved.getRelatedEntityId());
         assertFalse(saved.getIsRead());
         assertEquals(targetUserId, saved.getUser().getUserId());
+        verify(notificationRealtimeService).notifyChanged(targetUserId);
     }
 
     // =========================================================================

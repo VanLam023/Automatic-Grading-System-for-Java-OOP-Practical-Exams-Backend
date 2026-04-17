@@ -29,7 +29,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.OffsetDateTime;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,6 +42,12 @@ import static org.mockito.Mockito.*;
  * Unit tests cho UserManagementServiceImpl.
  * Phân loại: [N] Normal, [B] Boundary, [A] Abnormal.
  * Pattern: AAA (Arrange - Act - Assert).
+ *
+ * Ghi chú sau khi đồng bộ với service thực tế:
+ * - deleteUser()   : chỉ lock (setIsLocked=true), không soft-delete (deletedAt)
+ * - getAllUsers()   : gọi userRepository.findAll(pageable) — không phải findAllByDeletedAtIsNull
+ * - searchUsers()  : gọi userRepository.searchUsersAllStatuses(kw, rn, pageable)
+ * - getUserById()  : không throw khi user đã bị soft-deleted (deletedAt != null)
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserManagementServiceImpl Tests")
@@ -113,7 +118,7 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[A] importStudentsFromExcel - Bỏ qua row trùng email 'newstudent@fpt.edu.vn' đã tồn tại trong DB")
+    @DisplayName("[A] importStudentsFromExcel - Bỏ qua row trùng email 'lamtvse173173@fpt.edu.vn' đã tồn tại trong DB")
     void importStudentsFromExcel_DuplicateEmail_SkipsRow() {
         // Arrange
         agsfjope.backend.application.dtos.requests.user.ImportStudentRequest parsedRow =
@@ -333,21 +338,21 @@ class UserManagementServiceImplTest {
 
     // =========================================================================
     // deleteUser()
+    // Ghi chú: service hiện tại chỉ LOCK tài khoản (setIsLocked=true),
+    // KHÔNG soft-delete (deletedAt không được set).
     // =========================================================================
 
     @Test
-    @DisplayName("[N] deleteUser - Soft-delete user 'lamtvse173173' thành công, deletedAt được set")
-    void deleteUser_ExistingActiveUser_SoftDeletesSuccessfully() {
-        // Arrange
+    @DisplayName("[N] deleteUser - Lock user 'lamtvse173173' thành công (isLocked=true)")
+    void deleteUser_ExistingUnlockedUser_LocksSuccessfully() {
+        // Arrange — activeStudent mặc định isLocked = false
         when(userRepository.findById(testUserId)).thenReturn(Optional.of(activeStudent));
         when(userRepository.save(any(User.class))).thenReturn(activeStudent);
 
         // Act
         service.deleteUser(testUserId);
 
-        // Assert
-        assertThat(activeStudent.getDeletedAt()).isNotNull();
-        assertThat(activeStudent.getIsActive()).isFalse();
+        // Assert: service chỉ lock, không soft-delete
         assertThat(activeStudent.getIsLocked()).isTrue();
         verify(userRepository).save(activeStudent);
     }
@@ -368,7 +373,7 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[A] deleteUser - Throw IllegalArgumentException khi cố xoá tài khoản quản trị mặc định 'admin'")
+    @DisplayName("[A] deleteUser - Throw IllegalArgumentException khi cố khoá tài khoản quản trị mặc định 'admin'")
     void deleteUser_DefaultAdminUser_ThrowIllegalArgumentException() {
         // Arrange
         User adminUser = TestDataFactory.createActiveStudent();
@@ -379,23 +384,23 @@ class UserManagementServiceImplTest {
         // Act & Assert
         assertThatThrownBy(() -> service.deleteUser(testUserId))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Không thể xoá tài khoản quản trị mặc định ('admin')");
+                .hasMessageContaining("Không thể khóa tài khoản quản trị mặc định ('admin')");
 
         verify(userRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("[A] deleteUser - Throw IllegalArgumentException khi user đã bị xoá trước đó")
-    void deleteUser_AlreadyDeletedUser_ThrowIllegalArgumentException() {
-        // Arrange
-        User deletedUser = TestDataFactory.createActiveStudent();
-        deletedUser.setDeletedAt(OffsetDateTime.now().minusDays(1));
-        when(userRepository.findById(testUserId)).thenReturn(Optional.of(deletedUser));
+    @DisplayName("[A] deleteUser - Throw IllegalArgumentException khi user đã bị khoá trước đó")
+    void deleteUser_AlreadyLockedUser_ThrowIllegalArgumentException() {
+        // Arrange: user đã bị lock trước đó
+        User lockedUser = TestDataFactory.createActiveStudent();
+        lockedUser.setIsLocked(true);
+        when(userRepository.findById(testUserId)).thenReturn(Optional.of(lockedUser));
 
         // Act & Assert
         assertThatThrownBy(() -> service.deleteUser(testUserId))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("đã bị xoá trước đó");
+                .hasMessageContaining("đã bị khóa trước đó");
 
         verify(userRepository, never()).save(any());
     }
@@ -455,16 +460,17 @@ class UserManagementServiceImplTest {
 
     // =========================================================================
     // getAllUsers()
+    // Ghi chú: service gọi userRepository.findAll(pageable) — bao gồm TẤT CẢ
+    // user (kể cả soft-deleted), không phải findAllByDeletedAtIsNull.
     // =========================================================================
 
     @Test
-    @DisplayName("[N] getAllUsers - Trả về Page<UserDetailResponse> chứa user 'lamtvse173173' (không phải SYSTEM_ADMIN)")
+    @DisplayName("[N] getAllUsers - Trả về Page<UserDetailResponse> chứa user 'lamtvse173173'")
     void getAllUsers_ReturnsPageOfUsers() {
         // Arrange
         Pageable pageable = PageRequest.of(0, 10);
         Page<User> userPage = new PageImpl<>(List.of(activeStudent));
-        when(userRepository.findAllByDeletedAtIsNull(pageable))
-                .thenReturn(userPage);
+        when(userRepository.findAll(pageable)).thenReturn(userPage);
 
         // Act
         Page<UserDetailResponse> result = service.getAllUsers(pageable);
@@ -480,8 +486,7 @@ class UserManagementServiceImplTest {
         // Arrange
         Pageable pageable = PageRequest.of(0, 10);
         Page<User> emptyPage = new PageImpl<>(List.of());
-        when(userRepository.findAllByDeletedAtIsNull(pageable))
-                .thenReturn(emptyPage);
+        when(userRepository.findAll(pageable)).thenReturn(emptyPage);
 
         // Act
         Page<UserDetailResponse> result = service.getAllUsers(pageable);
@@ -492,6 +497,8 @@ class UserManagementServiceImplTest {
 
     // =========================================================================
     // searchUsers()
+    // Ghi chú: service gọi userRepository.searchUsersAllStatuses(kw, rn, pageable)
+    // và normalize null → empty string trước khi gọi.
     // =========================================================================
 
     @Test
@@ -500,7 +507,8 @@ class UserManagementServiceImplTest {
         // Arrange
         Pageable pageable = PageRequest.of(0, 10);
         Page<User> userPage = new PageImpl<>(List.of(activeStudent));
-        when(userRepository.searchUsers("lamtv", "", pageable)).thenReturn(userPage);
+        // Service normalize: keyword="lamtv" → kw="lamtv", roleName=null → rn=""
+        when(userRepository.searchUsersAllStatuses("lamtv", "", pageable)).thenReturn(userPage);
 
         // Act
         Page<UserDetailResponse> result = service.searchUsers("lamtv", null, pageable);
@@ -511,11 +519,11 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[B] searchUsers - Tìm kiếm với keyword=null và roleName=null → normalize thành empty string, gọi searchUsers('', '')")
+    @DisplayName("[B] searchUsers - keyword=null và roleName=null → normalize thành empty string, gọi searchUsersAllStatuses('', '')")
     void searchUsers_NullKeywordAndRole_NormalizesToEmptyStrings() {
         // Arrange
         Pageable pageable = PageRequest.of(0, 10);
-        when(userRepository.searchUsers("", "", pageable))
+        when(userRepository.searchUsersAllStatuses("", "", pageable))
                 .thenReturn(new PageImpl<>(List.of()));
 
         // Act
@@ -523,16 +531,18 @@ class UserManagementServiceImplTest {
 
         // Assert
         assertThat(result.getContent()).isEmpty();
-        verify(userRepository).searchUsers("", "", pageable);
+        verify(userRepository).searchUsersAllStatuses("", "", pageable);
     }
 
     // =========================================================================
     // getUserById()
+    // Ghi chú: service KHÔNG throw khi user đã soft-deleted (deletedAt != null).
+    // Service chỉ throw khi user không tìm thấy (findById returns empty).
     // =========================================================================
 
     @Test
     @DisplayName("[N] getUserById - Lấy thông tin user 'lamtvse173173' theo UUID thành công")
-    void getUserById_ExistingNonDeletedUser_ReturnsResponse() {
+    void getUserById_ExistingUser_ReturnsResponse() {
         // Arrange
         when(userRepository.findById(testUserId)).thenReturn(Optional.of(activeStudent));
 
@@ -558,7 +568,7 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[N] getUserById - Lấy thông tin SYSTEM_ADMIN (hiện đã cho phép hiển thị trong admin UI)")
+    @DisplayName("[N] getUserById - Lấy thông tin SYSTEM_ADMIN thành công")
     void getUserById_SystemAdminUser_ReturnsResponse() {
         // Arrange
         User adminUser = TestDataFactory.createActiveStudent();
@@ -575,17 +585,19 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    @DisplayName("[A] getUserById - Throw IllegalArgumentException khi user đã bị soft-deleted")
-    void getUserById_DeletedUser_ThrowIllegalArgumentException() {
-        // Arrange
+    @DisplayName("[N] getUserById - Trả về thông tin user đã soft-deleted (service không block soft-deleted)")
+    void getUserById_SoftDeletedUser_ReturnsResponseWithDeletedAt() {
+        // Arrange — service không throw cho soft-deleted users, chỉ trả về data
         User deletedUser = TestDataFactory.createActiveStudent();
         deletedUser.setDeletedAt(OffsetDateTime.now().minusDays(1));
         when(userRepository.findById(testUserId)).thenReturn(Optional.of(deletedUser));
 
-        // Act & Assert
-        assertThatThrownBy(() -> service.getUserById(testUserId))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("đã bị xoá");
+        // Act
+        UserDetailResponse response = service.getUserById(testUserId);
+
+        // Assert
+        assertThat(response.getDeletedAt()).isNotNull();
+        assertThat(response.getUsername()).isEqualTo("lamtvse173173");
     }
 
     // =========================================================================

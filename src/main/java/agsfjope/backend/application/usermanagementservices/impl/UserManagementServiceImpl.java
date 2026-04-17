@@ -17,6 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -367,7 +370,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // deleteUser — Soft delete (set deletedAt, do NOT remove from DB)
+    // deleteUser — Lock account (do NOT remove from DB)
     // ─────────────────────────────────────────────────────────────────────────
 
     @Override
@@ -378,25 +381,54 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy user với ID: " + userId));
 
-        // ── 2. Guard: cannot delete the default 'admin' account ───────────
+        // ── 2. Guard: cannot lock the default 'admin' account ─────────────
         if ("admin".equals(user.getUsername())) {
             throw new IllegalArgumentException(
-                    "Không thể xoá tài khoản quản trị mặc định ('admin').");
+                    "Không thể khóa tài khoản quản trị mặc định ('admin').");
         }
 
-        // ── 3. Guard: already deleted ───────────────────────────────────────
-        if (user.getDeletedAt() != null) {
+        // ── 3. Guard: already locked ───────────────────────────────────────
+        if (Boolean.TRUE.equals(user.getIsLocked())) {
             throw new IllegalArgumentException(
-                    "Tài khoản '" + user.getUsername() + "' đã bị xoá trước đó.");
+                    "Tài khoản '" + user.getUsername() + "' đã bị khóa trước đó.");
         }
 
-        // ── 4. Soft delete: stamp deletedAt, disable account ────────────────
-        user.setDeletedAt(java.time.OffsetDateTime.now());
-        user.setIsActive(false); // prevent login
-        user.setIsLocked(true); // additional safety lock
+        // ── 4. Lock account only ───────────────────────────────────────────
+        user.setIsLocked(true);
         userRepository.save(user);
 
-        log.info("[UserManagement] Soft-deleted user '{}' (ID: {}).", user.getUsername(), userId);
+        log.info("[UserManagement] Locked user '{}' (ID: {}).", user.getUsername(), userId);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // unlockUser — Unlock account (restore legacy soft-deleted lock if needed)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public void unlockUser(java.util.UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Không tìm thấy user với ID: " + userId));
+
+        boolean isLocked = Boolean.TRUE.equals(user.getIsLocked());
+        boolean isLegacySoftDeleted = user.getDeletedAt() != null;
+
+        if (!isLocked && !isLegacySoftDeleted) {
+            throw new IllegalArgumentException(
+                    "Tài khoản '" + user.getUsername() + "' hiện không bị khóa.");
+        }
+
+        user.setIsLocked(false);
+
+        // Backward compatibility: old "lock" flow used soft-delete.
+        if (isLegacySoftDeleted) {
+            user.setDeletedAt(null);
+            user.setIsActive(true);
+        }
+
+        userRepository.save(user);
+        log.info("[UserManagement] Unlocked user '{}' (ID: {}).", user.getUsername(), userId);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -430,18 +462,18 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // getAllUsers — paginated list of all non-deleted users
+    // getAllUsers — paginated list of all users regardless account status
     // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     @Transactional(readOnly = true)
     public Page<UserDetailResponse> getAllUsers(Pageable pageable) {
-        return userRepository.findAllByDeletedAtIsNull(pageable)
+        return userRepository.findAll(pageable)
                 .map(this::mapToUserDetailResponse);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // searchUsers — filter by keyword and/or roleName
+    // searchUsers — filter by keyword and/or roleName across all statuses
     // ─────────────────────────────────────────────────────────────────────────
 
     @Override
@@ -450,7 +482,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         // Normalize: pass empty string to JPQL to skip the filter clause (avoids PostgreSQL bytea cast issue with null)
         String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : "";
         String rn = (roleName != null && !roleName.isBlank()) ? roleName.trim().toUpperCase() : "";
-        return userRepository.searchUsers(kw, rn, pageable)
+        return userRepository.searchUsersAllStatuses(kw, rn, pageable)
                 .map(this::mapToUserDetailResponse);
     }
 
@@ -464,11 +496,6 @@ public class UserManagementServiceImpl implements UserManagementService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy user với ID: " + userId));
-
-        if (user.getDeletedAt() != null) {
-            throw new IllegalArgumentException(
-                    "Tài khoản '" + user.getUsername() + "' đã bị xoá.");
-        }
 
         return mapToUserDetailResponse(user);
     }
@@ -570,6 +597,15 @@ public class UserManagementServiceImpl implements UserManagementService {
                         "Role '" + request.getRoleName()
                                 + "' không hợp lệ. Giá trị được phép: STUDENT, EXAM_STAFF, LECTURER, SYSTEM_ADMIN.");
             }
+
+                        String currentUsername = getCurrentUsername();
+                        if (currentUsername != null
+                            && currentUsername.equalsIgnoreCase(user.getUsername())
+                            && !newRoleName.equals(user.getRole().getName())) {
+                        throw new IllegalArgumentException(
+                            "Bạn không thể tự thay đổi role của chính mình.");
+                        }
+
             if (!newRoleName.equals(user.getRole().getName())) {
                 Role newRole = roleRepository.findByName(newRoleName)
                         .orElseThrow(() -> new IllegalArgumentException(
@@ -597,12 +633,14 @@ public class UserManagementServiceImpl implements UserManagementService {
      * @return the mapped response DTO
      */
     private UserDetailResponse mapToUserDetailResponse(User user) {
+        String roleName = user.getRole() != null ? user.getRole().getName() : "UNKNOWN";
+
         return UserDetailResponse.builder()
                 .userId(user.getUserId())
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
-                .roleName(user.getRole().getName())
+            .roleName(roleName)
                 .mssv(user.getMssv())
                 .phone(user.getPhone())
                 .avatarUrl(user.getAvatarUrl())
@@ -615,6 +653,26 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .updatedAt(user.getUpdatedAt())
                 .deletedAt(user.getDeletedAt())
                 .build();
+    }
+
+    /**
+     * Returns username of authenticated principal, or null if unavailable.
+     */
+    private String getCurrentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof UserDetails userDetails) {
+            return userDetails.getUsername();
+        }
+        if (principal instanceof String principalName
+                && !"anonymousUser".equalsIgnoreCase(principalName)) {
+            return principalName;
+        }
+        return null;
     }
 }
 

@@ -61,14 +61,23 @@ public interface UserManagementService {
     CreateUserResponse createUser(CreateUserRequest request);
 
     /**
-     * Soft-deletes a user by setting {@code deletedAt = now()}.
-     * Cannot delete accounts with role SYSTEM_ADMIN.
+     * Locks a user account.
+     * Cannot lock the default admin account.
      *
      * @param userId target user UUID
-     * @throws IllegalArgumentException if user not found, already deleted, or is
+     * @throws IllegalArgumentException if user not found, already locked, or is
      *                                  SYSTEM_ADMIN
      */
     void deleteUser(java.util.UUID userId);
+
+    /**
+     * Unlocks a user account.
+     * Also restores legacy soft-deleted locked users by clearing {@code deletedAt}.
+     *
+     * @param userId target user UUID
+     * @throws IllegalArgumentException if user not found or not locked
+     */
+    void unlockUser(UUID userId);
 
     /**
      * Admin manually activates a user account by UUID.
@@ -99,11 +108,11 @@ public interface UserManagementService {
     Page<UserDetailResponse> searchUsers(String keyword, String roleName, Pageable pageable);
 
     /**
-     * Returns the full detail of a single non-deleted user.
+     * Returns the full detail of a single user (including locked / legacy soft-deleted).
      *
      * @param userId target user UUID
      * @return UserDetailResponse with all admin-visible fields
-     * @throws IllegalArgumentException if user not found or soft-deleted
+     * @throws IllegalArgumentException if user not found
      */
     UserDetailResponse getUserById(UUID userId);
 

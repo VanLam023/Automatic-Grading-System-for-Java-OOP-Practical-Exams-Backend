@@ -127,10 +127,10 @@ public class UserManagementController {
 
     /**
      * DELETE /api/admin/users/{userId}
-     * Soft-deletes a user: sets deletedAt = now, isActive = false, isLocked = true.
-     * Cannot delete accounts with role SYSTEM_ADMIN.
+     * Locks a user account.
+     * Cannot lock the default admin account.
      *
-     * @param userId UUID của user cần xoá
+     * @param userId UUID của user cần khóa
      */
     @DeleteMapping("/{userId}")
     @PreAuthorize("hasRole('SYSTEM_ADMIN')")
@@ -138,7 +138,25 @@ public class UserManagementController {
         try {
             userManagementService.deleteUser(userId);
             return ResponseEntity.ok(buildSuccessResponse(
-                    "Tài khoản đã được xoá thành công (soft delete).", null));
+                    "Tài khoản đã được khóa thành công.", null));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(buildErrorResponse(e.getMessage()));
+        }
+    }
+
+    /**
+     * PATCH /api/admin/users/{userId}/unlock
+     * Unlocks a locked account.
+     *
+     * @param userId UUID của user cần mở khóa
+     */
+    @PatchMapping("/{userId}/unlock")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    public ResponseEntity<Map<String, Object>> unlockUser(@PathVariable UUID userId) {
+        try {
+            userManagementService.unlockUser(userId);
+            return ResponseEntity.ok(buildSuccessResponse(
+                    "Tài khoản đã được mở khóa thành công.", null));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(buildErrorResponse(e.getMessage()));
         }

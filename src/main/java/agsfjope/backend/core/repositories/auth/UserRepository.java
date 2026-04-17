@@ -67,38 +67,34 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     List<User> findByUsernameIn(List<String> usernames);
 
-    /**
-     * Returns a paginated list of all non-deleted, non-SYSTEM_ADMIN users,
-     * eagerly loading their Role.
-     * Used by the Admin "Get All Users" endpoint.
-     *
-     * @param pageable pagination and sorting configuration
-     * @return page of active (non-soft-deleted) users excluding SYSTEM_ADMIN
-     */
-    @EntityGraph(attributePaths = {"role"})
-    Page<User> findAllByDeletedAtIsNull(Pageable pageable);
+        /**
+         * Returns a paginated list of all users (including inactive/locked/soft-deleted),
+         * eagerly loading their Role.
+         */
+        @EntityGraph(attributePaths = {"role"})
+        Page<User> findAll(Pageable pageable);
 
     /**
      * Full-text search across username, email, and fullName with optional role filter.
-     * Excludes soft-deleted users. All string comparisons are case-insensitive.
+        * Includes all statuses (active, inactive, locked, soft-deleted).
+        * All string comparisons are case-insensitive.
      *
      * @param keyword  search term (matched with LIKE against username, email, fullName); null to skip
      * @param roleName exact role name filter (e.g. "STUDENT"); null to skip
      * @param pageable pagination and sorting configuration
-     * @return page of matching non-soft-deleted users
+     * @return page of matching users
      */
     @EntityGraph(attributePaths = {"role"})
     @Query("""
             SELECT u FROM User u
-            WHERE u.deletedAt IS NULL
-              AND (:keyword = '' OR
+            WHERE (:keyword = '' OR
                    LOWER(u.username) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
                    LOWER(u.email)    LIKE LOWER(CONCAT('%', :keyword, '%')) OR
                    LOWER(u.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR
                    LOWER(u.mssv)     LIKE LOWER(CONCAT('%', :keyword, '%')))
               AND (:roleName = '' OR u.role.name = :roleName)
             """)
-    Page<User> searchUsers(
+    Page<User> searchUsersAllStatuses(
             @Param("keyword")  String keyword,
             @Param("roleName") String roleName,
             Pageable pageable);

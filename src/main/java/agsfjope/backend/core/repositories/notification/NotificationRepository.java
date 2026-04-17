@@ -1,6 +1,8 @@
 package agsfjope.backend.core.repositories.notification;
 
 import agsfjope.backend.core.entities.Notification;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -33,6 +35,11 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     List<Notification> findByUser_UserIdOrderByCreatedAtDesc(UUID userId);
 
     /**
+     * Paged variant of all notifications for a user, newest first.
+     */
+    Page<Notification> findByUser_UserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+
+    /**
      * Returns notifications for a user filtered by read status, sorted newest-first.
      * Used for "Unread" and "Read" filter tabs.
      *
@@ -41,6 +48,11 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      * @return filtered list ordered by creation date DESC
      */
     List<Notification> findByUser_UserIdAndIsReadOrderByCreatedAtDesc(UUID userId, Boolean isRead);
+
+    /**
+     * Paged variant of notifications for a user filtered by read status, newest first.
+     */
+    Page<Notification> findByUser_UserIdAndIsReadOrderByCreatedAtDesc(UUID userId, Boolean isRead, Pageable pageable);
 
     /**
      * Counts the number of unread notifications for a user.
@@ -61,6 +73,13 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
      * @return Optional containing the notification if found and owned by the user
      */
     Optional<Notification> findByNotificationIdAndUser_UserId(UUID notificationId, UUID userId);
+
+    /**
+     * Deletes one notification if and only if it belongs to the given user.
+     *
+     * @return number of deleted rows (0 if not found or not owned by user)
+     */
+    long deleteByNotificationIdAndUser_UserId(UUID notificationId, UUID userId);
 
     /**
      * SCH-005: Deletes all read notifications that were created before the cutoff date.

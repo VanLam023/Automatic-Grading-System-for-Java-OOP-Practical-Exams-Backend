@@ -2,8 +2,8 @@ package agsfjope.backend.application.notificationservices;
 
 import agsfjope.backend.application.dtos.responses.notification.NotificationResponse;
 import agsfjope.backend.application.dtos.responses.notification.UnreadCountResponse;
+import org.springframework.data.domain.Page;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -22,7 +22,7 @@ public interface NotificationService {
      * @param filter "all" — all notifications, "unread" — only unread, "read" — only read
      * @return list of matching notifications, newest first
      */
-    List<NotificationResponse> getMyNotifications(String filter);
+    Page<NotificationResponse> getMyNotifications(String filter, int page, int size);
 
     /**
      * NOTI-003: Returns the count of unread notifications for the current user.
@@ -46,6 +46,15 @@ public interface NotificationService {
      * Corresponds to the "Mark all as read" action in the Notification Center.
      */
     void markAllAsRead();
+
+    /**
+     * Deletes one notification owned by the current user.
+     *
+     * @param notificationId UUID of notification
+     * @throws agsfjope.backend.core.exceptions.notification.NotificationNotFoundException
+     *         if not found or not owned by current user
+     */
+    void deleteMyNotification(UUID notificationId);
 
     /**
      * NOTI-001: Internal method — creates and persists a new in-app notification for a user.

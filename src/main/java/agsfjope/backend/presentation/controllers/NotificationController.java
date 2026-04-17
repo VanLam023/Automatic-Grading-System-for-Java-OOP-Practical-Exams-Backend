@@ -2,14 +2,18 @@ package agsfjope.backend.presentation.controllers;
 
 import agsfjope.backend.application.dtos.responses.notification.NotificationResponse;
 import agsfjope.backend.application.dtos.responses.notification.UnreadCountResponse;
+import agsfjope.backend.application.notificationservices.NotificationRealtimeService;
 import agsfjope.backend.application.notificationservices.NotificationService;
+import agsfjope.backend.infrastructure.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +40,7 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final NotificationRealtimeService notificationRealtimeService;
 
     // ─── GET /api/notifications ────────────────────────────────────────────────
 
@@ -55,13 +60,33 @@ public class NotificationController {
     @GetMapping
     @Operation(summary = "Lấy danh sách thông báo", description = "Filter: all | unread | read")
     public ResponseEntity<Map<String, Object>> getNotifications(
-            @RequestParam(defaultValue = "all") String filter) {
+            @RequestParam(defaultValue = "all") String filter,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
 
-        List<NotificationResponse> notifications = notificationService.getMyNotifications(filter);
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.max(1, Math.min(size, 100));
+
+        Page<NotificationResponse> notifications = notificationService
+            .getMyNotifications(filter, safePage, safeSize);
+
+        Map<String, Object> pagination = Map.of(
+            "page", notifications.getNumber(),
+            "size", notifications.getSize(),
+            "totalElements", notifications.getTotalElements(),
+            "totalPages", notifications.getTotalPages(),
+            "isLast", notifications.isLast()
+        );
+
+        Map<String, Object> data = Map.of(
+            "items", notifications.getContent(),
+            "pagination", pagination
+        );
+
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "Lấy danh sách thông báo thành công",
-                "data", notifications,
+            "data", data,
                 "errors", ""
         ));
     }
@@ -125,5 +150,24 @@ public class NotificationController {
                 "data", "",
                 "errors", ""
         ));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Xóa 1 thông báo")
+    public ResponseEntity<Map<String, Object>> deleteNotification(@PathVariable UUID id) {
+        notificationService.deleteMyNotification(id);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Xóa thông báo thành công",
+                "data", "",
+                "errors", ""
+        ));
+    }
+
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "Realtime stream cho thông báo")
+    public SseEmitter streamNotifications() {
+        UUID userId = SecurityUtils.getCurrentUser().getUserId();
+        return notificationRealtimeService.subscribe(userId);
     }
 }
