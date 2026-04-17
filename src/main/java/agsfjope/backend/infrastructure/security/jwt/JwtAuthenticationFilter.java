@@ -3,6 +3,7 @@ package agsfjope.backend.infrastructure.security.jwt;
 import agsfjope.backend.infrastructure.security.CustomUserDetailsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import io.jsonwebtoken.JwtException;
@@ -43,20 +44,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        // Step 1: Read the Authorization header from the request
-        final String authHeader = request.getHeader("Authorization");
+        // Step 1: Read the JWT token from cookies or Authorization header
+        final String jwt = extractJwt(request);
 
-        // Step 2: If header is missing or doesn't start with "Bearer ", skip this filter
+        // Step 2: If no token found, skip this filter
         // This allows public endpoints (like /api/auth/login) to pass through without a token
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (jwt == null) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // Step 3: Extract the JWT token by removing "Bearer " prefix (7 characters)
-        final String jwt = authHeader.substring(7);
-
-        // Step 4: Wrap in try-catch — expired or malformed tokens must NOT crash the filter chain.
+        // Step 3 & 4: Wrap in try-catch — expired or malformed tokens must NOT crash the filter chain.
         // For public endpoints (e.g. /auth/login), Spring Security will still allow the request through.
         try {
             final String username = jwtTokenProvider.extractUsername(jwt);
@@ -97,5 +95,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // Step 5: Always pass the request to the next filter in the chain
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Tries to extract JWT from "accessToken" cookie first.
+     * If not found, falls back to "Authorization: Bearer " header.
+     */
+    private String extractJwt(HttpServletRequest request) {
+        // 1. Try cookie first (HttpOnly, set by backend)
+        if (request.getCookies() != null) {
+            for (Cookie c : request.getCookies()) {
+                if ("accessToken".equals(c.getName())) {
+                    return c.getValue();
+                }
+            }
+        }
+        // 2. Fallback: Authorization header (Swagger, Postman, etc.)
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+        return null;
     }
 }

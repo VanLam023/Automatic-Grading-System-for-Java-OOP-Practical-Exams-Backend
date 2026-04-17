@@ -297,15 +297,6 @@ public class LLMReviewService {
                          - Do NOT invent new criteria, new weights, or hidden bonus/penalty rules.
                          - For each criterion, compute: earnedPoints = maxPoints - deductedPoints (clamp to [0, maxPoints]).
                          - Each deduction MUST cite concrete code evidence (class/method/line snippet context).
-                         - FORBIDDEN CRITERIA (never add these, even if you detect them in the code):
-                           * "Compilation Error", "Compile Error", "Build Error", or any technical penalty
-                             related to whether the code compiles. Compilation is handled by the grading
-                             pipeline separately — it is entirely OUTSIDE the scope of OOP review.
-                           * If you notice compilation issues in the student code, mention them briefly
-                             inside the "evidence" field of the AFFECTED OOP criterion (e.g., missing class
-                             causes encapsulation criterion to fail), but do NOT create a separate criterion for it.
-                           * Do NOT set maxPoints = 0 for any invented criterion — every criterion MUST
-                             come from the exam description with a positive maxPoints value.
                      4. Score consistency is mandatory:
                          - oopScore = SUM(criteriaResults[*].earnedPoints), rounded to 2 decimals.
                          - oopScore MUST be within [0, %s].
@@ -334,6 +325,15 @@ public class LLMReviewService {
                          If no hardcode is found, OMIT the "hardCodedValues" field entirely — do NOT
                          write null, [], or any message like "no hardcode detected".
                          Do NOT include error messages, format strings, or spec-required constants.
+                            9. FORBIDDEN CRITERIA (never add these, even if you detect them in the code):
+                                * "Compilation Error", "Compile Error", "Build Error", or any technical penalty
+                                    related to whether the code compiles. Compilation is handled by the grading
+                                    pipeline separately — it is entirely OUTSIDE the scope of OOP review.
+                                * If you notice compilation issues in the student code, mention them briefly
+                                    inside the "evidence" field of the AFFECTED OOP criterion (e.g., missing class
+                                    causes encapsulation criterion to fail), but do NOT create a separate criterion for it.
+                                * Do NOT set maxPoints = 0 for any invented criterion — every criterion MUST
+                                    come from the exam description with a positive maxPoints value.
 
                 Return exactly this JSON:
                 {

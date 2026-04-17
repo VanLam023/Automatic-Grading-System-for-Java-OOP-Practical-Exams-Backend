@@ -7,7 +7,9 @@ import agsfjope.backend.application.dtos.requests.auth.RefreshTokenRequest;
 import agsfjope.backend.application.dtos.requests.auth.RegisterRequest;
 import agsfjope.backend.application.dtos.requests.auth.ResetPasswordRequest;
 import agsfjope.backend.application.dtos.responses.auth.UserProfileResponse;
+import agsfjope.backend.infrastructure.security.CookieUtils;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -34,6 +36,7 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final CookieUtils cookieUtils;
 
     /**
      * Đăng nhập hệ thống (SD_01_1).
@@ -47,8 +50,17 @@ public class AuthController {
      * @return LoginResponse với {@code accessToken}, {@code refreshToken} và thông tin user
      */
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
         var loginResponse = authService.login(request);
+        
+        // Set cookies
+        response.addHeader("Set-Cookie", cookieUtils.createAccessTokenCookie(loginResponse.getAccessToken(), loginResponse.getExpiresIn()).toString());
+        response.addHeader("Set-Cookie", cookieUtils.createRefreshTokenCookie(loginResponse.getRefreshToken(), 30).toString());
+        
+        // Remove tokens from body payload
+        loginResponse.setAccessToken(null);
+        loginResponse.setRefreshToken(null);
+        
         return ResponseEntity.ok(buildSuccessResponse("MSG-05: Đăng nhập thành công", loginResponse));
     }
 
@@ -63,8 +75,24 @@ public class AuthController {
      * @return LoginResponse với {@code accessToken} mới và cùng {@code refreshToken} cũ
      */
     @PostMapping("/refresh")
-    public ResponseEntity<Map<String, Object>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+    public ResponseEntity<Map<String, Object>> refresh(@CookieValue(name = "refreshToken", required = false) String refreshToken, HttpServletResponse response) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            Map<String, Object> err = new HashMap<>();
+            err.put("success", false);
+            err.put("message", "Refresh token không tồn tại trong cookie");
+            return ResponseEntity.status(401).body(err);
+        }
+
+        RefreshTokenRequest request = new RefreshTokenRequest();
+        request.setRefreshToken(refreshToken);
         var loginResponse = authService.refreshToken(request);
+        
+        response.addHeader("Set-Cookie", cookieUtils.createAccessTokenCookie(loginResponse.getAccessToken(), loginResponse.getExpiresIn()).toString());
+        response.addHeader("Set-Cookie", cookieUtils.createRefreshTokenCookie(loginResponse.getRefreshToken(), 30).toString());
+        
+        loginResponse.setAccessToken(null);
+        loginResponse.setRefreshToken(null);
+        
         return ResponseEntity.ok(buildSuccessResponse("Đã cấp lại Access Token thành công", loginResponse));
     }
 
@@ -80,8 +108,13 @@ public class AuthController {
      * @return thông báo đăng xuất thành công
      */
     @PostMapping("/logout")
-    public ResponseEntity<Map<String, Object>> logout(Authentication authentication) {
+    public ResponseEntity<Map<String, Object>> logout(Authentication authentication, HttpServletResponse response) {
         authService.logout(authentication.getName());
+        
+        for (org.springframework.http.ResponseCookie cookie : cookieUtils.clearCookies()) {
+            response.addHeader("Set-Cookie", cookie.toString());
+        }
+        
         return ResponseEntity.ok(buildSuccessResponse("MSG-06: Đăng xuất thành công", null));
     }
 
