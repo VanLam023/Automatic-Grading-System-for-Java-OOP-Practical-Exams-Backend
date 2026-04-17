@@ -1,6 +1,7 @@
 package agsfjope.backend.application.configservices.impl;
 
 import agsfjope.backend.application.configservices.GradingModeConfigService;
+import agsfjope.backend.application.dtos.requests.config.CreateGradingModeRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateGradingModeRequest;
 import agsfjope.backend.application.dtos.responses.config.GradingModeListResponse;
 import agsfjope.backend.application.dtos.responses.config.GradingModeResponse;
@@ -56,6 +57,34 @@ public class GradingModeConfigServiceImpl implements GradingModeConfigService {
                 .orElseThrow(() -> new ConfigNotFoundException("Không tìm thấy cấu hình Grading Mode: " + mode));
         return toResponse(config);
     }
+
+        @Override
+        @Transactional
+        public void createGradingMode(CreateGradingModeRequest request) {
+                BigDecimal total = request.getTestCaseWeight().add(request.getOopWeight());
+                if (total.compareTo(new BigDecimal("100")) != 0) {
+                        throw new InvalidConfigException("MSG-80: Tổng trọng số TestCaseWeight + OopWeight phải bằng 100");
+                }
+
+                gradingModeConfigRepository.findByMode(request.getMode())
+                                .ifPresent(existing -> {
+                                        throw new InvalidConfigException("Grading Mode đã tồn tại: " + request.getMode());
+                                });
+
+                GradingModeConfig config = GradingModeConfig.builder()
+                                .mode(request.getMode())
+                                .displayName(request.getDisplayName())
+                                .testCaseWeight(request.getTestCaseWeight())
+                                .oopWeight(request.getOopWeight())
+                                .oopCommentOnly(request.getOopCommentOnly())
+                                .failIfZeroTestCase(request.getFailIfZeroTestCase())
+                                .failIfOopViolated(request.getFailIfOopViolated())
+                                .isActive(request.getIsActive())
+                                .description(request.getDescription())
+                                .build();
+
+                gradingModeConfigRepository.save(config);
+        }
 
     @Override
     @Transactional

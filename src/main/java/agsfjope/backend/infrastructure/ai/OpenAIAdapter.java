@@ -81,6 +81,8 @@ public class OpenAIAdapter implements LLMAdapter {
 
     private String buildRequestBody(String prompt, String model) {
         String escaped = escapeJson(prompt);
+        // max_tokens tăng từ 2048 → 16384 để đủ chỗ cho JSON output dài (nhiều tiêu chí OOP).
+        // OpenAI GPT-4o hỗ trợ tối đa 16384 output tokens; các provider khác thường 4096+.
         return """
                 {
                   "model": "%s",
@@ -88,7 +90,7 @@ public class OpenAIAdapter implements LLMAdapter {
                     {"role": "user", "content": "%s"}
                   ],
                   "temperature": 0.2,
-                  "max_tokens": 2048
+                  "max_tokens": 16384
                 }
                 """.formatted(escapeJson(model), escaped);
     }
@@ -100,7 +102,18 @@ public class OpenAIAdapter implements LLMAdapter {
             throw new RuntimeException("OpenAI returned no choices. Response: "
                     + truncate(responseBody, 500));
         }
-        return choices.get(0)
+        JsonNode choice = choices.get(0);
+
+        // [ANTI-TRUNCATION] Kiểm tra finish_reason — nếu là "length" thì JSON bị cắt giữa chừng.
+        // Throw exception để callWithRetry() trong LLMReviewService thử lại.
+        String finishReason = choice.path("finish_reason").asText("");
+        if ("length".equalsIgnoreCase(finishReason)) {
+            throw new RuntimeException(
+                    "[OPENAI-TRUNCATED] Response cut off at max_tokens limit (16384). "
+                    + "Consider shortening source code or reducing analysis length.");
+        }
+
+        return choice
                 .path("message")
                 .path("content")
                 .asText();

@@ -2,6 +2,7 @@ package agsfjope.backend.presentation.controllers;
 
 import agsfjope.backend.application.configservices.GradingModeConfigService;
 import agsfjope.backend.application.configservices.SystemConfigService;
+import agsfjope.backend.application.dtos.requests.config.CreateGradingModeRequest;
 import agsfjope.backend.application.dtos.requests.config.TestAiConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.TestEmailConnectionRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateAiConfigRequest;
@@ -403,6 +404,27 @@ public class SystemAdminConfigController {
         return ResponseEntity.ok(buildSuccessResponse(
                 "Lấy chi tiết Grading Mode thành công",
                 gradingModeConfigService.getGradingModeDetail(mode)));
+    }
+
+    /**
+     * Tạo mới một grading mode configuration.
+     * <p>
+     * Cách gọi đúng:
+     * <ul>
+     * <li>Method: POST</li>
+     * <li>URL: /api/admin/config/grading-modes</li>
+     * <li>Header bắt buộc: Authorization: Bearer &lt;jwt_token&gt;</li>
+     * <li>Header bắt buộc: Content-Type: application/json</li>
+     * </ul>
+     *
+     * @param request dữ liệu tạo mới mode
+     * @return phản hồi thành công
+     */
+    @PostMapping("/grading-modes")
+    public ResponseEntity<Map<String, Object>> createGradingMode(
+            @Valid @RequestBody CreateGradingModeRequest request) {
+        gradingModeConfigService.createGradingMode(request);
+        return ResponseEntity.ok(buildSuccessResponse("Tạo Grading Mode thành công", null));
     }
 
     /**

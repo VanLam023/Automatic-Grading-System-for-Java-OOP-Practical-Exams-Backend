@@ -1,5 +1,6 @@
 package agsfjope.backend.application.configservices;
 
+import agsfjope.backend.application.dtos.requests.config.CreateGradingModeRequest;
 import agsfjope.backend.application.dtos.requests.config.UpdateGradingModeRequest;
 import agsfjope.backend.application.dtos.responses.config.GradingModeListResponse;
 import agsfjope.backend.application.dtos.responses.config.GradingModeResponse;
@@ -24,6 +25,13 @@ public interface GradingModeConfigService {
      * @return grading mode detail
      */
     GradingModeResponse getGradingModeDetail(GradingMode mode);
+
+    /**
+     * Create one grading mode configuration.
+     *
+     * @param request create payload
+     */
+    void createGradingMode(CreateGradingModeRequest request);
 
     /**
      * Update one grading mode configuration.

@@ -263,6 +263,11 @@ public class LLMReviewService {
                 • Checking specific input to return specific answer: e.g., if (id.equals(S001)) return 3.5
                 • All meaningful logic placed inside main() to bypass class structure
 
+                ⚠️ REPORTING RULE FOR HARDCODE:
+                • ONLY mention hardcode in your analysis if you have DETECTED TRUE hardcode.
+                • If no hardcode is found, do NOT write anything about hardcode — skip it entirely.
+                • Do NOT write phrases like "no hardcode detected", "no cheat found", or any equivalent statement.
+
                 Perform a thorough analysis. Note ALL violations with specific examples from the code.
                 """.formatted(
                 request.questionTitle(),
@@ -292,6 +297,15 @@ public class LLMReviewService {
                          - Do NOT invent new criteria, new weights, or hidden bonus/penalty rules.
                          - For each criterion, compute: earnedPoints = maxPoints - deductedPoints (clamp to [0, maxPoints]).
                          - Each deduction MUST cite concrete code evidence (class/method/line snippet context).
+                         - FORBIDDEN CRITERIA (never add these, even if you detect them in the code):
+                           * "Compilation Error", "Compile Error", "Build Error", or any technical penalty
+                             related to whether the code compiles. Compilation is handled by the grading
+                             pipeline separately — it is entirely OUTSIDE the scope of OOP review.
+                           * If you notice compilation issues in the student code, mention them briefly
+                             inside the "evidence" field of the AFFECTED OOP criterion (e.g., missing class
+                             causes encapsulation criterion to fail), but do NOT create a separate criterion for it.
+                           * Do NOT set maxPoints = 0 for any invented criterion — every criterion MUST
+                             come from the exam description with a positive maxPoints value.
                      4. Score consistency is mandatory:
                          - oopScore = SUM(criteriaResults[*].earnedPoints), rounded to 2 decimals.
                          - oopScore MUST be within [0, %s].
@@ -303,12 +317,22 @@ public class LLMReviewService {
                             6. The "comment" field MUST contain EXACTLY ONE line per rubric criterion from the exam.
                                 Do NOT merge criteria into one line and do NOT skip any criterion.
                                 Each line MUST include criterion name and score values of that criterion in this format:
-                                "[N]. [CriterionName] (max [maxPoints] điểm): earned [earnedPoints] điểm, deducted [deductedPoints] điểm - [specific evidence-based comment]"
+                                "[N]. [CriterionName] (tối đa [maxPoints] điểm): đạt được [earnedPoints] điểm, bị trừ [deductedPoints] điểm - [nhận xét cụ thể dựa trên bằng chứng code]"
                                 If there is an anti-cheat criterion, it MUST be the LAST line.
+
+                                *** DISQUALIFICATION EXCEPTION (hardcode/file tampering — all scores = 0) ***
+                                Use ONLY when the ENTIRE submission is disqualified because the student modified
+                                precompiled files provided by the exam (e.g., Main.java, Main.class,
+                                IBook.class, IFile.class, or any other pre-built .class file) or deliberately
+                                hardcoded outputs to bypass all logic. In this case:
+                                - Set ALL criteriaResults earnedPoints = 0, oopScore = 0, isOopViolated = true.
+                                - Write EACH comment line in this simplified format (NO toi-da/dat-duoc/bi-tru):
+                                  "[N]. [CriterionName]: 0 diem - BI HUY do [specific reason]"
                      7. Include "violations" ONLY IF violations are detected.
                          If no violations are found, OMIT the "violations" field entirely.
                      8. Include "hardCodedValues" ONLY IF true hardcode/cheat is detected.
-                         If no hardcode is found, OMIT the "hardCodedValues" field entirely.
+                         If no hardcode is found, OMIT the "hardCodedValues" field entirely — do NOT
+                         write null, [], or any message like "no hardcode detected".
                          Do NOT include error messages, format strings, or spec-required constants.
 
                 Return exactly this JSON:

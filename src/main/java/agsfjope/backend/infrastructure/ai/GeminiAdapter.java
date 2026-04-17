@@ -76,7 +76,7 @@ public class GeminiAdapter implements LLMAdapter {
         String mimeTypePart = responseJson
                 ? ",\n    \"responseMimeType\": \"application/json\""
                 : "";
-        // [PERF-STEP1] maxOutputTokens tăng từ 8192 → 16384 để tránh JSON bị cắt giữa chừng
+        // [PERF-STEP1] maxOutputTokens tăng từ 16384 → 32768 để tránh JSON bị cắt giữa chừng
         // khi analysis prompt dài (nhiều file .java). gemini-3-flash-preview hỗ trợ tối đa 65536 tokens.
         // LƯU Ý: KHÔNG đặt comment Java bên trong text block vì Java KHÔNG strip comment ra —
         // chúng được nhúng nguyên vào chuỗi JSON → gây lỗi 400 Bad Request từ Gemini API.
@@ -90,7 +90,7 @@ public class GeminiAdapter implements LLMAdapter {
                   ],
                   "generationConfig": {
                     "temperature": 0.2,
-                    "maxOutputTokens": 16384%s
+                    "maxOutputTokens": 32768%s
                   }
                 }
                 """.formatted(escaped, mimeTypePart);
@@ -103,7 +103,19 @@ public class GeminiAdapter implements LLMAdapter {
             throw new RuntimeException("Gemini returned no candidates. Response: "
                     + truncate(responseBody, 500));
         }
-        return candidates.get(0)
+        JsonNode candidate = candidates.get(0);
+
+        // [ANTI-TRUNCATION] Kiểm tra finishReason — nếu là MAX_TOKENS thì JSON bị cắt giữa chừng.
+        // Throw exception để callWithRetry() trong LLMReviewService nhận ra và thử lại.
+        // Không nên parse JSON lỗi vì sẽ gây ra IllegalArgumentException → failure result sai.
+        String finishReason = candidate.path("finishReason").asText("");
+        if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) {
+            throw new RuntimeException(
+                    "[GEMINI-TRUNCATED] Response cut off at MAX_TOKENS limit (32768). "
+                    + "Consider shortening source code or reducing analysis length.");
+        }
+
+        return candidate
                 .path("content")
                 .path("parts")
                 .get(0)
