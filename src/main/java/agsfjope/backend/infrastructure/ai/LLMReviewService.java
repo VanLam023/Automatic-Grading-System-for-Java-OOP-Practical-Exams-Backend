@@ -325,15 +325,11 @@ public class LLMReviewService {
                          If no hardcode is found, OMIT the "hardCodedValues" field entirely — do NOT
                          write null, [], or any message like "no hardcode detected".
                          Do NOT include error messages, format strings, or spec-required constants.
-                            9. FORBIDDEN CRITERIA (never add these, even if you detect them in the code):
-                                * "Compilation Error", "Compile Error", "Build Error", or any technical penalty
-                                    related to whether the code compiles. Compilation is handled by the grading
-                                    pipeline separately — it is entirely OUTSIDE the scope of OOP review.
-                                * If you notice compilation issues in the student code, mention them briefly
-                                    inside the "evidence" field of the AFFECTED OOP criterion (e.g., missing class
-                                    causes encapsulation criterion to fail), but do NOT create a separate criterion for it.
-                                * Do NOT set maxPoints = 0 for any invented criterion — every criterion MUST
-                                    come from the exam description with a positive maxPoints value.
+                            9. PRESERVE IDENTIFIER NAMES - variable names, method names, class names,
+                                 interface names, field names from the exam or student code MUST be kept
+                                 in their ORIGINAL form. Do NOT translate identifiers to Vietnamese.
+                                 Correct: `getPrice()`, `bookList`, `IBook`, `addBook()`
+                                 WRONG:   `layGia()`, `danhSachSach`, `GiaoTienSach`, `themSach()`
 
                 Return exactly this JSON:
                 {
