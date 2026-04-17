@@ -21,7 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -47,6 +50,9 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
 
     /** Threshold: a criterion score below this value is considered a violation. */
     private static final BigDecimal VIOLATION_THRESHOLD = new BigDecimal("2");
+        private static final List<String> LEGACY_CRITERIA_KEYS = List.of(
+            "encapsulation", "inheritance", "polymorphism", "designQuality", "codeIntegrity"
+        );
 
     private final BlockRepository          blockRepository;
     private final SubmissionRepository     submissionRepository;
@@ -175,6 +181,7 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                     .polymorphismViolations(0).polymorphismViolationRate(0)
                     .designQualityViolations(0).designQualityViolationRate(0)
                     .codeIntegrityViolations(0).codeIntegrityViolationRate(0)
+                    .criteriaStats(List.of())
                     .build();
         }
 
@@ -188,6 +195,7 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
         // Đếm vi phạm từng tiêu chí (score < 2)
         long encViolations = 0, inhViolations = 0, polyViolations = 0;
         long dqViolations = 0, ciViolations = 0;
+        Map<String, CriterionAccumulator> criteriaMap = new LinkedHashMap<>();
 
         for (AIReview review : reviews) {
             // Tính tổng OOP score (dùng để tính trung bình)
@@ -213,13 +221,26 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                     hardCodeCount++;
                 }
 
-                // Đếm vi phạm từng tiêu chí: nếu điểm < 2 thì tính là vi phạm
-                // (Mỗi tiêu chí max = 2, ngưỡng vi phạm = < 2)
-                if (isCriterionViolated(root, "encapsulation"))  encViolations++;
-                if (isCriterionViolated(root, "inheritance"))    inhViolations++;
-                if (isCriterionViolated(root, "polymorphism"))   polyViolations++;
-                if (isCriterionViolated(root, "designQuality"))  dqViolations++;
-                if (isCriterionViolated(root, "codeIntegrity"))  ciViolations++;
+                // Ưu tiên format động: criteriaResults[]
+                boolean hasDynamicCriteria = parseDynamicCriteria(root, criteriaMap);
+
+                // Fallback legacy nếu không có criteriaResults[]
+                if (!hasDynamicCriteria) {
+                    // Guard: format prompt mới có thể lưu placeholder 0 cho 5 tiêu chí cũ.
+                    // Nếu cả 5 đều = 0 thì bỏ qua để tránh đếm sai (false violations).
+                    if (isLegacyPlaceholderAllZero(root)) {
+                        continue;
+                    }
+
+                    if (isCriterionViolated(root, "encapsulation"))  encViolations++;
+                    if (isCriterionViolated(root, "inheritance"))    inhViolations++;
+                    if (isCriterionViolated(root, "polymorphism"))   polyViolations++;
+                    if (isCriterionViolated(root, "designQuality"))  dqViolations++;
+                    if (isCriterionViolated(root, "codeIntegrity"))  ciViolations++;
+
+                    // Đồng thời đưa vào map động để FE render thống nhất
+                    addLegacyCriteriaToMap(root, criteriaMap);
+                }
 
             } catch (Exception e) {
                 // JSON parse thất bại — bỏ qua review này, không ảnh hưởng thống kê
@@ -235,6 +256,11 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
         // vì 1 submission có thể có nhiều AIReview (1 per question), ta dùng totalReviews
         // cho các chỉ số per-review, nhưng gom theo submission bằng gradedCount
         long denominator = totalReviews; // dùng totalReviews vì mỗi AIReview = 1 câu hỏi
+
+        List<CriterionStat> criteriaStats = criteriaMap.entrySet().stream()
+            .map(entry -> toCriterionStat(entry.getKey(), entry.getValue()))
+            .sorted(Comparator.comparing(CriterionStat::getName, String.CASE_INSENSITIVE_ORDER))
+            .toList();
 
         return AiOopAnalysis.builder()
                 .avgOopScore(avgOop)
@@ -252,7 +278,69 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                 .designQualityViolationRate(denominator > 0 ? round(dqViolations * 100.0 / denominator) : 0)
                 .codeIntegrityViolations(ciViolations)
                 .codeIntegrityViolationRate(denominator > 0 ? round(ciViolations * 100.0 / denominator) : 0)
+                .criteriaStats(criteriaStats)
                 .build();
+    }
+
+    private boolean parseDynamicCriteria(JsonNode root, Map<String, CriterionAccumulator> criteriaMap) {
+        JsonNode arr = root.get("criteriaResults");
+        if (arr == null || !arr.isArray() || arr.isEmpty()) return false;
+
+        boolean parsedAny = false;
+        for (JsonNode item : arr) {
+            if (item == null || item.isNull()) continue;
+
+            String name = textOrNull(item.get("name"));
+            BigDecimal score = toBigDecimal(item.get("score"));
+            if (name == null || score == null) continue;
+
+            BigDecimal maxScore = toBigDecimal(item.get("maxScore"));
+            Boolean violated = item.has("violated") && !item.get("violated").isNull()
+                    ? item.get("violated").asBoolean()
+                    : null;
+
+            boolean isViolated = violated != null
+                    ? violated
+                    : (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0
+                        ? score.compareTo(maxScore) < 0
+                        : score.compareTo(VIOLATION_THRESHOLD) < 0);
+
+            criteriaMap.computeIfAbsent(name.trim(), k -> new CriterionAccumulator())
+                    .add(score, isViolated);
+            parsedAny = true;
+        }
+        return parsedAny;
+    }
+
+    private void addLegacyCriteriaToMap(JsonNode root, Map<String, CriterionAccumulator> criteriaMap) {
+        putLegacyCriterion(root, criteriaMap, "encapsulation", "Encapsulation");
+        putLegacyCriterion(root, criteriaMap, "inheritance", "Inheritance & Relationships");
+        putLegacyCriterion(root, criteriaMap, "polymorphism", "Polymorphism");
+        putLegacyCriterion(root, criteriaMap, "designQuality", "Design Quality");
+        putLegacyCriterion(root, criteriaMap, "codeIntegrity", "Code Integrity / Anti-Cheat");
+    }
+
+    private void putLegacyCriterion(JsonNode root, Map<String, CriterionAccumulator> criteriaMap,
+                                    String key, String displayName) {
+        BigDecimal score = toBigDecimal(root.get(key));
+        if (score == null) return;
+        boolean violated = score.compareTo(VIOLATION_THRESHOLD) < 0;
+        criteriaMap.computeIfAbsent(displayName, k -> new CriterionAccumulator())
+                .add(score, violated);
+    }
+
+    private boolean isLegacyPlaceholderAllZero(JsonNode root) {
+        boolean hasAny = false;
+        for (String key : LEGACY_CRITERIA_KEYS) {
+            JsonNode n = root.get(key);
+            if (n == null || n.isNull()) continue;
+            hasAny = true;
+            BigDecimal v = toBigDecimal(n);
+            if (v == null || v.compareTo(BigDecimal.ZERO) != 0) {
+                return false;
+            }
+        }
+        return hasAny;
     }
 
     /**
@@ -270,6 +358,50 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
             return score.compareTo(VIOLATION_THRESHOLD) < 0;
         } catch (NumberFormatException e) {
             return false;
+        }
+    }
+
+    private String textOrNull(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        String s = node.asText(null);
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private BigDecimal toBigDecimal(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        try {
+            return new BigDecimal(node.asText()).setScale(2, RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private CriterionStat toCriterionStat(String name, CriterionAccumulator acc) {
+        long sample = acc.sampleSize;
+        BigDecimal avg = sample > 0
+                ? acc.sumScore.divide(BigDecimal.valueOf(sample), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        double rate = sample > 0 ? round(acc.violationCount * 100.0 / sample) : 0;
+
+        return CriterionStat.builder()
+                .name(name)
+                .avgScore(avg)
+                .violationCount(acc.violationCount)
+                .violationRate(rate)
+                .sampleSize(sample)
+                .build();
+    }
+
+    private static final class CriterionAccumulator {
+        private BigDecimal sumScore = BigDecimal.ZERO;
+        private long violationCount = 0;
+        private long sampleSize = 0;
+
+        private void add(BigDecimal score, boolean violated) {
+            if (score == null) return;
+            sumScore = sumScore.add(score);
+            sampleSize++;
+            if (violated) violationCount++;
         }
     }
 

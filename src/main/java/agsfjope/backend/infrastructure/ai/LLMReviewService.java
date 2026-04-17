@@ -287,31 +287,49 @@ public class LLMReviewService {
                 RULES:
                 1. Return ONLY valid JSON — no markdown, no text outside JSON
                 2. All comments and violation descriptions must be in: %s
-                3. oopScore = total earned score for this question (max = %s as defined in the exam).
-                   Distribute points proportionally across the applicable criteria listed in the exam description.
-                     4. isOopViolated = true if the student earned LESS THAN 50%% of the max score
+                     3. STRICT RUBRIC SCORING:
+                         - Use ONLY scoring criteria and point values explicitly defined in the exam description.
+                         - Do NOT invent new criteria, new weights, or hidden bonus/penalty rules.
+                         - For each criterion, compute: earnedPoints = maxPoints - deductedPoints (clamp to [0, maxPoints]).
+                         - Each deduction MUST cite concrete code evidence (class/method/line snippet context).
+                     4. Score consistency is mandatory:
+                         - oopScore = SUM(criteriaResults[*].earnedPoints), rounded to 2 decimals.
+                         - oopScore MUST be within [0, %s].
+                         - If the exam rubric total differs from %s, normalize proportionally to %s and explain briefly in comment.
+                     5. isOopViolated = true if the student earned LESS THAN 50%% of the max score
                          (i.e., oopScore < %s * 0.5).
                          Hardcode findings must be reflected in score deduction/comments, but do NOT
                          automatically set isOopViolated=true unless the final criteria-based result justifies it.
-                5. The "comment" field MUST list each graded criterion on a separate numbered line:
-                   - Student meets the criterion:  "[N]. [CriterionName]: [score] điểm - [specific positive feedback, cite class/method names]"
-                   - Student violates the criterion: "[N]. [CriterionName]: -[deduction] điểm - [specific violation with code example]"
-                   - Anti-cheat (Code Integrity) MUST always be the LAST item in the list.
-                     6. Include "violations" ONLY IF violations are detected.
+                            6. The "comment" field MUST contain EXACTLY ONE line per rubric criterion from the exam.
+                                Do NOT merge criteria into one line and do NOT skip any criterion.
+                                Each line MUST include criterion name and score values of that criterion in this format:
+                                "[N]. [CriterionName] (max [maxPoints] điểm): earned [earnedPoints] điểm, deducted [deductedPoints] điểm - [specific evidence-based comment]"
+                                If there is an anti-cheat criterion, it MUST be the LAST line.
+                     7. Include "violations" ONLY IF violations are detected.
                          If no violations are found, OMIT the "violations" field entirely.
-                     7. Include "hardCodedValues" ONLY IF true hardcode/cheat is detected.
+                     8. Include "hardCodedValues" ONLY IF true hardcode/cheat is detected.
                          If no hardcode is found, OMIT the "hardCodedValues" field entirely.
                          Do NOT include error messages, format strings, or spec-required constants.
 
                 Return exactly this JSON:
                 {
                   "oopScore": <number 0-%s>,
-                                    "violations": ["<specific violation with code example>"] (optional; omit if none),
-                                    "hardCodedValues": ["<only TRUE cheat values — NOT error messages or spec-required constants>"] (optional; omit if none),
-                  "comment": "<numbered list of criteria results in %s — follow format from RULE 5. Each criterion on a new line.>",
+                        "criteriaResults": [
+                          {
+                             "name": "<criterion name from exam>",
+                             "maxPoints": <number>,
+                             "deductedPoints": <number>,
+                             "earnedPoints": <number>,
+                             "status": "met|partial|violated",
+                             "evidence": "<specific class/method/code evidence>"
+                          }
+                        ],
+                        "violations": ["<specific violation with code example>"],
+                        "hardCodedValues": ["<only TRUE cheat values — NOT error messages or spec-required constants>"],
+                  "comment": "<numbered list in %s — exactly one line per criterion, include max/earned/deducted points per line as in RULE 6>",
                   "isOopViolated": <true|false>
                 }
-                """.formatted(analysis, language, maxScoreStr, maxScoreStr, maxScoreStr, language);
+                     """.formatted(analysis, language, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr, language);
     }
 
     // ─── RESULT PARSING ──────────────────────────────────────────────────────

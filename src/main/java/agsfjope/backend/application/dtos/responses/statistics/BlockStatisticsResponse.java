@@ -139,6 +139,29 @@ public class BlockStatisticsResponse {
         private long codeIntegrityViolations;
         /** Percentage of Code Integrity violations (0..100). */
         private double codeIntegrityViolationRate;
+
+        /** Dynamic per-criterion statistics (for flexible rubric mode). */
+        private List<CriterionStat> criteriaStats;
+    }
+
+    /**
+     * Dynamic criterion statistic entry for flexible AI rubric.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CriterionStat {
+        /** Criterion display name, e.g. "Encapsulation". */
+        private String name;
+        /** Average score of this criterion across reviews. */
+        private BigDecimal avgScore;
+        /** Number of reviews violating this criterion. */
+        private long violationCount;
+        /** Percentage of violations for this criterion (0..100). */
+        private double violationRate;
+        /** Number of reviews where this criterion was evaluated. */
+        private long sampleSize;
     }
 
     /**
