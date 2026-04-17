@@ -58,6 +58,8 @@ class ExamServiceImplTest {
     @Mock private BlockRepository blockRepository;
     @Mock private BlockService blockService;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+
     @InjectMocks
     private ExamServiceImpl examService;
 

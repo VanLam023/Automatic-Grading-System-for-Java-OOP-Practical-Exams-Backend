@@ -23,6 +23,9 @@ import agsfjope.backend.core.repositories.auth.RefreshTokenRepository;
 import agsfjope.backend.core.repositories.auth.RoleRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
 import agsfjope.backend.infrastructure.security.jwt.JwtTokenProvider;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.infrastructure.audit.AuditLogHelper;
+import agsfjope.backend.core.enums.AuditAction;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -47,6 +50,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final AuditLogHelper auditLogHelper;
 
     /**
      * Full login flow following SD_01_1_Login:
@@ -116,6 +120,10 @@ public class AuthServiceImpl implements AuthService {
         refreshTokenRepository.save(refreshTokenEntity);
 
         // === STEP 8: Build and return the LoginResponse DTO ===
+        
+        // --- MANUAL AUDIT LOG FOR LOGIN ---
+        auditLogHelper.logWithExplicitUser(user.getUserId(), AuditAction.LOGIN, "USER", user.getUserId(), null, null);
+
         return LoginResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(rawRefreshToken)
@@ -206,6 +214,7 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     @Transactional
+    @Auditable(action = AuditAction.LOGOUT, entityType = "USER")
     public void logout(String username) {
 
         // === STEP 1: Load the User entity from DB ===
@@ -371,6 +380,9 @@ public class AuthServiceImpl implements AuthService {
         // === STEP 3: Mark token as consumed so it cannot be replayed ===
         tokenEntity.setIsUsed(true);
         passwordResetTokenRepository.save(tokenEntity);
+        
+        // --- MANUAL AUDIT LOG FOR PASSWORD RESET ---
+        auditLogHelper.logWithExplicitUser(user.getUserId(), AuditAction.UPDATE, "USER", user.getUserId(), null, null);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

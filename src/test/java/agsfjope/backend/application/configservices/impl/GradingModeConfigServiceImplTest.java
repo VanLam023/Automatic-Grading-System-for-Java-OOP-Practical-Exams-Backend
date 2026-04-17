@@ -48,6 +48,8 @@ class GradingModeConfigServiceImplTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+
     @InjectMocks
     private GradingModeConfigServiceImpl service;
 

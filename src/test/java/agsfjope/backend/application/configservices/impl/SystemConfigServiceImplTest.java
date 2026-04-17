@@ -37,6 +37,8 @@ class SystemConfigServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private AesEncryptionUtil aesEncryptionUtil;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+
     @InjectMocks
     private SystemConfigServiceImpl systemConfigService;
 

@@ -8,6 +8,7 @@ import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.grading.AIReviewRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
+import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import agsfjope.backend.testutils.TestDataFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -42,6 +43,7 @@ class GradingQueryServiceTest {
     @Mock private TestCaseResultRepository testCaseResultRepository;
     @Mock private AIReviewRepository       aiReviewRepository;
     @Mock private SubmissionRepository     submissionRepository;
+    @Mock private AnswerRepository         answerRepository;
     // ObjectMapper dùng real bean để test JSON parsing trong toAiDetail()
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -209,7 +211,9 @@ class GradingQueryServiceTest {
                 .thenReturn(Optional.of(submission));
         when(gradingResultRepository.findBySubmission_SubmissionId(submissionId))
                 .thenReturn(Optional.of(gradingResult));
-        // No TC results — answers list will be empty
+        // No answers — answers list will be empty
+        when(answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId))
+                .thenReturn(List.of());
         when(testCaseResultRepository.findByAnswer_Submission_SubmissionIdOrderByTestCase_TestCaseNumberAsc(submissionId))
                 .thenReturn(List.of());
         when(aiReviewRepository.findByAnswer_Submission_SubmissionId(submissionId))
@@ -267,6 +271,8 @@ class GradingQueryServiceTest {
         UUID requesterId = UUID.randomUUID();
         when(gradingResultRepository.findBySubmission_SubmissionId(submissionId))
                 .thenReturn(Optional.of(gradingResult));
+        when(answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId))
+                .thenReturn(List.of());
         when(testCaseResultRepository.findByAnswer_Submission_SubmissionIdOrderByTestCase_TestCaseNumberAsc(submissionId))
                 .thenReturn(List.of());
         when(aiReviewRepository.findByAnswer_Submission_SubmissionId(submissionId))
@@ -348,6 +354,8 @@ class GradingQueryServiceTest {
                 .thenReturn(Optional.of(gradingResult));
         when(testCaseResultRepository.findByAnswer_Submission_SubmissionIdOrderByTestCase_TestCaseNumberAsc(submissionId))
                 .thenReturn(List.of()); // no TC results — keep simple
+        when(answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId))
+                .thenReturn(List.of());
         when(aiReviewRepository.findByAnswer_Submission_SubmissionId(submissionId))
                 .thenReturn(List.of(aiReview));
 
@@ -381,6 +389,8 @@ class GradingQueryServiceTest {
                 .thenReturn(Optional.of(gradingResult));
         when(testCaseResultRepository.findByAnswer_Submission_SubmissionIdOrderByTestCase_TestCaseNumberAsc(submissionId))
                 .thenReturn(List.of()); // no TC results to trigger answer mapping
+        when(answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId))
+                .thenReturn(List.of());
         when(aiReviewRepository.findByAnswer_Submission_SubmissionId(submissionId))
                 .thenReturn(List.of(badAiReview));
 

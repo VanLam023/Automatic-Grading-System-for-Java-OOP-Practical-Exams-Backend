@@ -38,6 +38,7 @@ class AuthServiceImplTest {
     @Mock private JwtTokenProvider jwtTokenProvider;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private EmailService emailService;
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
 
     @InjectMocks
     private AuthServiceImpl authService;

@@ -54,14 +54,21 @@ public class AuditLogHelper {
      */
     public void log(AuditAction action, String entityType, UUID entityId,
                     Object oldValues, Object newValues) {
+        logWithExplicitUser(extractCurrentUserId(), action, entityType, entityId, oldValues, newValues);
+    }
+
+    /**
+     * Records an audit log entry with an explicit user ID (e.g. for Login).
+     */
+    public void logWithExplicitUser(UUID explicitUserId, AuditAction action, String entityType, UUID entityId,
+                                    Object oldValues, Object newValues) {
         try {
-            UUID userId = extractCurrentUserId();
             String ipAddress = extractIpAddress();
             String userAgent = extractUserAgent();
             String oldJson = serializeToJson(oldValues);
             String newJson = serializeToJson(newValues);
 
-            auditLogService.logAction(userId, action, entityType, entityId,
+            auditLogService.logAction(explicitUserId, action, entityType, entityId,
                     oldJson, newJson, ipAddress, userAgent);
         } catch (Exception e) {
             // Never let audit logging break the calling operation

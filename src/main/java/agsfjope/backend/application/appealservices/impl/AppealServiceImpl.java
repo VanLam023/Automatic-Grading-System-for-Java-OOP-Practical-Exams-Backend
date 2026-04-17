@@ -21,6 +21,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -66,6 +68,7 @@ public class AppealServiceImpl implements AppealService {
      */
     @Override
     @Transactional
+    @Auditable(action = AuditAction.CREATE, entityType = "APPEAL")
     public CreateAppealResponse createAppeal(UUID studentId, CreateAppealRequest request) {
         log.info("[Appeal] Student {} đang tạo appeal cho submission {}",
                 studentId, request.getSubmissionId());

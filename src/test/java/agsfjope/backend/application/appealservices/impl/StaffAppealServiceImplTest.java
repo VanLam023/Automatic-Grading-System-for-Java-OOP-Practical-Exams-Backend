@@ -56,6 +56,9 @@ class StaffAppealServiceImplTest {
     @Mock private WalletService walletService;
     @Mock private NotificationService notificationService;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+    @Mock private agsfjope.backend.core.repositories.submission.AnswerRepository answerRepository;
+
     @InjectMocks
     private StaffAppealServiceImpl staffAppealService;
 

@@ -29,6 +29,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -118,6 +120,7 @@ public class StaffAppealServiceImpl implements StaffAppealService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.ASSIGN, entityType = "APPEAL")
     public StaffAppealDetailResponse assignLecturer(UUID appealId, AssignAppealRequest request, UUID staffId) {
         log.info("[Staff] Phân công appeal {} cho lecturer {}", appealId, request.getLecturerId());
 

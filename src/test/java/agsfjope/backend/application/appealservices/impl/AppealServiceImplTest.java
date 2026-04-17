@@ -45,6 +45,9 @@ class AppealServiceImplTest {
     @Mock private SystemConfigRepository systemConfigRepository;
     @Mock private WalletService walletService;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+    @Mock private agsfjope.backend.application.notificationservices.NotificationService notificationService;
+
     @InjectMocks
     private AppealServiceImpl appealService;
 

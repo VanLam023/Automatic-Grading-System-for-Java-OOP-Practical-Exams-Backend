@@ -56,6 +56,8 @@ class WalletServiceImplTest {
     @Mock
     private SystemConfigRepository systemConfigRepository;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+
     @InjectMocks
     private WalletServiceImpl walletService;
 
@@ -234,8 +236,8 @@ class WalletServiceImplTest {
 
         DepositRequest request = new DepositRequest();
         request.setAmount(new BigDecimal("100000"));
-        request.setReturnUrl("http://return");
-        request.setCancelUrl("http://cancel");
+        request.setReturnUrl("http://localhost:5173/return");
+        request.setCancelUrl("http://localhost:5173/cancel");
 
         when(userRepository.findById(studentId)).thenReturn(Optional.of(student));
         
@@ -252,7 +254,7 @@ class WalletServiceImplTest {
                 "linkId123", "http://checkout", "http://qr", "PENDING"
         );
         when(paymentGatewayPort.createPaymentLink(anyLong(), eq(new BigDecimal("100000")), eq("SE12345"),
-                eq("http://return"), eq("http://cancel"))).thenReturn(linkResult);
+                eq("http://localhost:5173/return"), eq("http://localhost:5173/cancel"))).thenReturn(linkResult);
 
         // Act
         DepositResponse response = walletService.deposit(studentId, request);
@@ -273,6 +275,8 @@ class WalletServiceImplTest {
 
         DepositRequest request = new DepositRequest();
         request.setAmount(new BigDecimal("100000"));
+        request.setReturnUrl("http://localhost:5173/return");
+        request.setCancelUrl("http://localhost:5173/cancel");
 
         when(userRepository.findById(studentId)).thenReturn(Optional.of(student));
         when(systemConfigRepository.findByConfigKey(anyString())).thenReturn(Optional.empty()); // use default
@@ -364,7 +368,7 @@ class WalletServiceImplTest {
 
         // Act & Assert
         Exception e = assertThrows(IllegalStateException.class, () -> walletService.requestWithdrawal(studentId, request));
-        assertTrue(e.getMessage().contains("Số dư ví không đủ"));
+        assertTrue(e.getMessage().contains("Số dư có thể rút hiện tại không đủ"));
     }
 
     @Test

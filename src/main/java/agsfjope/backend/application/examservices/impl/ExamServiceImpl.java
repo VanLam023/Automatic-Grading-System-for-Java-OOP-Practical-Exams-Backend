@@ -14,6 +14,9 @@ import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.core.repositories.exam.ExamRepository;
 import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.infrastructure.security.SecurityUtils;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.infrastructure.audit.AuditLogHelper;
+import agsfjope.backend.core.enums.AuditAction;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +24,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import agsfjope.backend.core.repositories.block.BlockRepository;
 
 import java.time.LocalDate;
 import java.time.Month;
@@ -51,6 +55,7 @@ public class ExamServiceImpl implements ExamService {
     private final ExamRepository examRepository;
     private final SystemConfigRepository systemConfigRepository;
     private final BlockRepository blockRepository;
+    private final AuditLogHelper auditLogHelper;
 
     /**
      * Injected lazily to avoid circular dependency:
@@ -84,6 +89,7 @@ public class ExamServiceImpl implements ExamService {
      */
     @Override
     @Transactional
+    @Auditable(action = AuditAction.CREATE, entityType = "EXAM")
     public ExamResponse createExam(CreateExamRequest request) {
         User currentUser = SecurityUtils.getCurrentUser();
 
@@ -228,6 +234,9 @@ public class ExamServiceImpl implements ExamService {
             );
         }
 
+        // --- MANUAL AUDIT LOG (Old values) ---
+        ExamResponse oldData = mapToResponse(exam);
+
         // Apply updates
         if (request.getName()      != null) exam.setName(request.getName());
         if (request.getSemester()  != null) exam.setSemester(request.getSemester());
@@ -236,7 +245,12 @@ public class ExamServiceImpl implements ExamService {
         if (request.getEndTime()   != null) exam.setEndTime(request.getEndTime());
 
         examRepository.save(exam);
-        return mapToResponse(exam);
+        
+        // --- MANUAL AUDIT LOG (New values) ---
+        ExamResponse newData = mapToResponse(exam);
+        auditLogHelper.log(AuditAction.UPDATE, "EXAM", exam.getExamId(), oldData, newData);
+
+        return newData;
     }
 
     /**
@@ -252,11 +266,19 @@ public class ExamServiceImpl implements ExamService {
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy kỳ thi với ID: " + examId));
 
         OffsetDateTime now = OffsetDateTime.now();
+        
+        // --- MANUAL AUDIT LOG (Old values) ---
+        ExamResponse oldData = mapToResponse(exam);
 
         // ✅ Trường hợp 1: Kỳ thi đã kết thúc → luôn cho phép xóa (dù có submission)
         if (!now.isBefore(exam.getEndTime())) {
             exam.setDeletedAt(now);
             examRepository.save(exam);
+            
+            // --- MANUAL AUDIT LOG (New values) ---
+            ExamResponse newData1 = mapToResponse(exam);
+            auditLogHelper.log(AuditAction.DELETE, "EXAM", exam.getExamId(), oldData, newData1);
+            
             return;
         }
 
@@ -273,6 +295,10 @@ public class ExamServiceImpl implements ExamService {
         // ✅ Trường hợp 3: Kỳ thi chưa kết thúc nhưng tất cả blocks cách hơn 14 ngày → cho xóa
         exam.setDeletedAt(now);
         examRepository.save(exam);
+        
+        // --- MANUAL AUDIT LOG (New values) ---
+        ExamResponse newData2 = mapToResponse(exam);
+        auditLogHelper.log(AuditAction.DELETE, "EXAM", exam.getExamId(), oldData, newData2);
     }
 
     // ─────────────────────────────────────────────────────────

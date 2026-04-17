@@ -202,7 +202,8 @@ public class TestDataFactory {
                 createPlainConfig("SMTP_PASSWORD", "secret"),
                 createPlainConfig("SMTP_FROM_EMAIL", "noreply@fpt.edu.vn"),
                 createPlainConfig("DEFAULT_GRADING_MODE", "MODE_1"),
-                createPlainConfig("APPEAL_DEADLINE_DAYS", "7")
+                createPlainConfig("APPEAL_DEADLINE_DAYS", "7"),
+                createPlainConfig("GRADING_PASS_THRESHOLD", "8.0")
         );
     }
 

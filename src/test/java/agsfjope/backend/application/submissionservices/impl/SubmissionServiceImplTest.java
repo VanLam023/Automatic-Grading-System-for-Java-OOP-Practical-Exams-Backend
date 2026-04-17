@@ -65,6 +65,9 @@ class SubmissionServiceImplTest {
     @Mock private MinioConfig.BucketConfig bucketConfig;
     @Mock private SubmissionZipParser   parser;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+    @Mock private agsfjope.backend.application.notificationservices.NotificationService notificationService;
+
     @InjectMocks
     private SubmissionServiceImpl submissionService;
 

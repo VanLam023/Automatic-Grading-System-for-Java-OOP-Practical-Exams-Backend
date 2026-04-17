@@ -22,6 +22,8 @@ import agsfjope.backend.infrastructure.security.AesEncryptionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -94,6 +96,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "SYSTEM_CONFIG")
     public void updateAiConfig(UpdateAiConfigRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
 
@@ -326,6 +329,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "SYSTEM_CONFIG")
     public void updatePayosConfig(UpdatePayosConfigRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
 
@@ -355,6 +359,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "SYSTEM_CONFIG")
     public void updateSystemSettings(UpdateSystemSettingsRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
 
@@ -366,6 +371,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "SYSTEM_CONFIG")
     public void updateEmailConfig(UpdateEmailConfigRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
 
@@ -379,6 +385,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "SYSTEM_CONFIG")
     public void updatePassThreshold(UpdatePassThresholdRequest request, String updatedByUsername) {
         User updatedBy = getUserOrThrow(updatedByUsername);
         saveConfig("GRADING_PASS_THRESHOLD", request.getPassThreshold().toPlainString(), false, updatedBy);

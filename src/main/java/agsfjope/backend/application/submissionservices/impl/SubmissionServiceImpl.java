@@ -24,6 +24,8 @@ import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import agsfjope.backend.application.ports.out.FileStoragePort;
 import agsfjope.backend.infrastructure.storage.parser.ParsedSubmission;
 import agsfjope.backend.infrastructure.storage.parser.SubmissionZipParser;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -80,6 +82,7 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.SUBMIT, entityType = "SUBMISSION")
     public SubmissionResponse submit(UUID examId, UUID blockId, UUID studentId, MultipartFile file) {
         log.info("SubmissionService.submit: examId={}, blockId={}, studentId={}, file={}",
                 examId, blockId, studentId, file.getOriginalFilename());

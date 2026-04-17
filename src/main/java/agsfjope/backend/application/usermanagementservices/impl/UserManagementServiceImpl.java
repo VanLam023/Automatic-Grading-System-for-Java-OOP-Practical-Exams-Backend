@@ -20,6 +20,9 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.infrastructure.audit.AuditLogHelper;
+import agsfjope.backend.core.enums.AuditAction;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +54,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final AuditLogHelper auditLogHelper;
 
     /**
      * Bulk-imports student accounts from an uploaded Excel (.xlsx) file.
@@ -278,6 +282,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.CREATE, entityType = "USER")
     public agsfjope.backend.application.dtos.responses.user.CreateUserResponse createUser(
             agsfjope.backend.application.dtos.requests.user.CreateUserRequest request) {
 
@@ -393,9 +398,16 @@ public class UserManagementServiceImpl implements UserManagementService {
                     "Tài khoản '" + user.getUsername() + "' đã bị khóa trước đó.");
         }
 
+        // --- MANUAL AUDIT LOG (Old values) ---
+        UserDetailResponse oldData = mapToUserDetailResponse(user);
+
         // ── 4. Lock account only ───────────────────────────────────────────
         user.setIsLocked(true);
         userRepository.save(user);
+
+        // --- MANUAL AUDIT LOG (New values) ---
+        UserDetailResponse newData = mapToUserDetailResponse(user);
+        auditLogHelper.log(AuditAction.DELETE, "USER", user.getUserId(), oldData, newData);
 
         log.info("[UserManagement] Locked user '{}' (ID: {}).", user.getUsername(), userId);
     }
@@ -526,6 +538,9 @@ public class UserManagementServiceImpl implements UserManagementService {
                     "Tài khoản '" + user.getUsername() + "' đã bị xoá, không thể chỉnh sửa.");
         }
 
+        // --- MANUAL AUDIT LOG (Old values) ---
+        UserDetailResponse oldData = mapToUserDetailResponse(user);
+
         // ── 4. Update fullName ──────────────────────────────────────────────
         if (request.getFullName() != null && !request.getFullName().isBlank()) {
             String fullName = request.getFullName().strip().replaceAll("\\s{2,}", " ");
@@ -616,9 +631,14 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         // ── 10. Save and return ─────────────────────────────────────────────
         userRepository.save(user);
+        
+        // --- MANUAL AUDIT LOG (New values) ---
+        UserDetailResponse newData = mapToUserDetailResponse(user);
+        auditLogHelper.log(AuditAction.UPDATE, "USER", user.getUserId(), oldData, newData);
+        
         log.info("[UserManagement] Updated user '{}' (ID: {}).", user.getUsername(), userId);
 
-        return mapToUserDetailResponse(user);
+        return newData;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

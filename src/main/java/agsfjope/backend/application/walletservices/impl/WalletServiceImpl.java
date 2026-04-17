@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -115,6 +117,7 @@ public class WalletServiceImpl implements WalletService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.DEPOSIT, entityType = "WALLET")
     public DepositResponse deposit(UUID studentId, DepositRequest request) {
         log.info("[Wallet] Student {} nạp tiền {} VND", studentId, request.getAmount());
 
@@ -268,6 +271,7 @@ public class WalletServiceImpl implements WalletService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.WITHDRAW, entityType = "WALLET")
     public WithdrawalResponse processWithdrawal(UUID withdrawalId, ProcessWithdrawalRequest request, UUID adminId) {
         log.info("[Wallet] Admin {} xử lý withdrawal {}, approved={}",
                 adminId, withdrawalId, request.getIsApproved());

@@ -17,6 +17,8 @@ import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -60,6 +62,7 @@ public class GradingModeConfigServiceImpl implements GradingModeConfigService {
 
         @Override
         @Transactional
+        @Auditable(action = AuditAction.CREATE, entityType = "GRADING_MODE_CONFIG")
         public void createGradingMode(CreateGradingModeRequest request) {
                 BigDecimal total = request.getTestCaseWeight().add(request.getOopWeight());
                 if (total.compareTo(new BigDecimal("100")) != 0) {
@@ -88,6 +91,7 @@ public class GradingModeConfigServiceImpl implements GradingModeConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "GRADING_MODE_CONFIG")
     public void updateGradingMode(GradingMode mode, UpdateGradingModeRequest request) {
         // Service-level validation (the same rule also exists in DTO with @AssertTrue)
         BigDecimal total = request.getTestCaseWeight().add(request.getOopWeight());
@@ -112,6 +116,7 @@ public class GradingModeConfigServiceImpl implements GradingModeConfigService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.UPDATE, entityType = "GRADING_MODE_CONFIG")
     public void setDefaultGradingMode(GradingMode mode, String updatedByUsername) {
         // Ensure selected mode exists before setting default
         gradingModeConfigRepository.findByMode(mode)

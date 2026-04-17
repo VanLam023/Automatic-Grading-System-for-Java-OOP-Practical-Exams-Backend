@@ -60,8 +60,8 @@ class BlockServiceImplTest {
                 .name("Midterm SP2026")
                 .semester("SP2026")
                 .academicYear("2026")
-                .startTime(OffsetDateTime.of(2026, 3, 1,  8, 0, 0, 0, VN))
-                .endTime  (OffsetDateTime.of(2026, 4, 30, 20, 0, 0, 0, VN))
+                .startTime(OffsetDateTime.now(VN).minusDays(10))
+                .endTime  (OffsetDateTime.now(VN).plusDays(30))
                 .gradingMode(GradingMode.MODE_1)
                 .build();
     }
@@ -80,9 +80,9 @@ class BlockServiceImplTest {
     private UpdateBlockRequest validUpdateRequest(Exam exam) {
         UpdateBlockRequest req = new UpdateBlockRequest();
         // Thời gian hợp lệ: nằm trong [exam.startTime, exam.endTime], không bị locked
-        req.setExamDate(LocalDate.of(2026, 3, 15));
-        req.setStartTime(OffsetDateTime.of(2026, 3, 15, 8, 0, 0, 0, VN));
-        req.setEndTime  (OffsetDateTime.of(2026, 3, 15, 11, 0, 0, 0, VN));
+        req.setExamDate(LocalDate.now(VN).plusDays(10));
+        req.setStartTime(OffsetDateTime.now(VN).plusDays(10).withHour(8));
+        req.setEndTime  (OffsetDateTime.now(VN).plusDays(10).withHour(11));
         return req;
     }
 
@@ -367,10 +367,10 @@ class BlockServiceImplTest {
         when(blockRepository.findByBlockId(block.getBlockId())).thenReturn(Optional.of(block));
 
         UpdateBlockRequest request = new UpdateBlockRequest();
-        request.setExamDate(LocalDate.of(2026, 2, 10));
-        // startTime TRƯỚC exam.startTime (2026-03-01) → phải bị reject
-        request.setStartTime(OffsetDateTime.of(2026, 2, 10, 8, 0, 0, 0, VN));
-        request.setEndTime  (OffsetDateTime.of(2026, 2, 10, 11, 0, 0, 0, VN));
+        request.setExamDate(LocalDate.now(VN).minusDays(20));
+        // startTime TRƯỚC exam.startTime (now - 10 ngày) → phải bị reject
+        request.setStartTime(OffsetDateTime.now(VN).minusDays(20).withHour(8));
+        request.setEndTime  (OffsetDateTime.now(VN).minusDays(20).withHour(11));
 
         // ── Act & Assert ──────────────────────────────────────────────────────
         assertThrows(IllegalArgumentException.class,

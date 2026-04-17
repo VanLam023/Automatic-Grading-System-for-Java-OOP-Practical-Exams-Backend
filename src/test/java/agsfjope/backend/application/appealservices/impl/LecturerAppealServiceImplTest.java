@@ -44,6 +44,9 @@ class LecturerAppealServiceImplTest {
     @Mock private MinioService minioService;
     @Mock private MinioConfig minioConfig;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+    @Mock private agsfjope.backend.core.repositories.submission.AnswerRepository answerRepository;
+
     @InjectMocks
     private LecturerAppealServiceImpl lecturerAppealService;
 

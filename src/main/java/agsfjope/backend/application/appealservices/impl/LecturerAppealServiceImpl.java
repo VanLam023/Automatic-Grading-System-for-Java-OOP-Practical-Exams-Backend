@@ -24,6 +24,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import agsfjope.backend.infrastructure.audit.Auditable;
+import agsfjope.backend.core.enums.AuditAction;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -86,6 +88,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
     @Override
     @Transactional
+    @Auditable(action = AuditAction.SUBMIT, entityType = "APPEAL")
     public LecturerAppealDetailResponse submitReview(UUID lecturerId, UUID appealId, ReviewAppealRequest request) {
         log.info("[Lecturer] Submit review: lecturer={}, appeal={}, newScore={}",
                 lecturerId, appealId, request.getNewScore());

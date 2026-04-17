@@ -61,6 +61,8 @@ class UserManagementServiceImplTest {
     @Mock private EmailService emailService;
     @Mock private MultipartFile mockFile;
 
+    @Mock private agsfjope.backend.infrastructure.audit.AuditLogHelper auditLogHelper;
+
     @InjectMocks
     private UserManagementServiceImpl service;
 

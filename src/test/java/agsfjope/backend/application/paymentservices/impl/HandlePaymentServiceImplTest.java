@@ -275,6 +275,7 @@ class HandlePaymentServiceImplTest {
 
         when(paymentRepository.findExpiredPendingPayments(any(OffsetDateTime.class)))
                 .thenReturn(List.of(p1, p2));
+        when(paymentRepository.markFailedIfPending(any())).thenReturn(1);
 
         // Act
         handlePaymentService.handleExpiredPayments();
@@ -283,8 +284,8 @@ class HandlePaymentServiceImplTest {
         verify(paymentGatewayPort).cancelPaymentLink("linkToCancel");
         verify(paymentGatewayPort, times(1)).cancelPaymentLink(anyString()); // Chỉ đúng 1 lần
         
-        verify(paymentRepository).updateStatus(p1.getPaymentId(), PaymentStatus.FAILED);
-        verify(paymentRepository).updateStatus(p2.getPaymentId(), PaymentStatus.FAILED);
+        verify(paymentRepository).markFailedIfPending(p1.getPaymentId());
+        verify(paymentRepository).markFailedIfPending(p2.getPaymentId());
         
         verify(appealRepository).updateStatus(appeal.getAppealId(), AppealStatus.CANCELLED);
     }
@@ -298,6 +299,7 @@ class HandlePaymentServiceImplTest {
         
         when(paymentRepository.findExpiredPendingPayments(any(OffsetDateTime.class)))
                 .thenReturn(List.of(p1, p2));
+        when(paymentRepository.markFailedIfPending(p2.getPaymentId())).thenReturn(1);
         
         // Simulating error on first item
         doThrow(new RuntimeException("Network Error")).when(paymentGatewayPort).cancelPaymentLink("buggyLink");
@@ -307,10 +309,10 @@ class HandlePaymentServiceImplTest {
 
         // Assert
         // P1 throws error -> updateStatus for P1 is SKIPPED
-        verify(paymentRepository, never()).updateStatus(p1.getPaymentId(), PaymentStatus.FAILED);
+        verify(paymentRepository, never()).markFailedIfPending(p1.getPaymentId());
         
         // But loop continues -> P2 finishes properly without error
-        verify(paymentRepository).updateStatus(p2.getPaymentId(), PaymentStatus.FAILED);
+        verify(paymentRepository).markFailedIfPending(p2.getPaymentId());
     }
 
     @Test
