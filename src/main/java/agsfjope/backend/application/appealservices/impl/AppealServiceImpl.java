@@ -48,6 +48,7 @@ public class AppealServiceImpl implements AppealService {
     private final GradingResultRepository gradingResultRepository;
     private final SystemConfigRepository  systemConfigRepository;
     private final WalletService           walletService;
+    private final agsfjope.backend.application.notificationservices.NotificationService notificationService;
 
     /**
      * Tạo đơn phúc khảo mới.
@@ -126,7 +127,32 @@ public class AppealServiceImpl implements AppealService {
         appealRepository.updateStatus(appeal.getAppealId(), AppealStatus.PENDING);
         log.info("[Appeal] Appeal {} chuyển sang PENDING sau khi trừ ví thành công", appeal.getAppealId());
 
-        // 12. Build response
+        // 12. Gửi thông báo cho sinh viên là đã tạo thành công
+        notificationService.createNotification(
+                studentId,
+                "✅ Đơn phúc khảo tạo thành công",
+                String.format("Đơn phúc khảo bài thi %s của bạn đã được tiếp nhận và thanh toán phí %s VNĐ.", examName, fee),
+                "APPEAL",
+                appeal.getAppealId()
+        );
+
+        // 13. Thông báo cho Staff (Tìm tất cả user có role EXAM_STAFF hoặc SYSTEM_ADMIN)
+        List<User> staffs = userRepository.findByRole_NameAndDeletedAtIsNull("EXAM_STAFF");
+        if (staffs.isEmpty()) {
+            staffs = userRepository.findByRole_NameAndDeletedAtIsNull("SYSTEM_ADMIN");
+        }
+        for (User staff : staffs) {
+            notificationService.createNotification(
+                    staff.getUserId(),
+                    "Đơn phúc khảo mới chưa xử lý",
+                    String.format("Sinh viên %s vừa gửi một đơn phúc khảo cho kỳ thi %s. Vui lòng kiểm tra và phân công giảng viên.",
+                            student.getFullName(), examName),
+                    "APPEAL",
+                    appeal.getAppealId()
+            );
+        }
+
+        // 14. Build response
         return CreateAppealResponse.builder()
                 .appealId(appeal.getAppealId())
                 .submissionId(submission.getSubmissionId())

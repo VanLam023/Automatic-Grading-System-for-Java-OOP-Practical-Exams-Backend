@@ -59,4 +59,10 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
      */
     @Query("SELECT b FROM Block b JOIN FETCH b.exam WHERE b.blockId = :blockId")
     Optional<Block> findByBlockIdWithExam(@Param("blockId") UUID blockId);
+
+    /**
+     * Tìm tất cả các Block có thời gian bắt đầu trong một khoảng thời gian nhất định (window).
+     * Dùng cho Scheduler để nhắc nhở kỳ thi sắp mở.
+     */
+    List<Block> findByStartTimeBetween(java.time.OffsetDateTime after, java.time.OffsetDateTime before);
 }

@@ -74,6 +74,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final FileStoragePort        minioService;
     private final MinioConfig          minioConfig;
     private final SubmissionZipParser  parser;
+    private final agsfjope.backend.application.notificationservices.NotificationService notificationService;
 
     // ─── SUBMIT ──────────────────────────────────────────────────────────────
 
@@ -198,6 +199,16 @@ public class SubmissionServiceImpl implements SubmissionService {
 
         log.info("SubmissionService: Submission {} saved with {} answers (resubmit={}).",
                 saved.getSubmissionId(), answers.size(), isResubmit);
+
+        // Notify Student
+        notificationService.createNotification(
+                studentId,
+                "✅ Nộp bài thành công",
+                String.format("Bạn đã nộp thành công bài thi môn %s (Ca thi: %s). Hệ thống sẽ tiến hành chấm điểm sớm nhất.",
+                        block.getExam().getName(), block.getName()),
+                "SUBMISSION",
+                saved.getSubmissionId()
+        );
 
         return toResponse(saved, answers, questions, isResubmit);
     }

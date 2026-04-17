@@ -159,6 +159,16 @@ public class StaffAppealServiceImpl implements StaffAppealService {
         Appeal saved = appealRepository.save(appeal);
         log.info("[Staff] Appeal {} đã phân công cho {}, deadline {}", appealId, lecturer.getFullName(), deadline);
 
+        // Notify Lecturer
+        notificationService.createNotification(
+                lecturer.getUserId(),
+                "Phân công chấm phúc khảo mới",
+                String.format("Exam Staff đã giao cho bạn chấm một đơn phúc khảo. Hạn chót nộp báo cáo điểm: %s",
+                        deadline.toLocalDate().toString()),
+                "APPEAL",
+                appeal.getAppealId()
+        );
+
         return toDetailResponse(saved);
     }
 

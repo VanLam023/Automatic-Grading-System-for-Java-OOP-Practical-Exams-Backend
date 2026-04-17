@@ -44,6 +44,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     private final AnswerRepository answerRepository;
     private final FileStoragePort minioService;
     private final MinioConfig minioConfig;
+    private final agsfjope.backend.application.notificationservices.NotificationService notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -109,6 +110,19 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
         appeal.setCompletedAt(OffsetDateTime.now());
 
         Appeal saved = appealRepository.save(appeal);
+
+        // Notify Staff (Người đã phân công đơn phúc khảo)
+        if (saved.getAssignedBy() != null) {
+            notificationService.createNotification(
+                    saved.getAssignedBy().getUserId(),
+                    "Giảng viên nộp kết quả phúc khảo",
+                    String.format("Giảng viên %s đã chấm xong đơn phúc khảo %s. Vui lòng kiểm tra và duyệt kết quả.",
+                            lecturerId, appeal.getAppealId()),
+                    "APPEAL",
+                    appeal.getAppealId()
+            );
+        }
+
         return toDetailResponse(saved);
     }
 
