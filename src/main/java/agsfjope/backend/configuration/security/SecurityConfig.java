@@ -37,7 +37,11 @@ public class SecurityConfig {
             "http://localhost:5173",
             "http://127.0.0.1:5173",
             "http://localhost:4173",
-            "http://127.0.0.1:4173"
+            "http://127.0.0.1:4173",
+            "http://localhost:3000",
+            "https://agsfjope.site",
+            "https://www.agsfjope.site",
+            "http://localhost:3000"
     );
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

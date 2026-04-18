@@ -10,13 +10,16 @@ public class CookieUtils {
     @Value("${app.security.cookie.secure:false}")
     private boolean secureCookie; // false for localhost HTTP, true for HTTPS in production
 
+    @Value("${app.security.cookie.same-site:Lax}")
+    private String sameSite;
+
     public ResponseCookie createAccessTokenCookie(String token, long maxAgeSeconds) {
         return ResponseCookie.from("accessToken", token)
                 .httpOnly(true)
                 .secure(secureCookie)
                 .path("/")
                 .maxAge(maxAgeSeconds)
-                .sameSite("Lax")
+                .sameSite(sameSite)
                 .build();
     }
 
@@ -27,7 +30,7 @@ public class CookieUtils {
                 .secure(secureCookie)
                 .path("/")
                 .maxAge(maxAgeSeconds)
-                .sameSite("Lax")
+                .sameSite(sameSite)
                 .build();
     }
 
@@ -37,7 +40,7 @@ public class CookieUtils {
                 .secure(secureCookie)
                 .path("/")
                 .maxAge(0) // 0 means delete
-                .sameSite("Lax")
+                .sameSite(sameSite)
                 .build();
 
         ResponseCookie refreshCookie = ResponseCookie.from("refreshToken", "")
@@ -45,7 +48,7 @@ public class CookieUtils {
                 .secure(secureCookie)
                 .path("/")
                 .maxAge(0)
-                .sameSite("Lax")
+                .sameSite(sameSite)
                 .build();
 
         return new ResponseCookie[]{accessCookie, refreshCookie};

@@ -52,6 +52,9 @@ target/
 *.tar.gz
 *.rar
 
+#deploy
+.docker-compose.backend.yml
+
 ### MAC OS ###
 .DS_Store
 
@@ -68,13 +71,15 @@ target/
 !.env.example
 *.env
 # Spring profile-specific configs (contain real secrets)
-application-dev.yml
+application-dev.ymlit
 application-prod.yml
 application-local.yml
 application-staging.yml
 # Docker env files
 docker.env
 docker-compose.override.yml
+docker-compose.backend.yml
+
 
 ### Logs ###
 *.log
