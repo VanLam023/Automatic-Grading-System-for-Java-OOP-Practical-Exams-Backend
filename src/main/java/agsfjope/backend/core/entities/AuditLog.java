@@ -3,6 +3,8 @@ package agsfjope.backend.core.entities;
 import agsfjope.backend.core.enums.AuditAction;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -25,7 +27,8 @@ public class AuditLog {
     private User user;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "Action", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "Action", nullable = false, columnDefinition = "audit_action")
     private AuditAction action;
 
     @Column(name = "EntityType", nullable = false, length = 100)
@@ -34,16 +37,18 @@ public class AuditLog {
     @Column(name = "EntityID")
     private UUID entityId;
 
-    @Column(name = "OldValues", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "OldValues")
     private String oldValues;
 
-    @Column(name = "NewValues", columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "NewValues")
     private String newValues;
 
-    @Column(name = "IpAddress", columnDefinition = "inet")
+    @Column(name = "IpAddress", length = 45)
     private String ipAddress;
 
-    @Column(name = "UserAgent", columnDefinition = "TEXT")
+    @Column(name = "UserAgent")
     private String userAgent;
 
     @Column(name = "CorrelationID")

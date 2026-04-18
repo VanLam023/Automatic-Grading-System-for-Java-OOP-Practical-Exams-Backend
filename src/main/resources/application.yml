@@ -49,6 +49,7 @@ spring:
     baseline-version: 1           # Danh dau V1 da duoc apply (DB hien tai = V1)
     out-of-order: true            # Cho phep apply migration chua theo thu tu version
     validate-on-migrate: true     # Kiem tra migration chua bi chinh sua
+    repair-on-migrate: false      # Production: KHONG tu dong repair, phai xu ly thu cong
 
 
 

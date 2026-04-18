@@ -24,7 +24,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import agsfjope.backend.core.repositories.block.BlockRepository;
+
 
 import java.time.LocalDate;
 import java.time.Month;

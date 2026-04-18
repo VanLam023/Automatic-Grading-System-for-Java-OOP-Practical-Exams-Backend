@@ -313,6 +313,7 @@ public class GradingQueryService {
         try { return new BigDecimal(node.asText()); } catch (Exception e) { return null; }
     }
 
+    @SuppressWarnings("unchecked")
     private static List<String> toStringList(JsonNode node) {
         if (node == null || node.isNull() || !node.isArray()) return new ArrayList<>();
         List<String> list = new ArrayList<>();

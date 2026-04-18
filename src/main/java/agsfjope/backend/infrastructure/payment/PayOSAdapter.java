@@ -268,18 +268,6 @@ public class PayOSAdapter implements PaymentGatewayPort {
         return new PayOSCredentials(clientId, apiKey, checksumKey);
     }
 
-    /**
-     * Lấy giá trị config theo key, ném RuntimeException nếu không tìm thấy.
-     */
-    private String getConfig(Map<String, SystemConfig> map, String key) {
-        SystemConfig config = map.get(key);
-        if (config == null || config.getConfigValue() == null
-                || config.getConfigValue().isBlank()) {
-            throw new RuntimeException("[PayOS] Config key '" + key
-                    + "' not found or empty in SystemConfigs. Please configure via Admin.");
-        }
-        return config.getConfigValue();
-    }
 
     /**
      * Giải mã AES nếu field được đánh dấu isEncrypted = true.
@@ -466,10 +454,6 @@ public class PayOSAdapter implements PaymentGatewayPort {
         }
     }
 
-    /** Trả về chuỗi rỗng thay vì null để tránh lỗi khi tạo checksum string. */
-    private String nullSafe(String value) {
-        return value != null ? value : "";
-    }
 
     /**
      * Record lưu credentials PayOS sau khi đọc từ DB.
