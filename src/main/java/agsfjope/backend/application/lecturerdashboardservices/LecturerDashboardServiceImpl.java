@@ -58,12 +58,10 @@ public class LecturerDashboardServiceImpl implements LecturerDashboardService {
      */
     @Override
     public List<AssignedAppealResponse> getAssignedAppeals(UUID lecturerId, int limit, String status) {
-        boolean filtered = status != null && !status.isBlank();
-        List<Appeal> appeals = filtered
-                ? appealRepository.findByAssignedLecturerAndStatusOrderByAssignedAtDesc(
-                        lecturerId, status.toUpperCase(), PageRequest.of(0, limit))
-                : appealRepository.findByAssignedLecturerOrderByAssignedAtDesc(
-                        lecturerId, PageRequest.of(0, limit));
+        String normalizedStatus = status != null && !status.isBlank() ? status.toUpperCase() : null;
+        List<Appeal> appeals = appealRepository
+                .searchAppealsForLecturer(lecturerId, normalizedStatus, "", PageRequest.of(0, limit))
+                .getContent();
 
         List<AssignedAppealResponse> result = new ArrayList<>();
         for (Appeal appeal : appeals) {
