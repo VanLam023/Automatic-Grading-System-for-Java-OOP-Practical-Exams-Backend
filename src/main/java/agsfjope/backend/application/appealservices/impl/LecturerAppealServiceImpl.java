@@ -116,11 +116,14 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
         // Notify Staff (Người đã phân công đơn phúc khảo)
         if (saved.getAssignedBy() != null) {
+            String lecturerName = saved.getAssignedLecturer() != null
+                    ? saved.getAssignedLecturer().getFullName()
+                    : lecturerId.toString();
             notificationService.createNotification(
                     saved.getAssignedBy().getUserId(),
                     "Giảng viên nộp kết quả phúc khảo",
                     String.format("Giảng viên %s đã chấm xong đơn phúc khảo %s. Vui lòng kiểm tra và duyệt kết quả.",
-                            lecturerId, appeal.getAppealId()),
+                            lecturerName, appeal.getAppealId()),
                     "APPEAL",
                     appeal.getAppealId()
             );
