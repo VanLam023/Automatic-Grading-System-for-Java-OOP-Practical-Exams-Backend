@@ -183,7 +183,20 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2b. FailIfOopViolated — override to 0 if AI says code fundamentally violates OOP
+        // 2c. FailIfHardCoded (MANDATORY) — 0 if AI detects hardcoded return values
+        // This rule is unconditional — no GradingModeConfig flag needed.
+        // Any detected hardcoded value immediately forces the question to 0.
+        if (input.aiResult() != null
+                && !input.aiResult().aiError()
+                && input.aiResult().hardCodedValues() != null
+                && !input.aiResult().hardCodedValues().isEmpty()) {
+            String note = buildHardCodeNote(tcRaw, oopRaw, input.aiResult().hardCodedValues());
+            return new QuestionScore(questionNumber, maxScore,
+                    tcRaw, oopRaw,   // keep raw scores for transparency in the note
+                    BigDecimal.ZERO, true, note, passed, total);
+        }
+
+        // 2d. FailIfOopViolated — override to 0 if AI says code fundamentally violates OOP
         if (Boolean.TRUE.equals(config.getFailIfOopViolated())
                 && input.aiResult() != null
                 && !input.aiResult().aiError()
@@ -194,7 +207,7 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2c. FailIfZeroTestCase — override to 0 if not a single test case passed
+        // 2e. FailIfZeroTestCase — override to 0 if not a single test case passed
         if (Boolean.TRUE.equals(config.getFailIfZeroTestCase()) && passed == 0 && total > 0) {
             String note = buildGuardNote("FailIfZeroTestCase", tcRaw, oopRaw);
             return new QuestionScore(questionNumber, maxScore,
@@ -263,6 +276,19 @@ public class ScoreCalculator {
             default -> "Điểm gốc: TC=%s, OOP=%s → 0đ (Guard rule: %s)"
                     .formatted(tcRaw.toPlainString(), oopRaw.toPlainString(), ruleName);
         };
+    }
+
+    /**
+     * Builds the guard note for the FailIfHardCoded rule.
+     * Lists every detected hardcoded value so the student and staff can see exactly
+     * what was flagged: e.g. "Điểm gốc: TC=3.00, OOP=2.00 → 0đ do phát hiện
+     * giá trị hardcode: [return 42, return \"Hello\", System.out.println(\"abc\")]"
+     */
+    private String buildHardCodeNote(BigDecimal tcRaw, BigDecimal oopRaw,
+                                     List<String> hardCodedValues) {
+        String valueList = String.join(", ", hardCodedValues);
+        return "Điểm gốc: TC=%s, OOP=%s → 0đ do phát hiện giá trị hardcode: [%s] (FailIfHardCoded)"
+                .formatted(tcRaw.toPlainString(), oopRaw.toPlainString(), valueList);
     }
 
     private String buildTamperNote(BigDecimal tcRaw, BigDecimal oopRaw, String detail) {
