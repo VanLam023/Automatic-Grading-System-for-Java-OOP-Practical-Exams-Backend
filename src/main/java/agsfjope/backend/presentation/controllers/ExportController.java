@@ -3,6 +3,7 @@ package agsfjope.backend.presentation.controllers;
 import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.infrastructure.excel.ExcelExportService;
+import agsfjope.backend.infrastructure.export.SubmissionBundleExportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -33,6 +34,7 @@ import java.util.UUID;
 public class ExportController {
 
     private final ExcelExportService excelExportService;
+    private final SubmissionBundleExportService submissionBundleExportService;
     private final BlockRepository    blockRepository;
 
     private static final String STAFF_ROLES =
@@ -40,6 +42,55 @@ public class ExportController {
 
     private static final String EXCEL_CONTENT_TYPE =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+
+    /**
+     * Xuất file ZIP dữ liệu chấm của một block.
+     *
+     * <p>ZIP layout:</p>
+     * <pre>
+     * {examName}/
+     *   grading/{submissionBase}/oopvalidation.txt
+     *   submission/{submissionArchive}
+     * </pre>
+     *
+     * <p>Nếu một file submission không tải được từ storage, hệ thống vẫn tiếp tục export
+     * phần {@code oopvalidation.txt} và ghi thêm file mô tả lỗi vào thư mục submission.</p>
+     */
+    @GetMapping("/api/exams/{examId}/blocks/{blockId}/export/submission-bundle")
+    @PreAuthorize(STAFF_ROLES)
+    public ResponseEntity<byte[]> exportSubmissionBundle(
+            @PathVariable UUID examId,
+            @PathVariable UUID blockId
+    ) {
+        var block = blockRepository.findByBlockIdWithExam(blockId)
+                .orElseThrow(() -> new NotFoundException("Block không tồn tại."));
+
+        if (block.getExam() == null || !block.getExam().getExamId().equals(examId)) {
+            throw new IllegalArgumentException("Block không thuộc kỳ thi được yêu cầu.");
+        }
+
+        String examName = block.getExam() != null ? block.getExam().getName() : "Exam";
+        String blockName = block.getName() != null ? block.getName() : blockId.toString();
+
+        log.info("[Export] Submission bundle request: examId={} blockId={} examName='{}' blockName='{}'",
+                examId, blockId, examName, blockName);
+
+        try {
+            byte[] fileBytes = submissionBundleExportService.generateSubmissionBundle(examId, blockId);
+            String fileName = submissionBundleExportService.submissionBundleFileName(examName, blockName);
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "attachment; filename=\"" + fileName + "\"")
+                    .body(fileBytes);
+
+        } catch (IOException e) {
+            log.error("[Export] Failed to generate submission bundle for blockId={}: {}", blockId, e.getMessage(), e);
+            throw new RuntimeException("Không thể tạo file ZIP export bài nộp. Vui lòng thử lại.", e);
+        }
+    }
 
     // ─── API 1: Xuất Bảng Điểm ─────────────────────────────────────────────────
 
