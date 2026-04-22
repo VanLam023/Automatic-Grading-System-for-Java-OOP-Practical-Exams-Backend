@@ -543,6 +543,7 @@ public class GradingPipelineService {
             rawMap.put("codeIntegrity",     ai.codeIntegrity());
             rawMap.put("violations",        ai.violations());
             rawMap.put("hardCodedValues",   ai.hardCodedValues());
+            rawMap.put("criteriaResults",   ai.criteriaResults());
             rawMap.put("isOopViolated",     ai.oopViolated());
             rawMap.put("aiError",           ai.aiError());
             rawMap.put("errorMessage",      ai.errorMessage());

@@ -26,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Implementation of {@link ExamStatisticsService} — PROC-006.
@@ -52,6 +54,20 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
     private static final BigDecimal VIOLATION_THRESHOLD = new BigDecimal("2");
         private static final List<String> LEGACY_CRITERIA_KEYS = List.of(
             "encapsulation", "inheritance", "polymorphism", "designQuality", "codeIntegrity"
+        );
+
+        // [N]. [Criterion] (tối đa X điểm): đạt được Y điểm, bị trừ Z điểm - ...
+        private static final Pattern COMMENT_CRITERION_PATTERN = Pattern.compile(
+            "^\\s*\\d+\\.\\s*(.+?)\\s*\\(\\s*t[ốo]i\\s*đa\\s*([0-9]+(?:[.,][0-9]+)?)\\s*đ?i[ểe]m\\s*\\)\\s*:\\s*"
+                + "đạt\\s*được\\s*([0-9]+(?:[.,][0-9]+)?)\\s*đ?i[ểe]m\\s*,\\s*"
+                + "bị\\s*trừ\\s*([0-9]+(?:[.,][0-9]+)?)\\s*đ?i[ểe]m.*$",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+        );
+
+        // [N]. [Criterion]: 0 diem - BI HUY do ...
+        private static final Pattern COMMENT_DISQUALIFIED_PATTERN = Pattern.compile(
+            "^\\s*\\d+\\.\\s*(.+?)\\s*:\\s*0(?:[.,]0+)?\\s*d[ií]e?m\\s*-\\s*BI\\s*HUY.*$",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
         );
 
     private final BlockRepository          blockRepository;
@@ -229,17 +245,20 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                     // Guard: format prompt mới có thể lưu placeholder 0 cho 5 tiêu chí cũ.
                     // Nếu cả 5 đều = 0 thì bỏ qua để tránh đếm sai (false violations).
                     if (isLegacyPlaceholderAllZero(root)) {
-                        continue;
+                        // Cố gắng parse từ comment (không cần chấm lại dữ liệu cũ)
+                        if (!parseCriteriaFromComment(root, review.getComment(), criteriaMap)) {
+                            continue;
+                        }
+                    } else {
+                        if (isCriterionViolated(root, "encapsulation"))  encViolations++;
+                        if (isCriterionViolated(root, "inheritance"))    inhViolations++;
+                        if (isCriterionViolated(root, "polymorphism"))   polyViolations++;
+                        if (isCriterionViolated(root, "designQuality"))  dqViolations++;
+                        if (isCriterionViolated(root, "codeIntegrity"))  ciViolations++;
+
+                        // Đồng thời đưa vào map động để FE render thống nhất
+                        addLegacyCriteriaToMap(root, criteriaMap);
                     }
-
-                    if (isCriterionViolated(root, "encapsulation"))  encViolations++;
-                    if (isCriterionViolated(root, "inheritance"))    inhViolations++;
-                    if (isCriterionViolated(root, "polymorphism"))   polyViolations++;
-                    if (isCriterionViolated(root, "designQuality"))  dqViolations++;
-                    if (isCriterionViolated(root, "codeIntegrity"))  ciViolations++;
-
-                    // Đồng thời đưa vào map động để FE render thống nhất
-                    addLegacyCriteriaToMap(root, criteriaMap);
                 }
 
             } catch (Exception e) {
@@ -291,19 +310,32 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
             if (item == null || item.isNull()) continue;
 
             String name = textOrNull(item.get("name"));
-            BigDecimal score = toBigDecimal(item.get("score"));
+            // Flexible prompt hiện tại trả về earnedPoints/maxPoints/status
+            // (không dùng score/maxScore như bản cũ).
+            BigDecimal score = toBigDecimal(item.get("earnedPoints"));
+            if (score == null) {
+                // Backward compatibility cho payload cũ
+                score = toBigDecimal(item.get("score"));
+            }
             if (name == null || score == null) continue;
 
-            BigDecimal maxScore = toBigDecimal(item.get("maxScore"));
+            BigDecimal maxScore = toBigDecimal(item.get("maxPoints"));
+            if (maxScore == null) {
+                // Backward compatibility cho payload cũ
+                maxScore = toBigDecimal(item.get("maxScore"));
+            }
             Boolean violated = item.has("violated") && !item.get("violated").isNull()
                     ? item.get("violated").asBoolean()
                     : null;
+            String status = textOrNull(item.get("status"));
 
             boolean isViolated = violated != null
                     ? violated
-                    : (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0
-                        ? score.compareTo(maxScore) < 0
-                        : score.compareTo(VIOLATION_THRESHOLD) < 0);
+                    : (status != null
+                        ? "violated".equalsIgnoreCase(status)
+                        : (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0
+                            ? score.compareTo(maxScore) < 0
+                            : score.compareTo(VIOLATION_THRESHOLD) < 0));
 
             criteriaMap.computeIfAbsent(name.trim(), k -> new CriterionAccumulator())
                     .add(score, isViolated);
@@ -341,6 +373,69 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
             }
         }
         return hasAny;
+    }
+
+    /**
+     * Fallback parser cho dữ liệu cũ không có criteriaResults.
+     * Đọc các dòng trong field comment theo format prompt mới để dựng lại criteriaStats.
+     */
+    private boolean parseCriteriaFromComment(JsonNode root, String reviewComment,
+                                             Map<String, CriterionAccumulator> criteriaMap) {
+        String comment = textOrNull(root.get("comment"));
+        if (comment == null || comment.isBlank()) {
+            comment = reviewComment;
+        }
+        if (comment == null) {
+            return false;
+        }
+
+        boolean parsedAny = false;
+        String[] lines = comment.split("\\R");
+        for (String line : lines) {
+            if (line == null || line.isBlank()) continue;
+
+            Matcher disqualified = COMMENT_DISQUALIFIED_PATTERN.matcher(line.trim());
+            if (disqualified.matches()) {
+                String name = disqualified.group(1) != null ? disqualified.group(1).trim() : null;
+                if (name != null && !name.isBlank()) {
+                    criteriaMap.computeIfAbsent(name, k -> new CriterionAccumulator())
+                            .add(BigDecimal.ZERO, true);
+                    parsedAny = true;
+                }
+                continue;
+            }
+
+            Matcher m = COMMENT_CRITERION_PATTERN.matcher(line.trim());
+            if (!m.matches()) {
+                continue;
+            }
+
+            String name = m.group(1) != null ? m.group(1).trim() : null;
+            BigDecimal maxPoints = toBigDecimalString(m.group(2));
+            BigDecimal earnedPoints = toBigDecimalString(m.group(3));
+            if (name == null || name.isBlank() || earnedPoints == null) {
+                continue;
+            }
+
+            boolean violated = maxPoints != null && maxPoints.compareTo(BigDecimal.ZERO) > 0
+                    ? earnedPoints.compareTo(maxPoints) < 0
+                    : earnedPoints.compareTo(VIOLATION_THRESHOLD) < 0;
+
+            criteriaMap.computeIfAbsent(name, k -> new CriterionAccumulator())
+                    .add(earnedPoints, violated);
+            parsedAny = true;
+        }
+
+        return parsedAny;
+    }
+
+    private BigDecimal toBigDecimalString(String raw) {
+        if (raw == null) return null;
+        try {
+            return new BigDecimal(raw.replace(',', '.')).setScale(2, RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
