@@ -398,12 +398,20 @@ public class LLMReviewService {
                 hardCoded = Collections.emptyList();
             }
 
-            // criteriaBreakdown không còn trong format mới — đặt về ZERO
+            // Parse criteriaResults from JSON (dynamic per-criterion list from AI prompt)
+            JsonNode criteriaNode = node.path("criteriaResults");
+            List<Map<String, Object>> criteriaResults = criteriaNode.isMissingNode() || criteriaNode.isNull()
+                    ? Collections.emptyList()
+                    : objectMapper.convertValue(criteriaNode, new TypeReference<>() {});
+            if (criteriaResults == null) criteriaResults = Collections.emptyList();
+
+            // criteriaBreakdown legacy fields are not in the new format — set to ZERO
             return new AIReviewResult(
                     oopScore,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO,
                     violations, hardCoded,
+                    criteriaResults, // ← must come before comment per record definition
                     comment, oopViolated,
                     false, null
             );
@@ -457,6 +465,7 @@ public class LLMReviewService {
                     oopScore, encapsulation, inheritance, polymorphism,
                     designQuality, codeIntegrity,
                     violations, hardCoded,
+                    Collections.emptyList(), // legacy format has no criteriaResults field
                     comment, oopViolated,
                     false, null
             );
