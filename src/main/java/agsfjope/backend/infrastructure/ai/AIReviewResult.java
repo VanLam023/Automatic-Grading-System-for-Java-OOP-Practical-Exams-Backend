@@ -2,6 +2,7 @@ package agsfjope.backend.infrastructure.ai;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Parsed result from the Gemini AI OOP evaluation.
@@ -14,6 +15,7 @@ import java.util.List;
  * @param codeIntegrity      score for code integrity / anti-cheat criterion (0–2)
  * @param violations         list of specific OOP violations found
  * @param hardCodedValues    list of hard-coded return values detected
+ * @param criteriaResults    dynamic per-criterion evaluation list returned by AI prompt
  * @param comment            full review comment in the configured language
  * @param oopViolated        true if code fundamentally violates OOP principles
  * @param aiError            true if AI call failed (all scores null, fallback applied)
@@ -28,6 +30,7 @@ public record AIReviewResult(
         BigDecimal codeIntegrity,
         List<String> violations,
         List<String> hardCodedValues,
+        List<Map<String, Object>> criteriaResults,
         String comment,
         boolean oopViolated,
         boolean aiError,
@@ -38,6 +41,7 @@ public record AIReviewResult(
         return new AIReviewResult(
                 null, null, null, null, null, null,
                 List.of(), List.of(),
+                List.of(),
                 "AI evaluation failed: " + reason,
                 false, true, reason
         );

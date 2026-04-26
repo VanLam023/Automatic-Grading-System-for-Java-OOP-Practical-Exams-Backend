@@ -217,6 +217,15 @@ public class LLMReviewService {
             src = src.substring(0, MAX_SOURCE_CHARS) + "\n... [TRUNCATED]";
         }
 
+        // [NEW] Include structured analysis from JavaParser + Reflection if available
+        // This gives AI "hard facts" about the code structure — reduces hallucination
+        String staticAnalysisSection;
+        if (request.structuredAnalysis() != null && !request.structuredAnalysis().isBlank()) {
+            staticAnalysisSection = request.structuredAnalysis();
+        } else {
+            staticAnalysisSection = "(Static analysis not available for this submission)";
+        }
+
         return """
                 You are an expert Java OOP examiner. Your task is to evaluate a student's Java code submission \
                 against the exam question requirements and provide a detailed OOP analysis.
@@ -239,6 +248,14 @@ public class LLMReviewService {
                 ═══════════════════════════════════════════════
                 STUDENT SOURCE CODE
                 ═══════════════════════════════════════════════
+                %s
+
+                ═══════════════════════════════════════════════
+                STATIC CODE ANALYSIS (JavaParser + Java Reflection)
+                ═══════════════════════════════════════════════
+                The following is objective, pre-computed analysis of the student code structure.
+                Use this as ground-truth facts when evaluating OOP criteria.
+                Hard-coded suspects listed here MUST be reflected in your scoring.
                 %s
 
                 ═══════════════════════════════════════════════
@@ -297,7 +314,9 @@ public class LLMReviewService {
                 """.formatted(
                 request.questionTitle(),
                 request.questionDescription() != null ? request.questionDescription() : "(no description)",
-                src != null ? src : "(no source code)");
+                src != null ? src : "(no source code)",
+                staticAnalysisSection  // [NEW] structured analysis from JavaParser + Reflection
+        );
     }
 
     private String buildResultPrompt(String analysis, String language, java.math.BigDecimal maxScore) {
@@ -428,12 +447,20 @@ public class LLMReviewService {
                 hardCoded = Collections.emptyList();
             }
 
-            // criteriaBreakdown không còn trong format mới — đặt về ZERO
+            // Parse criteriaResults from JSON (dynamic per-criterion list from AI prompt)
+            JsonNode criteriaNode = node.path("criteriaResults");
+            List<Map<String, Object>> criteriaResults = criteriaNode.isMissingNode() || criteriaNode.isNull()
+                    ? Collections.emptyList()
+                    : objectMapper.convertValue(criteriaNode, new TypeReference<>() {});
+            if (criteriaResults == null) criteriaResults = Collections.emptyList();
+
+            // criteriaBreakdown legacy fields are not in the new format — set to ZERO
             return new AIReviewResult(
                     oopScore,
                     BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO,
                     violations, hardCoded,
+                    criteriaResults, // ← must come before comment per record definition
                     comment, oopViolated,
                     false, null);
         } catch (Exception e) {
@@ -489,6 +516,7 @@ public class LLMReviewService {
                     oopScore, encapsulation, inheritance, polymorphism,
                     designQuality, codeIntegrity,
                     violations, hardCoded,
+                    Collections.emptyList(), // legacy format has no criteriaResults field
                     comment, oopViolated,
                     false, null);
         } catch (Exception e) {

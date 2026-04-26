@@ -1,5 +1,6 @@
 package agsfjope.backend.presentation.controllers;
 
+import agsfjope.backend.application.bankservices.BankLookupService;
 import agsfjope.backend.application.dtos.requests.wallet.DepositRequest;
 import agsfjope.backend.application.dtos.requests.wallet.WithdrawRequest;
 import agsfjope.backend.application.dtos.responses.wallet.DepositResponse;
@@ -44,6 +45,7 @@ import java.util.UUID;
 public class WalletController {
 
     private final WalletService walletService;
+    private final BankLookupService bankLookupService;
 
     /**
      * Xem thông tin ví (số dư + lịch sử giao dịch).
@@ -87,6 +89,16 @@ public class WalletController {
         WithdrawalResponse response = walletService.requestWithdrawal(studentId, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(buildResponse(true, "Yêu cầu rút tiền đã được gửi. Admin sẽ xử lý sớm nhất có thể.", response));
+    }
+
+
+    /**
+     * Lấy danh sách ngân hàng Việt Nam để hiển thị dropdown rút tiền.
+     */
+    @GetMapping("/banks")
+    @PreAuthorize("hasAnyAuthority('STUDENT', 'ROLE_STUDENT')")
+    public ResponseEntity<Map<String, Object>> getVietnamBanks() {
+        return ResponseEntity.ok(buildResponse(true, "Lấy danh sách ngân hàng thành công.", bankLookupService.getVietnamBanks()));
     }
 
     /**

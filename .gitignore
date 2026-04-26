@@ -11,7 +11,9 @@ compile_err.txt
 *.log
 *.tmp
 
-
+build.txt
+build_log.txt
+diff.txt
 ### IntelliJ IDEA ###
 .idea
 *.iws

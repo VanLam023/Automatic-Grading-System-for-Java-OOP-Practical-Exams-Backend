@@ -25,7 +25,10 @@ import agsfjope.backend.infrastructure.ai.AIReviewResult;
 import agsfjope.backend.infrastructure.ai.LLMReviewService;
 import agsfjope.backend.infrastructure.grading.ArchiveExtractor;
 import agsfjope.backend.infrastructure.grading.ExecutionResult;
+import agsfjope.backend.infrastructure.grading.JavaParserAnalyzer;
 import agsfjope.backend.infrastructure.grading.JarSandboxExecutor;
+import agsfjope.backend.infrastructure.grading.ReflectionAnalyzer;
+import agsfjope.backend.infrastructure.grading.StaticAnalysisResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -90,6 +93,8 @@ public class GradingPipelineService {
     private final JarSandboxExecutor  jarSandboxExecutor;
     private final LLMReviewService    llmReviewService;
     private final ScoreCalculator     scoreCalculator;
+    private final JavaParserAnalyzer  javaParserAnalyzer;  // [NEW] static AST analysis
+    private final ReflectionAnalyzer  reflectionAnalyzer;  // [NEW] runtime class inspection
     private final ObjectMapper        objectMapper;
     private final NotificationService notificationService;
     private final EmailService        emailService;
@@ -296,12 +301,17 @@ public class GradingPipelineService {
                     // -> không chạy được test case (pass=0), nhưng vẫn AI review và KHÔNG ép 0 bởi missing rule.
                     final Path finalSrcDir = preSrcDir;
                     CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
+                        // [NEW] JAR null ở nhánh này — ReflectionAnalyzer sẽ skip, chỉ JavaParser chạy
+                        StaticAnalysisResult staticAnalysis = runStaticAnalysis(finalSrcDir, null);
+
+                        // [OLD] AIReviewResult aiResult = runAIReview(finalSubmission, answer, question, finalSrcDir);
                         AIReviewResult aiResult = runAIReview(
-                                finalSubmission, answer, question, finalSrcDir);
+                                finalSubmission, answer, question, finalSrcDir, staticAnalysis);
 
                         transactionTemplate.executeWithoutResult(tx -> {
                             saveAIReview(answer, modeConfig.getMode().name(), aiResult);
-                            questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult));
+                            // [OLD] questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult));
+                            questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult, staticAnalysis));
                         });
                     }, aiExecutor);
                     aiTasks.add(aiTask);
@@ -317,12 +327,14 @@ public class GradingPipelineService {
 
                 // ── Step B: AI Review ─────────────────────────────────────────
                 final Path finalSrcDir      = preSrcDir;
+                final Path finalJar         = preJar;   // [NEW] capture preJar — not effectively final because assigned in try-catch
                 final QuestionTcResult finalTcResult = tcResult;
 
                 // Run AI review (parallel, in background)
                 CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
+                    StaticAnalysisResult staticAnalysis = runStaticAnalysis(finalSrcDir, finalJar);
                     AIReviewResult aiResult = runAIReview(
-                            finalSubmission, answer, question, finalSrcDir);
+                            finalSubmission, answer, question, finalSrcDir, staticAnalysis);
 
                     transactionTemplate.executeWithoutResult(tx -> {
                         saveAIReview(answer, modeConfig.getMode().name(), aiResult);
@@ -336,7 +348,7 @@ public class GradingPipelineService {
                                         finalTcResult.tamperDetail())
                                 : QuestionInput.of(question.getMaxScore(),
                                         finalTcResult.passCount(), finalTcResult.totalCount(),
-                                        aiResult));
+                                        aiResult, staticAnalysis));
                     });
                 }, aiExecutor);
                 aiTasks.add(aiTask);
@@ -481,8 +493,36 @@ public class GradingPipelineService {
 
     // ─── AI REVIEW ───────────────────────────────────────────────────────────
 
+    /**
+     * [NEW] Runs JavaParser (AST) + Reflection (runtime) analysis on the student submission.
+     * Results are merged into a single {@link StaticAnalysisResult} that is used by:
+     * <ol>
+     *   <li>The AI prompt (via {@code structuredAnalysis} field in {@link AIReviewRequest}).</li>
+     *   <li>{@link agsfjope.backend.domain.grading.ScoreCalculator} for immediate hardcode detection.</li>
+     * </ol>
+     * Failures in either analyzer are swallowed — never abort grading.
+     *
+     * @param srcDir     student’s source directory (may be null)
+     * @param studentJar student’s compiled JAR (may be null when JAR is missing)
+     */
+    private StaticAnalysisResult runStaticAnalysis(Path srcDir, Path studentJar) {
+        try {
+            StaticAnalysisResult parserResult     = javaParserAnalyzer.analyze(srcDir);
+            StaticAnalysisResult reflectionResult = reflectionAnalyzer.analyze(studentJar);
+            StaticAnalysisResult merged           = StaticAnalysisResult.merge(parserResult, reflectionResult);
+            log.debug("[STATIC-ANALYSIS] srcDir={} | classes={} interfaces={} hardcodes={}",
+                    srcDir, merged.classCount(), merged.interfaceCount(),
+                    merged.hardCodedSuspects().size());
+            return merged;
+        } catch (Exception e) {
+            log.warn("[STATIC-ANALYSIS] Analysis failed (non-fatal): {}", e.getMessage());
+            return StaticAnalysisResult.failure("Static analysis failed: " + e.getMessage());
+        }
+    }
+
     private AIReviewResult runAIReview(Submission submission, Answer answer,
-                                       Question question, Path srcDir) {
+                                       Question question, Path srcDir,
+                                       StaticAnalysisResult staticAnalysis) {
         try {
             log.warn("[AI-SRC] sub={} Q{}: srcDir={}",
                     submission.getSubmissionId(), question.getQuestionNumber(),
@@ -492,11 +532,17 @@ public class GradingPipelineService {
             log.warn("[AI-SRC] sourceCode length={}, blank={}",
                     sourceCode.length(), sourceCode.isBlank());
 
+            // [NEW] Serialize structured analysis report for AI prompt
+            String structuredAnalysisText = (staticAnalysis != null)
+                    ? staticAnalysis.toFormattedReport()
+                    : null;
+
             AIReviewRequest aiRequest = new AIReviewRequest(
                     question.getTitle(),
                     question.getDescription(),
                     sourceCode,
-                    "Vietnamese",  // language resolved from SystemConfig inside LLMReviewService
+                    structuredAnalysisText,
+                    "Vietnamese",
                     question.getMaxScore()
             );
 
@@ -544,6 +590,7 @@ public class GradingPipelineService {
             rawMap.put("codeIntegrity",     ai.codeIntegrity());
             rawMap.put("violations",        ai.violations());
             rawMap.put("hardCodedValues",   ai.hardCodedValues());
+            rawMap.put("criteriaResults",   ai.criteriaResults());
             rawMap.put("isOopViolated",     ai.oopViolated());
             rawMap.put("aiError",           ai.aiError());
             rawMap.put("errorMessage",      ai.errorMessage());

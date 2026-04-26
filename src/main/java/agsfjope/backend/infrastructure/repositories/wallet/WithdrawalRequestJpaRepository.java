@@ -23,11 +23,17 @@ public interface WithdrawalRequestJpaRepository extends JpaRepository<Withdrawal
     @Query("SELECT w FROM WithdrawalRequest w WHERE w.status = :status ORDER BY w.createdAt DESC")
     List<WithdrawalRequest> findByStatusOrderByCreatedAtDesc(@Param("status") WithdrawalStatus status);
 
-    @Query("""
-            SELECT COALESCE(SUM(w.amount), 0)
-              FROM WithdrawalRequest w
-             WHERE w.student.userId = :studentId
-               AND w.status = agsfjope.backend.core.enums.WithdrawalStatus.PENDING
-            """)
+    /**
+     * Tính tổng số tiền rút đang ở trạng thái PENDING của 1 sinh viên.
+     * Dùng native SQL + CAST tường minh vì PostgreSQL custom enum type
+     * `withdrawal_status` sẽ lỗi nếu Hibernate render enum literal theo tên Java enum
+     * (`WithdrawalStatus`) thay vì tên DB enum type (`withdrawal_status`).
+     */
+    @Query(value = """
+            SELECT COALESCE(SUM(wr.amount), 0)
+            FROM withdrawalrequests wr
+            WHERE wr.studentid = :studentId
+              AND wr.status = CAST('PENDING' AS withdrawal_status)
+            """, nativeQuery = true)
     java.math.BigDecimal sumPendingAmountByStudentId(@Param("studentId") UUID studentId);
 }

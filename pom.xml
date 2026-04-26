@@ -159,9 +159,10 @@
             <version>16.02-2.01</version>
         </dependency>
 
+        <!-- ── Static Code Analysis (Grading Pipeline) ──────────────────── -->
         <!-- JavaParser: parse student .java source code into AST for
              deterministic OOP structure analysis (field modifiers, inheritance,
-             method signatures) without requiring AI -->
+             method signatures) without requiring AI. Used for hard-coded detect. -->
         <dependency>
             <groupId>com.github.javaparser</groupId>
             <artifactId>javaparser-core</artifactId>
