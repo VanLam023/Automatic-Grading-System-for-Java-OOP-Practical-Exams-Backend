@@ -20,30 +20,42 @@ import java.util.Optional;
  * AI OOP Review Service — provider-agnostic.
  *
  * <h3>Design: Strategy Pattern</h3>
- * The correct {@link LLMAdapter} is selected at runtime from {@link LLMAdapterFactory}
+ * The correct {@link LLMAdapter} is selected at runtime from
+ * {@link LLMAdapterFactory}
  * based on the {@code AI_PROVIDER} value in {@code SystemConfig}.
- * Switching providers (Gemini → ChatGPT → OpenRouter) requires only a config change —
+ * Switching providers (Gemini → ChatGPT → OpenRouter) requires only a config
+ * change —
  * no code changes needed.
  *
  * <h3>2-Prompt Strategy:</h3>
  * <ol>
- *   <li><b>Prompt 1 (Analysis)</b>: Provide exam question UML context + student source code.
- *       AI performs deep OOP analysis across 5 criteria (encapsulation, inheritance,
- *       polymorphism, design quality, code integrity / anti-cheat).</li>
- *   <li><b>Prompt 2 (Result)</b>: Ask AI to return its analysis as structured JSON
- *       with per-criterion scores, violations list, hard-coded values, and overall verdict.</li>
+ * <li><b>Prompt 1 (Analysis)</b>: Provide exam question UML context + student
+ * source code.
+ * AI performs deep OOP analysis across 5 criteria (encapsulation, inheritance,
+ * polymorphism, design quality, code integrity / anti-cheat).</li>
+ * <li><b>Prompt 2 (Result)</b>: Ask AI to return its analysis as structured
+ * JSON
+ * with per-criterion scores, violations list, hard-coded values, and overall
+ * verdict.</li>
  * </ol>
  *
- * <p>SystemConfig keys used:</p>
+ * <p>
+ * SystemConfig keys used:
+ * </p>
  * <ul>
- *   <li>{@code AI_PROVIDER} — provider name or URL (e.g., "gemini", "openai", "https://...")</li>
- *   <li>{@code AI_API_KEY} (AES-encrypted) — API key</li>
- *   <li>{@code AI_MODEL} — model ID (e.g., "gemini-2.0-flash", "gpt-4o")</li>
- *   <li>{@code AI_LANGUAGE} — language for review comments (e.g., "Vietnamese")</li>
+ * <li>{@code AI_PROVIDER} — provider name or URL (e.g., "gemini", "openai",
+ * "https://...")</li>
+ * <li>{@code AI_API_KEY} (AES-encrypted) — API key</li>
+ * <li>{@code AI_MODEL} — model ID (e.g., "gemini-2.0-flash", "gpt-4o")</li>
+ * <li>{@code AI_LANGUAGE} — language for review comments (e.g.,
+ * "Vietnamese")</li>
  * </ul>
  *
- * <p>If AI call fails → {@link AIReviewResult#failure} is returned — the grading pipeline
- * continues without interruption.</p>
+ * <p>
+ * If AI call fails → {@link AIReviewResult#failure} is returned — the grading
+ * pipeline
+ * continues without interruption.
+ * </p>
  */
 @Slf4j
 @Service
@@ -53,9 +65,9 @@ public class LLMReviewService {
     private static final int MAX_SOURCE_CHARS = 12_000;
 
     private final SystemConfigRepository systemConfigRepository;
-    private final AesEncryptionUtil      encryptionUtil;
-    private final ObjectMapper           objectMapper;
-    private final LLMAdapterFactory      adapterFactory;
+    private final AesEncryptionUtil encryptionUtil;
+    private final ObjectMapper objectMapper;
+    private final LLMAdapterFactory adapterFactory;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -63,7 +75,8 @@ public class LLMReviewService {
      * Evaluates student source code against the exam question's OOP requirements.
      *
      * @param request exam question context + student source code + target language
-     * @return AI evaluation result; never null — fails gracefully with {@link AIReviewResult#failure}
+     * @return AI evaluation result; never null — fails gracefully with
+     *         {@link AIReviewResult#failure}
      */
     public AIReviewResult review(AIReviewRequest request) {
         // Lấy cấu hình AI từ DB (provider, model, api key, ngôn ngữ phản hồi)
@@ -76,7 +89,8 @@ public class LLMReviewService {
             return AIReviewResult.failure("AI chưa được cấu hình: " + e.getMessage());
         }
 
-        // Chọn Adapter phù hợp theo provider (Gemini, OpenAI, hay URL tương thích OpenAI)
+        // Chọn Adapter phù hợp theo provider (Gemini, OpenAI, hay URL tương thích
+        // OpenAI)
         LLMAdapter adapter = adapterFactory.getAdapter(config.provider());
 
         // Bảo vệ: không thể chấm bài nếu không có source code — bỏ qua luôn, không lỗi
@@ -93,25 +107,31 @@ public class LLMReviewService {
 
             // [PERF-STEP2] Use callWithRetry() instead of direct adapter calls to handle
             // Gemini rate limits / transient errors without failing the whole grading.
-            // Sử dụng callWithRetry() thay cho gọi trực tiếp adapter — tự động thử lại khi gặp lỗi.
+            // Sử dụng callWithRetry() thay cho gọi trực tiếp adapter — tự động thử lại khi
+            // gặp lỗi.
 
             // Chiến lược 2-PROMPT:
-            //   Prompt 1: yêu cầu AI phân tích sâu — kết quả là văn bản tự do
-            //   Prompt 2: yêu cầu AI đóng gói phân tích thành JSON có cấu trúc để hệ thống đọc được
-            // Tách 2 bước giúp tăng chất lượng phân tích không bị ảnh hưởng bởi format output.
+            // Prompt 1: yêu cầu AI phân tích sâu — kết quả là văn bản tự do
+            // Prompt 2: yêu cầu AI đóng gói phân tích thành JSON có cấu trúc để hệ thống
+            // đọc được
+            // Tách 2 bước giúp tăng chất lượng phân tích không bị ảnh hưởng bởi format
+            // output.
 
             // Prompt 1: Deep OOP analysis with exam context
             // [OLD] String analysis = adapter.chat(
-            //         buildAnalysisPrompt(request), config.apiKey(), config.model());
+            // buildAnalysisPrompt(request), config.apiKey(), config.model());
             String analysis = callWithRetry(adapter, buildAnalysisPrompt(request),
                     config.apiKey(), config.model(), false, request.questionTitle());
 
             // Prompt 2: Return structured JSON — use chatJson() for providers that support
             // JSON mode (responseMimeType) to avoid markdown wrapping and truncation.
             // [OLD] String resultJson = adapter.chatJson(
-            //         buildResultPrompt(analysis, config.language()), config.apiKey(), config.model());
-            // Prompt 2: Bước này dùng chatJson() — với Gemini sẽ bật JSON mode để tránh markdown wrapper
-            String resultJson = callWithRetry(adapter, buildResultPrompt(analysis, config.language(), request.maxScore()),
+            // buildResultPrompt(analysis, config.language()), config.apiKey(),
+            // config.model());
+            // Prompt 2: Bước này dùng chatJson() — với Gemini sẽ bật JSON mode để tránh
+            // markdown wrapper
+            String resultJson = callWithRetry(adapter,
+                    buildResultPrompt(analysis, config.language(), request.maxScore()),
                     config.apiKey(), config.model(), true, request.questionTitle());
 
             // Phân tích JSON trả về thành AIReviewResult object
@@ -130,7 +150,8 @@ public class LLMReviewService {
     /**
      * [PERF-STEP2] Calls AI adapter with exponential-backoff retry.
      *
-     * <p>Motivation: Gemini rate limits (429) or transient network errors can cause
+     * <p>
+     * Motivation: Gemini rate limits (429) or transient network errors can cause
      * the response to be empty or the JSON to be truncated mid-stream. Retrying
      * with a short pause almost always succeeds on the 2nd attempt.
      *
@@ -138,19 +159,22 @@ public class LLMReviewService {
      * @param prompt       the prompt to send
      * @param apiKey       provider API key
      * @param model        model ID
-     * @param jsonMode     true → call {@code chatJson()}, false → call {@code chat()}
+     * @param jsonMode     true → call {@code chatJson()}, false → call
+     *                     {@code chat()}
      * @param questionHint short label for log messages (e.g. question title)
      * @return response text from the model
      * @throws Exception re-thrown after all retries exhausted
      */
     private String callWithRetry(LLMAdapter adapter, String prompt,
-                                  String apiKey, String model,
-                                  boolean jsonMode, String questionHint) throws Exception {
+            String apiKey, String model,
+            boolean jsonMode, String questionHint) throws Exception {
         // [PERF-STEP2] Max 3 attempts: original + 2 retries
-        // Tối đa 3 lần: lần 1 (gọc) + 2 lần thử lại nếu gặp rate limit hoặc network error
+        // Tối đa 3 lần: lần 1 (gọc) + 2 lần thử lại nếu gặp rate limit hoặc network
+        // error
         int maxAttempts = 3;
         // Base delay in ms; doubles each retry: 2s → 4s → 6s
-        // Thời gian chờ tăng dần: lần 1 thất bại chờ 2s, lần 2 chờ 4s (exponential backoff nhẹ)
+        // Thời gian chờ tăng dần: lần 1 thất bại chờ 2s, lần 2 chờ 4s (exponential
+        // backoff nhẹ)
         long baseDelayMs = 2_000L;
 
         Exception lastException = null;
@@ -175,7 +199,8 @@ public class LLMReviewService {
                         throw new RuntimeException("AI retry interrupted", ie);
                     }
                 } else {
-                    // Đã hết số lần thử — log error, throw ra ngoài cho review() bắt và trả về failure
+                    // Đã hết số lần thử — log error, throw ra ngoài cho review() bắt và trả về
+                    // failure
                     log.error("[AI-RETRY] All {} attempts failed for question '{}': {}",
                             maxAttempts, questionHint, e.getMessage());
                 }
@@ -272,8 +297,7 @@ public class LLMReviewService {
                 """.formatted(
                 request.questionTitle(),
                 request.questionDescription() != null ? request.questionDescription() : "(no description)",
-                src != null ? src : "(no source code)"
-        );
+                src != null ? src : "(no source code)");
     }
 
     private String buildResultPrompt(String analysis, String language, java.math.BigDecimal maxScore) {
@@ -349,7 +373,9 @@ public class LLMReviewService {
                   "comment": "<numbered list in %s — exactly one line per criterion, include max/earned/deducted points per line as in RULE 6>",
                   "isOopViolated": <true|false>
                 }
-                     """.formatted(analysis, language, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr, language);
+                     """
+                .formatted(analysis, language, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr,
+                        language);
     }
 
     // ─── RESULT PARSING ──────────────────────────────────────────────────────
@@ -357,7 +383,8 @@ public class LLMReviewService {
     /**
      * Parses the AI response for the new flexible prompt format.
      *
-     * <p>The new format does NOT include a {@code criteriaBreakdown} block —
+     * <p>
+     * The new format does NOT include a {@code criteriaBreakdown} block —
      * criteria results are embedded in the free-text {@code comment} field
      * as a numbered list. All breakdown fields are set to ZERO.
      * Use {@link #parseResultLegacy(String)} if you need per-criterion scores.
@@ -377,15 +404,17 @@ public class LLMReviewService {
             // Lấy tổng điểm OOP và ép về miền hợp lệ [0..maxScore]
             BigDecimal parsedScore = asBigDecimal(oopScoreNode);
             BigDecimal safeMax = (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
-                    ? maxScore : BigDecimal.TEN;
+                    ? maxScore
+                    : BigDecimal.TEN;
             BigDecimal oopScore = parsedScore.max(BigDecimal.ZERO).min(safeMax);
-            boolean oopViolated  = node.path("isOopViolated").asBoolean(false);
+            boolean oopViolated = node.path("isOopViolated").asBoolean(false);
 
             // Danh sách vi phạm và hardcode (null-safe)
             JsonNode violationsNode = node.path("violations");
             List<String> violations = violationsNode.isMissingNode() || violationsNode.isNull()
                     ? Collections.emptyList()
-                    : objectMapper.convertValue(violationsNode, new TypeReference<>() {});
+                    : objectMapper.convertValue(violationsNode, new TypeReference<>() {
+                    });
             if (violations == null) {
                 violations = Collections.emptyList();
             }
@@ -393,7 +422,8 @@ public class LLMReviewService {
             JsonNode hardCodedNode = node.path("hardCodedValues");
             List<String> hardCoded = hardCodedNode.isMissingNode() || hardCodedNode.isNull()
                     ? Collections.emptyList()
-                    : objectMapper.convertValue(hardCodedNode, new TypeReference<>() {});
+                    : objectMapper.convertValue(hardCodedNode, new TypeReference<>() {
+                    });
             if (hardCoded == null) {
                 hardCoded = Collections.emptyList();
             }
@@ -405,8 +435,7 @@ public class LLMReviewService {
                     BigDecimal.ZERO, BigDecimal.ZERO,
                     violations, hardCoded,
                     comment, oopViolated,
-                    false, null
-            );
+                    false, null);
         } catch (Exception e) {
             log.warn("Flexible parser failed, trying legacy parser: {}", e.getMessage());
             AIReviewResult legacy = parseResultLegacy(rawJson);
@@ -422,7 +451,8 @@ public class LLMReviewService {
     /**
      * Legacy parser — kept for backward compatibility or rollback.
      *
-     * <p>Parses the OLD 5-criteria fixed prompt format which includes a
+     * <p>
+     * Parses the OLD 5-criteria fixed prompt format which includes a
      * {@code criteriaBreakdown} JSON block with per-criterion scores
      * (encapsulation, inheritance, polymorphism, designQuality, codeIntegrity).
      * Use this if you need to switch back to the old rigid grading format.
@@ -432,34 +462,35 @@ public class LLMReviewService {
             String json = extractJsonBlock(rawJson);
             JsonNode node = objectMapper.readTree(json);
 
-            BigDecimal oopScore      = asBigDecimal(node.path("oopScore"));
-            JsonNode   bd            = node.path("criteriaBreakdown");
+            BigDecimal oopScore = asBigDecimal(node.path("oopScore"));
+            JsonNode bd = node.path("criteriaBreakdown");
             BigDecimal encapsulation = asBigDecimal(bd.path("encapsulation"));
-            BigDecimal inheritance   = asBigDecimal(bd.path("inheritance"));
-            BigDecimal polymorphism  = asBigDecimal(bd.path("polymorphism"));
+            BigDecimal inheritance = asBigDecimal(bd.path("inheritance"));
+            BigDecimal polymorphism = asBigDecimal(bd.path("polymorphism"));
             BigDecimal designQuality = asBigDecimal(bd.path("designQuality"));
             BigDecimal codeIntegrity = asBigDecimal(bd.path("codeIntegrity"));
 
             List<String> violations = objectMapper.convertValue(
-                    node.path("violations"), new TypeReference<>() {});
+                    node.path("violations"), new TypeReference<>() {
+                    });
             if (violations == null) {
                 violations = Collections.emptyList();
             }
-            List<String> hardCoded  = objectMapper.convertValue(
-                    node.path("hardCodedValues"), new TypeReference<>() {});
+            List<String> hardCoded = objectMapper.convertValue(
+                    node.path("hardCodedValues"), new TypeReference<>() {
+                    });
             if (hardCoded == null) {
                 hardCoded = Collections.emptyList();
             }
-            String  comment         = node.path("comment").asText("");
-            boolean oopViolated     = node.path("isOopViolated").asBoolean(false);
+            String comment = node.path("comment").asText("");
+            boolean oopViolated = node.path("isOopViolated").asBoolean(false);
 
             return new AIReviewResult(
                     oopScore, encapsulation, inheritance, polymorphism,
                     designQuality, codeIntegrity,
                     violations, hardCoded,
                     comment, oopViolated,
-                    false, null
-            );
+                    false, null);
         } catch (Exception e) {
             log.error("Failed to parse AI result JSON (legacy): {}", e.getMessage());
             return AIReviewResult.failure("Failed to parse AI JSON: " + e.getMessage());
@@ -468,15 +499,18 @@ public class LLMReviewService {
 
     /** Strips markdown fences and extracts the first {...} JSON block. */
     private String extractJsonBlock(String raw) {
-        if (raw == null) return "{}";
+        if (raw == null)
+            return "{}";
         String s = raw.trim();
         if (s.startsWith("```")) {
             int nl = s.indexOf('\n');
-            if (nl != -1) s = s.substring(nl + 1);
-            if (s.endsWith("```")) s = s.substring(0, s.length() - 3).trim();
+            if (nl != -1)
+                s = s.substring(nl + 1);
+            if (s.endsWith("```"))
+                s = s.substring(0, s.length() - 3).trim();
         }
         int start = s.indexOf('{');
-        int end   = s.lastIndexOf('}');
+        int end = s.lastIndexOf('}');
         return (start != -1 && end > start) ? s.substring(start, end + 1) : s;
     }
 
@@ -504,9 +538,9 @@ public class LLMReviewService {
         }
 
         String provider = Optional.ofNullable(map.get("AI_PROVIDER")).filter(s -> !s.isBlank())
-                                  .orElse("gemini");
-        String model    = Optional.ofNullable(map.get("AI_MODEL")).filter(s -> !s.isBlank())
-                                  .orElse("gemini-3-flash-preview");
+                .orElse("gemini");
+        String model = Optional.ofNullable(map.get("AI_MODEL")).filter(s -> !s.isBlank())
+                .orElse("gemini-3-flash-preview");
         String language = resolveLanguageName(
                 Optional.ofNullable(map.get("AI_LANGUAGE")).filter(s -> !s.isBlank())
                         .orElse("vi"));
@@ -518,19 +552,23 @@ public class LLMReviewService {
      * Maps an ISO language code or full language name to the full English name used
      * in AI prompts (e.g. {@code "vi"} → {@code "Vietnamese"}).
      *
-     * <p>New languages can be added here without changing DB schema or frontend.</p>
+     * <p>
+     * New languages can be added here without changing DB schema or frontend.
+     * </p>
      *
      * @param code value stored in {@code SystemConfigs.AI_LANGUAGE}
      * @return full language name safe to embed directly in the prompt
      */
     private String resolveLanguageName(String code) {
-        if (code == null) return "Vietnamese";
+        if (code == null)
+            return "Vietnamese";
         return switch (code.toLowerCase().strip()) {
             case "vi", "vie", "vietnamese" -> "Vietnamese";
-            case "en", "eng", "english"    -> "English";
+            case "en", "eng", "english" -> "English";
             default -> code; // admin entered full name directly (e.g. "Japanese")
         };
     }
 
-    private record AIConfig(String provider, String apiKey, String model, String language) {}
+    private record AIConfig(String provider, String apiKey, String model, String language) {
+    }
 }

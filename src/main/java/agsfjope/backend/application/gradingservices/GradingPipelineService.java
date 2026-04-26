@@ -315,9 +315,11 @@ public class GradingPipelineService {
 
                 testCaseResultRepository.saveAll(tcResult.results());
 
-                // ── Step B: AI Review (parallel, in background) ───────────────
+                // ── Step B: AI Review ─────────────────────────────────────────
                 final Path finalSrcDir      = preSrcDir;
                 final QuestionTcResult finalTcResult = tcResult;
+
+                // Run AI review (parallel, in background)
                 CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
                     AIReviewResult aiResult = runAIReview(
                             finalSubmission, answer, question, finalSrcDir);
@@ -337,7 +339,6 @@ public class GradingPipelineService {
                                         aiResult));
                     });
                 }, aiExecutor);
-
                 aiTasks.add(aiTask);
             }
 
@@ -818,7 +819,7 @@ public class GradingPipelineService {
         return idx >= 0 ? filePath.substring(idx).toLowerCase() : ".zip";
     }
 
-    // ─── INNER RECORD ────────────────────────────────────────────────────────
+
 
     private record QuestionTcResult(
             List<TestCaseResult> results,

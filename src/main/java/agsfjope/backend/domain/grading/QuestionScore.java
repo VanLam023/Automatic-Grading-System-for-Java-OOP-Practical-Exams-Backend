@@ -13,6 +13,7 @@ import java.math.BigDecimal;
  * @param maxScore            maximum achievable score for this question
  * @param rawTcScore          raw test case score before guard rules
  * @param rawOopScore         raw OOP score before guard rules (0 if AI skipped)
+ * @param rawStructureScore   raw structure check score (JavaParser + Reflection, 0 if not run)
  * @param finalQuestionScore  final score after guard rules applied
  * @param guardRuleTriggered  true if a guard rule forced the score to 0
  * @param note                guard rule explanation note (null if no guard triggered)

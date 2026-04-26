@@ -80,9 +80,8 @@ public class ScoreCalculator {
         BigDecimal passThreshold = loadPassThreshold();
 
         List<QuestionScore> questionScores = new ArrayList<>();
-        BigDecimal sumTcRaw  = BigDecimal.ZERO;
-        BigDecimal sumOopRaw = BigDecimal.ZERO;
-
+        BigDecimal sumTcRaw     = BigDecimal.ZERO;
+        BigDecimal sumOopRaw    = BigDecimal.ZERO;
         for (Map.Entry<Integer, QuestionInput> entry : questionInputs.entrySet()) {
             int questionNumber = entry.getKey();
             QuestionInput input = entry.getValue();
@@ -90,7 +89,7 @@ public class ScoreCalculator {
             QuestionScore qScore = scoreQuestion(questionNumber, input, config);
             questionScores.add(qScore);
 
-            // Step 3: accumulate — guard-forced questions contribute 0 to BOTH sums
+            // Step 3: accumulate — guard-forced questions contribute 0 to ALL sums
             sumTcRaw  = sumTcRaw.add(
                     qScore.guardRuleTriggered() ? BigDecimal.ZERO : qScore.rawTcScore()
             );
@@ -100,13 +99,13 @@ public class ScoreCalculator {
             );
         }
 
-        // Apply weights to get the two weighted totals
-        BigDecimal tcWeight  = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
-        BigDecimal oopWeight = config.getOopWeight().divide(new BigDecimal("100"), 4, ROUNDING);
+        // Apply weights to get the weighted totals
+        BigDecimal tcWeight     = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
+        BigDecimal oopWeight    = config.getOopWeight().divide(new BigDecimal("100"), 4, ROUNDING);
 
-        BigDecimal tcTotal    = sumTcRaw.multiply(tcWeight).setScale(SCALE, ROUNDING);
-        BigDecimal oopTotal   = sumOopRaw.multiply(oopWeight).setScale(SCALE, ROUNDING);
-        BigDecimal finalScore = tcTotal.add(oopTotal).setScale(SCALE, ROUNDING);
+        BigDecimal tcTotal     = sumTcRaw.multiply(tcWeight).setScale(SCALE, ROUNDING);
+        BigDecimal oopTotal    = sumOopRaw.multiply(oopWeight).setScale(SCALE, ROUNDING);
+        BigDecimal finalScore  = tcTotal.add(oopTotal).setScale(SCALE, ROUNDING);
 
         // Compare against threshold read from DB: finalScore > passThreshold → PASS
         boolean passed = finalScore.compareTo(passThreshold) > 0;
@@ -160,8 +159,8 @@ public class ScoreCalculator {
         int passed  = input.passTcCount();
 
         // Step 1: Raw scores
-        BigDecimal tcRaw  = calculateTcRaw(passed, total, maxScore);
-        BigDecimal oopRaw = calculateOopRaw(input.aiResult(), maxScore);
+        BigDecimal tcRaw     = calculateTcRaw(passed, total, maxScore);
+        BigDecimal oopRaw    = calculateOopRaw(input.aiResult(), maxScore);
 
         // Step 2: Guard rules (in priority order — first match wins)
 
@@ -171,49 +170,43 @@ public class ScoreCalculator {
                     (input.missingDetail() != null ? input.missingDetail()
                             : "thiếu file nộp (không có .jar hoặc mã nguồn .java)");
             return new QuestionScore(questionNumber, maxScore,
-                    BigDecimal.ZERO, BigDecimal.ZERO,
-                    BigDecimal.ZERO, true, note, 0, total);
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, note, 0, total);
         }
 
         // 2b. Tampered files — forced 0 regardless of any config
         if (input.hasExamFileTampering()) {
             String note = buildTamperNote(tcRaw, oopRaw, input.tamperDetail());
             return new QuestionScore(questionNumber, maxScore,
-                    BigDecimal.ZERO, BigDecimal.ZERO,
-                    BigDecimal.ZERO, true, note, passed, total);
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2b. FailIfOopViolated — override to 0 if AI says code fundamentally violates OOP
+        // 2c. FailIfOopViolated — override to 0 if AI says code fundamentally violates OOP
         if (Boolean.TRUE.equals(config.getFailIfOopViolated())
                 && input.aiResult() != null
                 && !input.aiResult().aiError()
                 && input.aiResult().oopViolated()) {
             String note = buildGuardNote("FailIfOopViolated", tcRaw, oopRaw);
             return new QuestionScore(questionNumber, maxScore,
-                    tcRaw, oopRaw,   // keep raw for transparency
-                    BigDecimal.ZERO, true, note, passed, total);
+                    tcRaw, oopRaw, BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2c. FailIfZeroTestCase — override to 0 if not a single test case passed
+        // 2d. FailIfZeroTestCase — override to 0 if not a single test case passed
         if (Boolean.TRUE.equals(config.getFailIfZeroTestCase()) && passed == 0 && total > 0) {
             String note = buildGuardNote("FailIfZeroTestCase", tcRaw, oopRaw);
             return new QuestionScore(questionNumber, maxScore,
-                    tcRaw, oopRaw,
-                    BigDecimal.ZERO, true, note, passed, total);
+                    tcRaw, oopRaw, BigDecimal.ZERO, true, note, passed, total);
         }
 
-                // 2d. Apply grading-mode weights to per-question score.
-                // This ensures AnswerScore of each question reflects the selected mode
-                // (e.g. MODE_2 = 50% TC + 50% OOP) instead of raw unweighted sum.
-                BigDecimal tcWeight  = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
-                BigDecimal oopWeight = config.getOopWeight().divide(new BigDecimal("100"), 4, ROUNDING);
+        // 2e. Apply grading-mode weights to per-question score.
+        BigDecimal tcWeight     = config.getTestCaseWeight().divide(new BigDecimal("100"), 4, ROUNDING);
+        BigDecimal oopWeight    = config.getOopWeight().divide(new BigDecimal("100"), 4, ROUNDING);
 
-                BigDecimal weightedTc  = tcRaw.multiply(tcWeight);
-                BigDecimal weightedOop = Boolean.TRUE.equals(config.getOopCommentOnly())
-                                ? BigDecimal.ZERO
-                                : oopRaw.multiply(oopWeight);
+        BigDecimal weightedTc     = tcRaw.multiply(tcWeight);
+        BigDecimal weightedOop    = Boolean.TRUE.equals(config.getOopCommentOnly())
+                ? BigDecimal.ZERO
+                : oopRaw.multiply(oopWeight);
 
-                BigDecimal finalQ = weightedTc.add(weightedOop).setScale(SCALE, ROUNDING);
+        BigDecimal finalQ = weightedTc.add(weightedOop).setScale(SCALE, ROUNDING);
 
         return new QuestionScore(questionNumber, maxScore,
                 tcRaw, oopRaw, finalQ, false, null, passed, total);
@@ -250,6 +243,8 @@ public class ScoreCalculator {
                                 .setScale(SCALE, ROUNDING);
     }
 
+
+
     // ─── NOTE BUILDERS ────────────────────────────────────────────────────────
 
     private String buildGuardNote(String ruleName, BigDecimal tcRaw, BigDecimal oopRaw) {
@@ -280,8 +275,11 @@ public class ScoreCalculator {
      * @param passTcCount          number of test cases that passed
      * @param totalTcCount         total number of test cases for this question
      * @param aiResult             AI OOP review result (may be null or have aiError=true)
+     * @param structureResult      JavaParser + Reflection check result (null if not run)
      * @param hasExamFileTampering true if exam .class files were tampered with
      * @param tamperDetail         description of which files were tampered
+     * @param missingFile          true if student file is missing
+     * @param missingDetail        description of missing file
      */
     public record QuestionInput(
             BigDecimal maxScore,

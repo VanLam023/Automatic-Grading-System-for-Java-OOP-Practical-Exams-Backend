@@ -84,8 +84,21 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional
     @Auditable(action = AuditAction.SUBMIT, entityType = "SUBMISSION")
     public SubmissionResponse submit(UUID examId, UUID blockId, UUID studentId, MultipartFile file) {
-        log.info("SubmissionService.submit: examId={}, blockId={}, studentId={}, file={}",
-                examId, blockId, studentId, file.getOriginalFilename());
+        return doSubmit(examId, blockId, studentId, file, false);
+    }
+
+    @Override
+    @Transactional
+    public SubmissionResponse submitSkipTimeCheck(UUID examId, UUID blockId, UUID studentId, MultipartFile file) {
+        return doSubmit(examId, blockId, studentId, file, true);
+    }
+
+    // ─── CORE SUBMIT LOGIC ──────────────────────────────────────────────────
+
+    private SubmissionResponse doSubmit(UUID examId, UUID blockId, UUID studentId,
+                                         MultipartFile file, boolean skipTimeCheck) {
+        log.info("SubmissionService.doSubmit: examId={}, blockId={}, studentId={}, file={}, skipTimeCheck={}",
+                examId, blockId, studentId, file.getOriginalFilename(), skipTimeCheck);
 
         // ── 1. Validate exam exists ───────────────────────────────────────────
         if (!examRepository.existsById(examId)) {
@@ -102,16 +115,20 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
 
         // ── 3. BR-14: Block must be ONGOING (check by block times) ──────────────
-        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
-        if (block.getStartTime() != null && now.isBefore(block.getStartTime())) {
-            throw new ExamNotOngoingException(
-                    "Ca thi \"" + block.getName() + "\" của kỳ thi \"" + block.getExam().getName() +
-                    "\" chưa bắt đầu. Ca thi sẽ mở lúc " + block.getStartTime() + " (MSG-40).");
-        }
-        if (block.getEndTime() != null && now.isAfter(block.getEndTime())) {
-            throw new ExamNotOngoingException(
-                    "Ca thi \"" + block.getName() + "\" của kỳ thi \"" + block.getExam().getName() +
-                    "\" đã kết thúc lúc " + block.getEndTime() + " (MSG-34). Không thể nộp bài.");
+        if (!skipTimeCheck) {
+            java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+            if (block.getStartTime() != null && now.isBefore(block.getStartTime())) {
+                throw new ExamNotOngoingException(
+                        "Ca thi \"" + block.getName() + "\" của kỳ thi \"" + block.getExam().getName() +
+                        "\" chưa bắt đầu. Ca thi sẽ mở lúc " + block.getStartTime() + " (MSG-40).");
+            }
+            if (block.getEndTime() != null && now.isAfter(block.getEndTime())) {
+                throw new ExamNotOngoingException(
+                        "Ca thi \"" + block.getName() + "\" của kỳ thi \"" + block.getExam().getName() +
+                        "\" đã kết thúc lúc " + block.getEndTime() + " (MSG-34). Không thể nộp bài.");
+            }
+        } else {
+            log.info("SubmissionService: BR-14 time check SKIPPED (dev/test mode).");
         }
 
         // ── 4. Validate block has an exam paper ──────────────────────────────

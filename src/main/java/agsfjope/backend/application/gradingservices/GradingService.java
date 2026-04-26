@@ -4,6 +4,7 @@ import agsfjope.backend.application.dtos.requests.grading.TriggerGradingRequest;
 import agsfjope.backend.application.dtos.responses.grading.GradingProgressResponse;
 import agsfjope.backend.core.entities.Submission;
 import agsfjope.backend.core.entities.User;
+import agsfjope.backend.core.enums.GradingMode;
 import agsfjope.backend.core.enums.SubmissionStatus;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +70,7 @@ public class GradingService {
     private final Set<UUID> cancelledBlocks = ConcurrentHashMap.newKeySet();
 
     private final GradingPipelineService pipelineService;
+    private final DeterministicGradingService deterministicGradingService;
     private final SubmissionRepository   submissionRepository;
 
     // [PERF-STEP3] Thread pool injected for running each submission in parallel
@@ -76,9 +78,11 @@ public class GradingService {
 
     // [PERF-STEP3] Constructor injection (replaces @RequiredArgsConstructor) to support @Qualifier
     public GradingService(GradingPipelineService pipelineService,
+                          DeterministicGradingService deterministicGradingService,
                           SubmissionRepository submissionRepository,
                           @Qualifier("submissionExecutor") Executor submissionExecutor) {
         this.pipelineService      = pipelineService;
+        this.deterministicGradingService = deterministicGradingService;
         this.submissionRepository = submissionRepository;
         this.submissionExecutor   = submissionExecutor;
     }
@@ -176,9 +180,13 @@ public class GradingService {
                         sub.setStatus(SubmissionStatus.GRADING);
                         submissionRepository.save(sub);
 
-                        // [Old]pipelineService.grade(submission, triggeredBy, cancelledBlocks);
-                        // Gọi pipeline chấm bài cho submission này (toàn bộ câu hỏi + AI review)
-                        pipelineService.grade(sub, triggeredBy, cancelledBlocks);
+                        // [MODE_5 BRANCH]
+                        if (sub.getBlock().getExam().getGradingMode() == GradingMode.MODE_5) {
+                            deterministicGradingService.grade(sub, triggeredBy, cancelledBlocks);
+                        } else {
+                            // [ORIGINAL PIPELINE]
+                            pipelineService.grade(sub, triggeredBy, cancelledBlocks);
+                        }
 
                     } catch (GradingCancelledException e) {
                         log.info("Grading cancelled mid-submission {} in block {}",

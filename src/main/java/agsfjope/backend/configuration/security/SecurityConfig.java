@@ -100,6 +100,7 @@ public class SecurityConfig {
                     "/api/auth/verify-reset-token",
                     "/api/auth/reset-password",
                     "/api/v1/payments/webhook",
+                    "/api/dev/**",
                     "/swagger-ui/**",
                     "/swagger-ui.html",
                     "/v3/api-docs/**",

@@ -6,6 +6,11 @@ spring:
   application:
     name: agsfjope
   
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+  
   # Database Configuration (PostgreSQL 15+)
   datasource:
     url: ${DB_URL}
@@ -13,7 +18,7 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 5             # Supabase free plan giới hạn ~15 connections
+      maximum-pool-size: 3             # Reduced to avoid Supabase MaxClients limit
       minimum-idle: 1               # Chỉ giữ 1 idle — tránh chiếm quá nhiều connection khi startup
       connection-timeout: 60000     # Chờ tối đa 60s để lấy connection từ pool
       max-lifetime: 1500000         # 25 phút — đóng connection cũ trước khi PostgreSQL idle timeout

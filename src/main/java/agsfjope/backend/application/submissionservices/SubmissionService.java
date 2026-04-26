@@ -47,6 +47,23 @@ public interface SubmissionService {
     SubmissionResponse submit(UUID examId, UUID blockId, UUID studentId, MultipartFile file);
 
     /**
+     * Submits a student's exam archive <b>without</b> checking BR-14 (block time window).
+     *
+     * <p><strong>DEV / TEST ONLY</strong> — used by the bulk-upload endpoint to seed
+     * many submissions at once regardless of the block schedule.</p>
+     *
+     * <p>All other validations (file size, extension, structure, resubmit …) are
+     * still enforced.</p>
+     *
+     * @param examId    the parent exam UUID
+     * @param blockId   the block UUID
+     * @param studentId the student's user UUID
+     * @param file      the uploaded .zip or .rar file
+     * @return full submission response
+     */
+    SubmissionResponse submitSkipTimeCheck(UUID examId, UUID blockId, UUID studentId, MultipartFile file);
+
+    /**
      * Returns the current submission for the given student and block.
      *
      * @param examId    the parent exam UUID

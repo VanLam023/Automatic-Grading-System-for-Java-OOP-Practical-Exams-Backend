@@ -53,7 +53,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     public LecturerAppealPageResponse getAppeals(UUID lecturerId, String status, String keyword, int page, int size) {
         log.info("[Lecturer] Lấy danh sách phân công: lecturer={}, status={}, keyword={}", lecturerId, status, keyword);
 
-        String statusParam  = (status == null || status.isBlank()) ? null : status.toUpperCase();
+        String statusParam = (status == null || status.isBlank()) ? null : status.toUpperCase();
         String keywordParam = (keyword == null) ? "" : keyword.trim();
 
         // Stats
@@ -97,7 +97,8 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
         if (appeal.getStatus() != AppealStatus.PROCESSING) {
             throw new IllegalStateException(
-                    "Theo quy trình, giảng viên chỉ có thể nộp báo cáo chấm phúc khảo cho các đơn đang ở trạng thái PROCESSING. " +
+                    "Theo quy trình, giảng viên chỉ có thể nộp báo cáo chấm phúc khảo cho các đơn đang ở trạng thái PROCESSING. "
+                            +
                             "Trạng thái hiện tại: " + appeal.getStatus());
         }
 
@@ -116,17 +117,13 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
         // Notify Staff (Người đã phân công đơn phúc khảo)
         if (saved.getAssignedBy() != null) {
-            String lecturerName = saved.getAssignedLecturer() != null
-                    ? saved.getAssignedLecturer().getFullName()
-                    : lecturerId.toString();
             notificationService.createNotification(
                     saved.getAssignedBy().getUserId(),
                     "Giảng viên nộp kết quả phúc khảo",
                     String.format("Giảng viên %s đã chấm xong đơn phúc khảo %s. Vui lòng kiểm tra và duyệt kết quả.",
-                            lecturerName, appeal.getAppealId()),
+                            lecturerId, appeal.getAppealId()),
                     "APPEAL",
-                    appeal.getAppealId()
-            );
+                    appeal.getAppealId());
         }
 
         return toDetailResponse(saved);
@@ -145,8 +142,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
 
         return minioService.downloadFile(
                 minioConfig.getBucket().getSubmissions(),
-                appeal.getSubmission().getFilePath()
-        );
+                appeal.getSubmission().getFilePath());
     }
 
     private void validateRequestedQuestionScoreUpdates(Appeal appeal, ReviewAppealRequest request) {
@@ -199,9 +195,7 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
             throw new IllegalStateException(
                     String.format(
                             "Không thể điều chỉnh điểm cho câu %d vì hệ thống không tìm thấy bài làm của sinh viên ở câu này. Vui lòng giữ nguyên điểm hiện tại và kiểm tra lại dữ liệu nộp bài trước khi gửi kết quả phúc khảo.",
-                            questionNumber
-                    )
-            );
+                            questionNumber));
         }
     }
 
@@ -240,10 +234,11 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     private LecturerAppealListItemResponse toListItem(Appeal a) {
         String examName = "", semester = "", blockName = "";
         try {
-            examName  = a.getSubmission().getBlock().getExam().getName();
-            semester  = a.getSubmission().getBlock().getExam().getSemester();
+            examName = a.getSubmission().getBlock().getExam().getName();
+            semester = a.getSubmission().getBlock().getExam().getSemester();
             blockName = a.getSubmission().getBlock().getName();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         BigDecimal originalScore = getOriginalScore(a.getSubmission());
         boolean isOverdue = false;
@@ -281,12 +276,13 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
         String examName = "", semester = "", blockName = "", fileName = "";
         UUID submissionId = null;
         try {
-            examName     = a.getSubmission().getBlock().getExam().getName();
-            semester     = a.getSubmission().getBlock().getExam().getSemester();
-            blockName    = a.getSubmission().getBlock().getName();
-            fileName     = a.getSubmission().getFileName();
+            examName = a.getSubmission().getBlock().getExam().getName();
+            semester = a.getSubmission().getBlock().getExam().getSemester();
+            blockName = a.getSubmission().getBlock().getName();
+            fileName = a.getSubmission().getFileName();
             submissionId = a.getSubmission().getSubmissionId();
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         GradingResult gradingResult = gradingResultRepository
                 .findBySubmission_SubmissionId(submissionId).orElse(null);
@@ -334,7 +330,8 @@ public class LecturerAppealServiceImpl implements LecturerAppealService {
     }
 
     private BigDecimal getOriginalScore(Submission submission) {
-        if (submission == null) return BigDecimal.ZERO;
+        if (submission == null)
+            return BigDecimal.ZERO;
         return gradingResultRepository.findBySubmission_SubmissionId(submission.getSubmissionId())
                 .map(GradingResult::getTotalScore)
                 .orElse(BigDecimal.ZERO);

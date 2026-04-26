@@ -43,24 +43,29 @@ public class AuthController {
      * <p>
      * Xác thực {@code username} và {@code password}; nếu hợp lệ sẽ trả về
      * một Access Token (JWT, hạn 4 tiếng) và Refresh Token (UUID, hạn 30 ngày).
-     * Tài khoản chưa kích hoạt ({@code isActive = false}) hoặc bị khóa sẽ bị từ chối.
+     * Tài khoản chưa kích hoạt ({@code isActive = false}) hoặc bị khóa sẽ bị từ
+     * chối.
      * </p>
      *
      * @param request DTO chứa {@code username} và {@code password}
-     * @return LoginResponse với {@code accessToken}, {@code refreshToken} và thông tin user
+     * @return LoginResponse với {@code accessToken}, {@code refreshToken} và thông
+     *         tin user
      */
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest request,
+            HttpServletResponse response) {
         var loginResponse = authService.login(request);
-        
+
         // Set cookies
-        response.addHeader("Set-Cookie", cookieUtils.createAccessTokenCookie(loginResponse.getAccessToken(), loginResponse.getExpiresIn()).toString());
-        response.addHeader("Set-Cookie", cookieUtils.createRefreshTokenCookie(loginResponse.getRefreshToken(), 30).toString());
-        
+        response.addHeader("Set-Cookie", cookieUtils
+                .createAccessTokenCookie(loginResponse.getAccessToken(), loginResponse.getExpiresIn()).toString());
+        response.addHeader("Set-Cookie",
+                cookieUtils.createRefreshTokenCookie(loginResponse.getRefreshToken(), 30).toString());
+
         // Remove tokens from body payload
         loginResponse.setAccessToken(null);
         loginResponse.setRefreshToken(null);
-        
+
         return ResponseEntity.ok(buildSuccessResponse("MSG-05: Đăng nhập thành công", loginResponse));
     }
 
@@ -72,10 +77,12 @@ public class AuthController {
      * </p>
      *
      * @param request DTO chứa {@code refreshToken} (raw UUID string)
-     * @return LoginResponse với {@code accessToken} mới và cùng {@code refreshToken} cũ
+     * @return LoginResponse với {@code accessToken} mới và cùng
+     *         {@code refreshToken} cũ
      */
     @PostMapping("/refresh")
-    public ResponseEntity<Map<String, Object>> refresh(@CookieValue(name = "refreshToken", required = false) String refreshToken, HttpServletResponse response) {
+    public ResponseEntity<Map<String, Object>> refresh(
+            @CookieValue(name = "refreshToken", required = false) String refreshToken, HttpServletResponse response) {
         if (refreshToken == null || refreshToken.isBlank()) {
             Map<String, Object> err = new HashMap<>();
             err.put("success", false);
@@ -86,13 +93,15 @@ public class AuthController {
         RefreshTokenRequest request = new RefreshTokenRequest();
         request.setRefreshToken(refreshToken);
         var loginResponse = authService.refreshToken(request);
-        
-        response.addHeader("Set-Cookie", cookieUtils.createAccessTokenCookie(loginResponse.getAccessToken(), loginResponse.getExpiresIn()).toString());
-        response.addHeader("Set-Cookie", cookieUtils.createRefreshTokenCookie(loginResponse.getRefreshToken(), 30).toString());
-        
+
+        response.addHeader("Set-Cookie", cookieUtils
+                .createAccessTokenCookie(loginResponse.getAccessToken(), loginResponse.getExpiresIn()).toString());
+        response.addHeader("Set-Cookie",
+                cookieUtils.createRefreshTokenCookie(loginResponse.getRefreshToken(), 30).toString());
+
         loginResponse.setAccessToken(null);
         loginResponse.setRefreshToken(null);
-        
+
         return ResponseEntity.ok(buildSuccessResponse("Đã cấp lại Access Token thành công", loginResponse));
     }
 
@@ -102,7 +111,9 @@ public class AuthController {
      * Thu hồi toàn bộ Refresh Token của user hiện tại trong DB.
      * Access Token là stateless JWT và không bị blacklist theo thiết kế.
      * </p>
-     * <p><strong>Yêu cầu xác thực:</strong> Bearer JWT hợp lệ.</p>
+     * <p>
+     * <strong>Yêu cầu xác thực:</strong> Bearer JWT hợp lệ.
+     * </p>
      *
      * @param authentication đối tượng xác thực được Spring Security inject tự động
      * @return thông báo đăng xuất thành công
@@ -110,11 +121,11 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Map<String, Object>> logout(Authentication authentication, HttpServletResponse response) {
         authService.logout(authentication.getName());
-        
+
         for (org.springframework.http.ResponseCookie cookie : cookieUtils.clearCookies()) {
             response.addHeader("Set-Cookie", cookie.toString());
         }
-        
+
         return ResponseEntity.ok(buildSuccessResponse("MSG-06: Đăng xuất thành công", null));
     }
 
@@ -124,7 +135,9 @@ public class AuthController {
      * Trả về thông tin chi tiết của người dùng đang đăng nhập
      * (không bao gồm {@code passwordHash} và các trường nội bộ).
      * </p>
-     * <p><strong>Yêu cầu xác thực:</strong> Bearer JWT hợp lệ.</p>
+     * <p>
+     * <strong>Yêu cầu xác thực:</strong> Bearer JWT hợp lệ.
+     * </p>
      *
      * @param authentication đối tượng xác thực được Spring Security inject tự động
      * @return {@link UserProfileResponse} chứa email, fullName, role, mssv, v.v.
@@ -141,7 +154,9 @@ public class AuthController {
      * Sinh một token UUID dùng một lần (hạn 15 phút), lưu vào bảng
      * {@code PasswordResetTokens} và gửi email HTML có chứa link đặt lại đến user.
      * </p>
-     * <p><strong>Public endpoint</strong> — không yêu cầu JWT.</p>
+     * <p>
+     * <strong>Public endpoint</strong> — không yêu cầu JWT.
+     * </p>
      *
      * @param request DTO chứa {@code email} của user cần khôi phục mật khẩu
      * @return thông báo yêu cầu kiểm tra email
@@ -160,7 +175,9 @@ public class AuthController {
      * Token được kiểm tra nhưng chưa bị đánh dấu là "đã dùng".
      * Trả về 401 nếu token không tồn tại, đã dùng hoặc hết hạn.
      * </p>
-     * <p><strong>Public endpoint</strong> — không yêu cầu JWT.</p>
+     * <p>
+     * <strong>Public endpoint</strong> — không yêu cầu JWT.
+     * </p>
      *
      * @param token UUID token lấy từ query param {@code ?token=} trong link email
      * @return 200 OK nếu token hợp lệ, 401 nếu không hợp lệ / hết hạn
@@ -177,9 +194,12 @@ public class AuthController {
      * Kiểm tra lại token một lần nữa (phòng ngừa ngâm trang quá lâu),
      * hash mật khẩu mới bằng BCrypt, cập nhật vào DB và đánh dấu token là đã dùng.
      * </p>
-     * <p><strong>Public endpoint</strong> — không yêu cầu JWT.</p>
+     * <p>
+     * <strong>Public endpoint</strong> — không yêu cầu JWT.
+     * </p>
      *
-     * @param request DTO chứa {@code token}, {@code newPassword}, {@code confirmPassword}
+     * @param request DTO chứa {@code token}, {@code newPassword},
+     *                {@code confirmPassword}
      * @return thông báo đặt lại mật khẩu thành công
      */
     @PostMapping("/reset-password")
@@ -194,11 +214,15 @@ public class AuthController {
      * <p>
      * Xác thực email đuôi {@code @fpt.edu.vn}, kiểm tra chéo {@code username}
      * phải trùng bí danh email và {@code mssv} phải là 8 ký tự cuối của bí danh đó.
-     * Lưu user với {@code isActive = false} và gửi link kích hoạt (JWT, hạn 24h) qua email.
+     * Lưu user với {@code isActive = false} và gửi link kích hoạt (JWT, hạn 24h)
+     * qua email.
      * </p>
-     * <p><strong>Public endpoint</strong> — không yêu cầu JWT.</p>
+     * <p>
+     * <strong>Public endpoint</strong> — không yêu cầu JWT.
+     * </p>
      *
-     * @param request DTO chứa {@code email}, {@code username}, {@code mssv}, {@code fullName}, {@code password}
+     * @param request DTO chứa {@code email}, {@code username}, {@code mssv},
+     *                {@code fullName}, {@code password}
      * @return thông báo yêu cầu kiểm tra hộp thư để kích hoạt tài khoản
      */
     @PostMapping("/register")
@@ -206,7 +230,8 @@ public class AuthController {
         authService.register(request);
         return ResponseEntity.ok(buildSuccessResponse(
                 "Đăng ký thành công! Email xác nhận đã được gửi đến " + request.getEmail()
-                + ". Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.", null));
+                        + ". Vui lòng kiểm tra hộp thư để kích hoạt tài khoản.",
+                null));
     }
 
     /**
@@ -216,9 +241,12 @@ public class AuthController {
      * đặt {@code isActive = true} cùng {@code emailVerifiedAt = NOW}.
      * Idempotent: nếu tài khoản đã kích hoạt thì vẫn trả về 200 OK.
      * </p>
-     * <p><strong>Public endpoint</strong> — không yêu cầu JWT.</p>
+     * <p>
+     * <strong>Public endpoint</strong> — không yêu cầu JWT.
+     * </p>
      *
-     * @param token JWT kích hoạt lấy từ query param {@code ?token=} trong link email
+     * @param token JWT kích hoạt lấy từ query param {@code ?token=} trong link
+     *              email
      * @return thông báo kích hoạt thành công
      */
     @GetMapping("/verify-account")
@@ -234,7 +262,8 @@ public class AuthController {
 
     /**
      * Helper method: builds the standard success response format.
-     * Format: {@code { "success": true, "message": "...", "data": {...}, "errors": null }}
+     * Format:
+     * {@code { "success": true, "message": "...", "data": {...}, "errors": null }}
      *
      * @param message human-readable success message
      * @param data    optional payload (can be null for void operations)

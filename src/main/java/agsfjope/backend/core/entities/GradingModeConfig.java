@@ -35,6 +35,12 @@ public class GradingModeConfig {
     @Column(name = "OopWeight", nullable = false, precision = 5, scale = 2)
     private BigDecimal oopWeight;
 
+    @Column(name = "StructureWeight", nullable = false, precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal structureWeight = BigDecimal.ZERO;
+
+
+
     @Column(name = "OopCommentOnly", nullable = false)
     @Builder.Default
     private Boolean oopCommentOnly = false;
