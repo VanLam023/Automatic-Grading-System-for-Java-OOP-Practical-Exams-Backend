@@ -159,6 +159,16 @@
             <version>16.02-2.01</version>
         </dependency>
 
+        <!-- ── Static Code Analysis (Grading Pipeline) ──────────────────── -->
+        <!-- JavaParser: parse AST của Java source files sinh viên nộp.
+             Dùng để kiểm tra OOP structure (class/interface/abstract, encapsulation,
+             inheritance, polymorphism) và phát hiện hard-coded values. -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.26.4</version>
+        </dependency>
+
     </dependencies>
 
     <build>

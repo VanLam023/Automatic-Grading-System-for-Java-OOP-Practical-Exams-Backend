@@ -123,9 +123,7 @@ public class GradingService {
                     : (targets.size() == 1 ? "GRADE_SINGLE" : "GRADE_SELECTED");
             log.info("Grading triggered: block={}, mode={}, count={}", blockId, modeLabel, targets.size());
 
-            // [PERF-STEP3] Grade submissions in PARALLEL using CompletableFuture + Semaphore.
-            // Phương pháp MỚI: chấm song song nhiều bài cùng lúc thay vì tuần tự từng bài.
-            // Semaphore giới hạn số bài chạy đồng thời để tránh vượt rate limit của Gemini API.
+            // Grade submissions in PARALLEL using CompletableFuture + Semaphore.
             // Old sequential for loop (kept for reference):
             // [OLD] for (Submission submission : targets) {
             // [OLD]     if (cancelledBlocks.contains(blockId)) { break; }
@@ -145,9 +143,15 @@ public class GradingService {
                 // ── CANCELLATION CHECK (between submissions) ──────────────────────
                 // Dừng sớm: nếu admin đã bấm Stop thì không gửi thêm tác vụ mới
                 if (cancelledBlocks.contains(blockId)) {
+                    // [Old]log.info("Grading for block {} was stopped. Resetting remaining submissions.", blockId);
+                    // The current submission hasn't started yet — nothing to reset
                     log.info("Grading for block {} stopped before submitting all tasks.", blockId);
                     break;
                 }
+                 // [Old] try {
+                    // Persist GRADING immediately so progress endpoint can reflect in real-time
+                    // [Old]submission.setStatus(SubmissionStatus.GRADING);
+                   // [Old] submissionRepository.save(submission);
 
                 // Cần dùng biến final để lambda có thể capture
                 final Submission sub = submission;

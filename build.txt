@@ -1,0 +1,628 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< cp26.se140:agsfjope >-------------------------
+[INFO] Building agsfjope 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.3.2:clean (default-clean) @ agsfjope ---
+[INFO] Deleting D:\ChuyenNganh\CN9\DOAN\SourceCode\backend\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ agsfjope ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 13 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ agsfjope ---
+[INFO] Changes detected - recompiling the module! :dependency
+[INFO] Compiling 289 source files with javac [debug release 17] to target\classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/configservices/impl/GradingModeConfigServiceImpl.java:[28,2] cannot find symbol
+  symbol: class Service
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/configservices/impl/SystemConfigServiceImpl.java:[55,2] cannot find symbol
+  symbol: class Service
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/examservices/impl/ExamServiceImpl.java:[55,19] cannot find symbol
+  symbol:   class BlockRepository
+  location: class agsfjope.backend.application.examservices.impl.ExamServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/walletservices/impl/WalletServiceImpl.java:[120,36] cannot find symbol
+  symbol:   variable DEPOSIT
+  location: class agsfjope.backend.core.enums.AuditAction
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/walletservices/impl/WalletServiceImpl.java:[274,36] cannot find symbol
+  symbol:   variable WITHDRAW
+  location: class agsfjope.backend.core.enums.AuditAction
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[74,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[95,39] cannot find symbol
+  symbol:   method builder()
+  location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealPageResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[112,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[125,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[125,82] cannot find symbol
+  symbol:   method getLecturerId()
+  location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[130,19] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[133,61] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[137,56] cannot find symbol
+  symbol:   method getLecturerId()
+  location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[139,64] cannot find symbol
+  symbol:   method getLecturerId()
+  location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[147,42] cannot find symbol
+  symbol:   method getDeadlineAt()
+  location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[156,15] cannot find symbol
+  symbol:   method setAssignedLecturer(agsfjope.backend.core.entities.User)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[157,15] cannot find symbol
+  symbol:   method setAssignedBy(agsfjope.backend.core.entities.User)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[158,15] cannot find symbol
+  symbol:   method setAssignedAt(java.time.OffsetDateTime)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[159,15] cannot find symbol
+  symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[160,15] cannot find symbol
+  symbol:   method setDeadlineAt(java.time.OffsetDateTime)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[163,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[163,90] cannot find symbol
+  symbol:   method getFullName()
+  location: variable lecturer of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[167,25] cannot find symbol
+  symbol:   method getUserId()
+  location: variable lecturer of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[172,23] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[182,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[186,19] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[186,65] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[189,37] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[192,15] cannot find symbol
+  symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[193,15] cannot find symbol
+  symbol:   method setCompletedAt(java.time.OffsetDateTime)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[198,23] cannot find symbol
+  symbol:   method getStudent()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[202,23] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[215,66] cannot find symbol
+  symbol:   method builder()
+  location: class agsfjope.backend.application.dtos.responses.appeal.LecturerOptionResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[216,30] cannot find symbol
+  symbol:   method getUserId()
+  location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[217,28] cannot find symbol
+  symbol:   method getFullName()
+  location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[218,25] cannot find symbol
+  symbol:   method getEmail()
+  location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[219,83] cannot find symbol
+  symbol:   method getUserId()
+  location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[220,33] incompatible types: java.util.List<java.lang.Object> cannot be converted to java.util.List<agsfjope.backend.application.dtos.responses.appeal.LecturerOptionResponse>
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[230,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[230,77] cannot find symbol
+  symbol:   method getIsApprove()
+  location: variable request of type agsfjope.backend.application.dtos.requests.appeal.ConfirmAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[234,19] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[237,61] cannot find symbol
+  symbol:   method getStatus()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[240,40] cannot find symbol
+  symbol:   method getIsApprove()
+  location: variable request of type agsfjope.backend.application.dtos.requests.appeal.ConfirmAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[241,19] cannot find symbol
+  symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[244,58] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[249,43] cannot find symbol
+  symbol:   method getNewScore()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[249,74] cannot find symbol
+  symbol:   method getNewScore()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[249,104] cannot find symbol
+  symbol:   method getTotalScore()
+  location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[250,26] cannot find symbol
+  symbol:   method setTotalScore(java.math.BigDecimal)
+  location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[254,30] cannot find symbol
+  symbol:   method setStatus(agsfjope.backend.core.enums.GradingResultStatus)
+  location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[256,30] cannot find symbol
+  symbol:   method setStatus(agsfjope.backend.core.enums.GradingResultStatus)
+  location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[260,13] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[266,27] cannot find symbol
+  symbol:   method getStudent()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[268,27] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[269,13] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[270,41] cannot find symbol
+  symbol:   method getStudent()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[273,19] cannot find symbol
+  symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[274,13] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[278,27] cannot find symbol
+  symbol:   method getStudent()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[281,37] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[285,15] cannot find symbol
+  symbol:   method setCompletedAt(java.time.OffsetDateTime)
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[297,9] cannot find symbol
+  symbol:   variable log
+  location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[300,19] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[300,53] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[305,28] cannot find symbol
+  symbol:   method getBucket()
+  location: variable minioConfig of type agsfjope.backend.configuration.storage.MinioConfig
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[306,23] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[320,43] cannot find symbol
+  symbol:   method builder()
+  location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealOverviewResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[334,25] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[335,25] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[336,26] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[337,29] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[343,39] cannot find symbol
+  symbol:   method getCreatedAt()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[344,26] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[346,43] cannot find symbol
+  symbol:   method builder()
+  location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealListItemResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[347,28] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[349,31] cannot find symbol
+  symbol:   method getStudent()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[350,31] cannot find symbol
+  symbol:   method getStudent()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[355,26] cannot find symbol
+  symbol:   method getStatus()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[357,28] cannot find symbol
+  symbol:   method getNewScore()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[358,37] cannot find symbol
+  symbol:   method getNewQuestionScores()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[359,29] cannot find symbol
+  symbol:   method getCreatedAt()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[360,30] cannot find symbol
+  symbol:   method getDeadlineAt()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[362,26] cannot find symbol
+  symbol:   method getAssignedLecturer()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[362,60] cannot find symbol
+  symbol:   method getAssignedLecturer()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[371,25] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[372,25] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[373,26] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[374,35] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[375,29] cannot find symbol
+  symbol:   method getSubmission()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[382,57] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[384,39] cannot find symbol
+  symbol:   method getCreatedAt()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[385,26] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[387,41] cannot find symbol
+  symbol:   method builder()
+  location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealDetailResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[388,28] cannot find symbol
+  symbol:   method getAppealId()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[390,26] cannot find symbol
+  symbol:   method getStatus()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[391,26] cannot find symbol
+  symbol:   method getReason()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[392,35] cannot find symbol
+  symbol:   method getLecturerComment()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[394,28] cannot find symbol
+  symbol:   method getNewScore()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[395,37] cannot find symbol
+  symbol:   method getNewQuestionScores()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[396,29] cannot find symbol
+  symbol:   method getCreatedAt()
+  location: variable a of type agsfjope.backend.core.entities.Appeal
+[INFO] 100 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  12.118 s
+[INFO] Finished at: 2026-04-18T00:19:42+07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project agsfjope: Compilation failure: Compilation failure: 
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/configservices/impl/GradingModeConfigServiceImpl.java:[28,2] cannot find symbol
+[ERROR]   symbol: class Service
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/configservices/impl/SystemConfigServiceImpl.java:[55,2] cannot find symbol
+[ERROR]   symbol: class Service
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/examservices/impl/ExamServiceImpl.java:[55,19] cannot find symbol
+[ERROR]   symbol:   class BlockRepository
+[ERROR]   location: class agsfjope.backend.application.examservices.impl.ExamServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/walletservices/impl/WalletServiceImpl.java:[120,36] cannot find symbol
+[ERROR]   symbol:   variable DEPOSIT
+[ERROR]   location: class agsfjope.backend.core.enums.AuditAction
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/walletservices/impl/WalletServiceImpl.java:[274,36] cannot find symbol
+[ERROR]   symbol:   variable WITHDRAW
+[ERROR]   location: class agsfjope.backend.core.enums.AuditAction
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[74,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[95,39] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealPageResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[112,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[125,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[125,82] cannot find symbol
+[ERROR]   symbol:   method getLecturerId()
+[ERROR]   location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[130,19] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[133,61] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[137,56] cannot find symbol
+[ERROR]   symbol:   method getLecturerId()
+[ERROR]   location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[139,64] cannot find symbol
+[ERROR]   symbol:   method getLecturerId()
+[ERROR]   location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[147,42] cannot find symbol
+[ERROR]   symbol:   method getDeadlineAt()
+[ERROR]   location: variable request of type agsfjope.backend.application.dtos.requests.appeal.AssignAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[156,15] cannot find symbol
+[ERROR]   symbol:   method setAssignedLecturer(agsfjope.backend.core.entities.User)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[157,15] cannot find symbol
+[ERROR]   symbol:   method setAssignedBy(agsfjope.backend.core.entities.User)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[158,15] cannot find symbol
+[ERROR]   symbol:   method setAssignedAt(java.time.OffsetDateTime)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[159,15] cannot find symbol
+[ERROR]   symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[160,15] cannot find symbol
+[ERROR]   symbol:   method setDeadlineAt(java.time.OffsetDateTime)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[163,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[163,90] cannot find symbol
+[ERROR]   symbol:   method getFullName()
+[ERROR]   location: variable lecturer of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[167,25] cannot find symbol
+[ERROR]   symbol:   method getUserId()
+[ERROR]   location: variable lecturer of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[172,23] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[182,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[186,19] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[186,65] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[189,37] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[192,15] cannot find symbol
+[ERROR]   symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[193,15] cannot find symbol
+[ERROR]   symbol:   method setCompletedAt(java.time.OffsetDateTime)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[198,23] cannot find symbol
+[ERROR]   symbol:   method getStudent()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[202,23] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[215,66] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class agsfjope.backend.application.dtos.responses.appeal.LecturerOptionResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[216,30] cannot find symbol
+[ERROR]   symbol:   method getUserId()
+[ERROR]   location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[217,28] cannot find symbol
+[ERROR]   symbol:   method getFullName()
+[ERROR]   location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[218,25] cannot find symbol
+[ERROR]   symbol:   method getEmail()
+[ERROR]   location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[219,83] cannot find symbol
+[ERROR]   symbol:   method getUserId()
+[ERROR]   location: variable u of type agsfjope.backend.core.entities.User
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[220,33] incompatible types: java.util.List<java.lang.Object> cannot be converted to java.util.List<agsfjope.backend.application.dtos.responses.appeal.LecturerOptionResponse>
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[230,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[230,77] cannot find symbol
+[ERROR]   symbol:   method getIsApprove()
+[ERROR]   location: variable request of type agsfjope.backend.application.dtos.requests.appeal.ConfirmAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[234,19] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[237,61] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[240,40] cannot find symbol
+[ERROR]   symbol:   method getIsApprove()
+[ERROR]   location: variable request of type agsfjope.backend.application.dtos.requests.appeal.ConfirmAppealRequest
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[241,19] cannot find symbol
+[ERROR]   symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[244,58] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[249,43] cannot find symbol
+[ERROR]   symbol:   method getNewScore()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[249,74] cannot find symbol
+[ERROR]   symbol:   method getNewScore()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[249,104] cannot find symbol
+[ERROR]   symbol:   method getTotalScore()
+[ERROR]   location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[250,26] cannot find symbol
+[ERROR]   symbol:   method setTotalScore(java.math.BigDecimal)
+[ERROR]   location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[254,30] cannot find symbol
+[ERROR]   symbol:   method setStatus(agsfjope.backend.core.enums.GradingResultStatus)
+[ERROR]   location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[256,30] cannot find symbol
+[ERROR]   symbol:   method setStatus(agsfjope.backend.core.enums.GradingResultStatus)
+[ERROR]   location: variable gradingResult of type agsfjope.backend.core.entities.GradingResult
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[260,13] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[266,27] cannot find symbol
+[ERROR]   symbol:   method getStudent()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[268,27] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[269,13] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[270,41] cannot find symbol
+[ERROR]   symbol:   method getStudent()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[273,19] cannot find symbol
+[ERROR]   symbol:   method setStatus(agsfjope.backend.core.enums.AppealStatus)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[274,13] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[278,27] cannot find symbol
+[ERROR]   symbol:   method getStudent()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[281,37] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[285,15] cannot find symbol
+[ERROR]   symbol:   method setCompletedAt(java.time.OffsetDateTime)
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[297,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class agsfjope.backend.application.appealservices.impl.StaffAppealServiceImpl
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[300,19] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[300,53] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[305,28] cannot find symbol
+[ERROR]   symbol:   method getBucket()
+[ERROR]   location: variable minioConfig of type agsfjope.backend.configuration.storage.MinioConfig
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[306,23] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable appeal of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[320,43] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealOverviewResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[334,25] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[335,25] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[336,26] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[337,29] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[343,39] cannot find symbol
+[ERROR]   symbol:   method getCreatedAt()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[344,26] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[346,43] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealListItemResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[347,28] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[349,31] cannot find symbol
+[ERROR]   symbol:   method getStudent()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[350,31] cannot find symbol
+[ERROR]   symbol:   method getStudent()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[355,26] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[357,28] cannot find symbol
+[ERROR]   symbol:   method getNewScore()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[358,37] cannot find symbol
+[ERROR]   symbol:   method getNewQuestionScores()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[359,29] cannot find symbol
+[ERROR]   symbol:   method getCreatedAt()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[360,30] cannot find symbol
+[ERROR]   symbol:   method getDeadlineAt()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[362,26] cannot find symbol
+[ERROR]   symbol:   method getAssignedLecturer()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[362,60] cannot find symbol
+[ERROR]   symbol:   method getAssignedLecturer()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[371,25] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[372,25] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[373,26] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[374,35] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[375,29] cannot find symbol
+[ERROR]   symbol:   method getSubmission()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[382,57] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[384,39] cannot find symbol
+[ERROR]   symbol:   method getCreatedAt()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[385,26] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[387,41] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class agsfjope.backend.application.dtos.responses.appeal.StaffAppealDetailResponse
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[388,28] cannot find symbol
+[ERROR]   symbol:   method getAppealId()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[390,26] cannot find symbol
+[ERROR]   symbol:   method getStatus()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[391,26] cannot find symbol
+[ERROR]   symbol:   method getReason()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[392,35] cannot find symbol
+[ERROR]   symbol:   method getLecturerComment()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[394,28] cannot find symbol
+[ERROR]   symbol:   method getNewScore()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[395,37] cannot find symbol
+[ERROR]   symbol:   method getNewQuestionScores()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] /D:/ChuyenNganh/CN9/DOAN/SourceCode/backend/src/main/java/agsfjope/backend/application/appealservices/impl/StaffAppealServiceImpl.java:[396,29] cannot find symbol
+[ERROR]   symbol:   method getCreatedAt()
+[ERROR]   location: variable a of type agsfjope.backend.core.entities.Appeal
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

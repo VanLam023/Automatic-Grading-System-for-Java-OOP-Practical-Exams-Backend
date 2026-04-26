@@ -3,6 +3,7 @@ package agsfjope.backend.domain.grading;
 import agsfjope.backend.core.entities.GradingModeConfig;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.infrastructure.ai.AIReviewResult;
+import agsfjope.backend.infrastructure.grading.StaticAnalysisResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -183,14 +184,19 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2c. FailIfHardCoded (MANDATORY) — 0 if AI detects hardcoded return values
-        // This rule is unconditional — no GradingModeConfig flag needed.
-        // Any detected hardcoded value immediately forces the question to 0.
-        if (input.aiResult() != null
-                && !input.aiResult().aiError()
-                && input.aiResult().hardCodedValues() != null
-                && !input.aiResult().hardCodedValues().isEmpty()) {
-            String note = buildHardCodeNote(tcRaw, oopRaw, input.aiResult().hardCodedValues());
+        // 2c. FailIfHardCoded (MANDATORY) — 0 if STATIC ANALYSIS detects hard-coded return values
+        // [OLD] This used to check AI result; now uses JavaParser result (no need to wait for AI):
+        // if (input.aiResult() != null
+        //         && !input.aiResult().aiError()
+        //         && input.aiResult().hardCodedValues() != null
+        //         && !input.aiResult().hardCodedValues().isEmpty()) {
+        //     String note = buildHardCodeNote(tcRaw, oopRaw, input.aiResult().hardCodedValues());
+        // }
+        // [NEW] Use JavaParser static analysis result — immediate, no AI dependency
+        if (input.staticAnalysis() != null
+                && input.staticAnalysis().hardCodedSuspects() != null
+                && !input.staticAnalysis().hardCodedSuspects().isEmpty()) {
+            String note = buildHardCodeNote(tcRaw, oopRaw, input.staticAnalysis().hardCodedSuspects());
             return new QuestionScore(questionNumber, maxScore,
                     tcRaw, oopRaw,   // keep raw scores for transparency in the note
                     BigDecimal.ZERO, true, note, passed, total);
@@ -308,6 +314,10 @@ public class ScoreCalculator {
      * @param aiResult             AI OOP review result (may be null or have aiError=true)
      * @param hasExamFileTampering true if exam .class files were tampered with
      * @param tamperDetail         description of which files were tampered
+     * @param missingFile          true if student did not submit required files
+     * @param missingDetail        description of missing files
+     * @param staticAnalysis       [NEW] pre-computed static analysis from JavaParser + Reflection;
+     *                             used directly for hardcode detection (no AI dependency)
      */
     public record QuestionInput(
             BigDecimal maxScore,
@@ -317,28 +327,37 @@ public class ScoreCalculator {
             boolean hasExamFileTampering,
             String tamperDetail,
             boolean missingFile,
-            String missingDetail
+            String missingDetail,
+            StaticAnalysisResult staticAnalysis  // [NEW] JavaParser + Reflection result
     ) {
         /** Convenience constructor when no tampering, no missing file, and AI result is ready. */
         public static QuestionInput of(BigDecimal maxScore,
                                        int passTcCount, int totalTcCount,
-                                       AIReviewResult aiResult) {
+                                       AIReviewResult aiResult,
+                                       StaticAnalysisResult staticAnalysis) {  // [NEW]
             return new QuestionInput(maxScore, passTcCount, totalTcCount,
-                    aiResult, false, null, false, null);
+                    aiResult, false, null, false, null, staticAnalysis);
         }
+
+        // [OLD] public static QuestionInput of(BigDecimal maxScore,
+        //                                      int passTcCount, int totalTcCount,
+        //                                      AIReviewResult aiResult) {
+        //     return new QuestionInput(maxScore, passTcCount, totalTcCount,
+        //             aiResult, false, null, false, null);
+        // }
 
         /** Convenience constructor for tampered submission. */
         public static QuestionInput tampered(BigDecimal maxScore,
                                              int passTcCount, int totalTcCount,
                                              String detail) {
             return new QuestionInput(maxScore, passTcCount, totalTcCount,
-                    null, true, detail, false, null);
+                    null, true, detail, false, null, null);
         }
 
         /** Convenience constructor for missing file (no jar or no src). */
         public static QuestionInput missing(BigDecimal maxScore, int totalTcCount, String detail) {
             return new QuestionInput(maxScore, 0, totalTcCount,
-                    null, false, null, true, detail);
+                    null, false, null, true, detail, null);
         }
     }
 }

@@ -192,6 +192,15 @@ public class LLMReviewService {
             src = src.substring(0, MAX_SOURCE_CHARS) + "\n... [TRUNCATED]";
         }
 
+        // [NEW] Include structured analysis from JavaParser + Reflection if available
+        // This gives AI "hard facts" about the code structure — reduces hallucination
+        String staticAnalysisSection;
+        if (request.structuredAnalysis() != null && !request.structuredAnalysis().isBlank()) {
+            staticAnalysisSection = request.structuredAnalysis();
+        } else {
+            staticAnalysisSection = "(Static analysis not available for this submission)";
+        }
+
         return """
                 You are an expert Java OOP examiner. Your task is to evaluate a student's Java code submission \
                 against the exam question requirements and provide a detailed OOP analysis.
@@ -214,6 +223,14 @@ public class LLMReviewService {
                 ═══════════════════════════════════════════════
                 STUDENT SOURCE CODE
                 ═══════════════════════════════════════════════
+                %s
+
+                ═══════════════════════════════════════════════
+                STATIC CODE ANALYSIS (JavaParser + Java Reflection)
+                ═══════════════════════════════════════════════
+                The following is objective, pre-computed analysis of the student code structure.
+                Use this as ground-truth facts when evaluating OOP criteria.
+                Hard-coded suspects listed here MUST be reflected in your scoring.
                 %s
 
                 ═══════════════════════════════════════════════
@@ -272,7 +289,8 @@ public class LLMReviewService {
                 """.formatted(
                 request.questionTitle(),
                 request.questionDescription() != null ? request.questionDescription() : "(no description)",
-                src != null ? src : "(no source code)"
+                src != null ? src : "(no source code)",
+                staticAnalysisSection  // [NEW] structured analysis from JavaParser + Reflection
         );
     }
 
