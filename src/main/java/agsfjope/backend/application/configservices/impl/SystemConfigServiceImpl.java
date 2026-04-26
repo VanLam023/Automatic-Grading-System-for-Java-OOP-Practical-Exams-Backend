@@ -27,10 +27,13 @@ import agsfjope.backend.core.enums.AuditAction;
 
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.Duration;
@@ -58,7 +61,9 @@ import jakarta.mail.internet.MimeMessage;
 public class SystemConfigServiceImpl implements SystemConfigService {
 
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
+            .connectTimeout(Duration.ofSeconds(15))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .version(HttpClient.Version.HTTP_1_1)
             .build();
 
     private static final List<String> AI_KEYS = List.of(
@@ -117,8 +122,15 @@ public class SystemConfigServiceImpl implements SystemConfigService {
         Instant start = Instant.now();
 
         try {
+            if (isCustomUrlProvider(request.getProvider())) {
+                return testCustomProviderConnection(request, start);
+            }
+
             HttpRequest httpRequest = buildProviderHealthCheckRequest(request);
-            HttpResponse<String> response = HTTP_CLIENT.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = HTTP_CLIENT.send(
+                    httpRequest,
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
 
             long latency = Duration.between(start, Instant.now()).toMillis();
             int statusCode = response.statusCode();
@@ -137,10 +149,99 @@ public class SystemConfigServiceImpl implements SystemConfigService {
                     .isConnected(false)
                     .latencyMs(latency)
                     .modelName(request.getModel())
-                    .errorMessage(ex.getMessage())
+                    .errorMessage(buildDetailedErrorMessage(ex))
                     .testedAt(OffsetDateTime.now())
                     .build();
         }
+    }
+
+    private TestAiConnectionResponse testCustomProviderConnection(TestAiConnectionRequest request, Instant start) {
+        String endpoint = normalizeCustomModelsEndpoint(request.getProvider());
+
+        try {
+            HttpURLConnection connection = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(15000);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("User-Agent", "AGSFJOPE-TestConnection/1.0");
+
+            String apiKey = request.getApiKey();
+            if (apiKey != null && !apiKey.isBlank()) {
+                connection.setRequestProperty("Authorization", "Bearer " + apiKey.trim());
+            }
+
+            int statusCode = connection.getResponseCode();
+            String responseBody = readResponseBody(connection, statusCode);
+            long latency = Duration.between(start, Instant.now()).toMillis();
+            boolean success = statusCode >= 200 && statusCode < 300;
+
+            return TestAiConnectionResponse.builder()
+                    .isConnected(success)
+                    .latencyMs(latency)
+                    .modelName(request.getModel())
+                    .errorMessage(success ? null : formatHttpError(statusCode, responseBody))
+                    .testedAt(OffsetDateTime.now())
+                    .build();
+        } catch (SocketTimeoutException ex) {
+            long latency = Duration.between(start, Instant.now()).toMillis();
+            return TestAiConnectionResponse.builder()
+                    .isConnected(false)
+                    .latencyMs(latency)
+                    .modelName(request.getModel())
+                    .errorMessage("Timeout khi gọi endpoint: " + endpoint + " - " + ex.getMessage())
+                    .testedAt(OffsetDateTime.now())
+                    .build();
+        } catch (Exception ex) {
+            long latency = Duration.between(start, Instant.now()).toMillis();
+            return TestAiConnectionResponse.builder()
+                    .isConnected(false)
+                    .latencyMs(latency)
+                    .modelName(request.getModel())
+                    .errorMessage("Lỗi khi gọi endpoint: " + endpoint + " - " + buildDetailedErrorMessage(ex))
+                    .testedAt(OffsetDateTime.now())
+                    .build();
+        }
+    }
+
+    private boolean isCustomUrlProvider(String provider) {
+        if (provider == null) {
+            return false;
+        }
+        String value = provider.trim().toLowerCase();
+        return value.startsWith("http://") || value.startsWith("https://");
+    }
+
+    private String normalizeCustomModelsEndpoint(String rawProvider) {
+        String normalizedProvider = rawProvider == null ? "" : rawProvider.trim().replaceAll("/+$", "");
+
+        if (normalizedProvider.endsWith("/models")) {
+            return normalizedProvider;
+        }
+        if (normalizedProvider.endsWith("/chat/completions")) {
+            return normalizedProvider.replaceFirst("/chat/completions$", "/models");
+        }
+        return normalizedProvider + "/models";
+    }
+
+    private String readResponseBody(HttpURLConnection connection, int statusCode) throws Exception {
+        InputStream stream = statusCode >= 200 && statusCode < 300
+                ? connection.getInputStream()
+                : connection.getErrorStream();
+
+        if (stream == null) {
+            return "";
+        }
+
+        try (stream) {
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private String buildDetailedErrorMessage(Exception ex) {
+        String className = ex.getClass().getSimpleName();
+        String message = ex.getMessage() == null ? "Không có thông điệp lỗi" : ex.getMessage();
+        return className + ": " + message;
     }
 
     @Override
@@ -200,14 +301,25 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     }
 
     private HttpRequest buildProviderHealthCheckRequest(TestAiConnectionRequest request) {
+        String rawProvider = request.getProvider() == null ? "" : request.getProvider().trim();
         String provider = normalize(request.getProvider());
         String model = request.getModel();
         String apiKey = request.getApiKey();
 
         // Hỗ trợ endpoint tùy chỉnh theo chuẩn OpenAI-compatible:
-        // provider = "https://your-ai-host/v1" hoặc "https://your-ai-host/v1/models"
-        if (provider.startsWith("http://") || provider.startsWith("https://")) {
-            String endpoint = provider.endsWith("/models") ? provider : provider.replaceAll("/+$", "") + "/models";
+        // provider = "https://your-ai-host/v1", "https://your-ai-host/v1/models"
+        // hoặc "https://your-ai-host/v1/chat/completions"
+        if (rawProvider.startsWith("http://") || rawProvider.startsWith("https://")) {
+            String normalizedProvider = rawProvider.replaceAll("/+$", "");
+            String endpoint;
+            if (normalizedProvider.endsWith("/models")) {
+                endpoint = normalizedProvider;
+            } else if (normalizedProvider.endsWith("/chat/completions")) {
+                endpoint = normalizedProvider.replaceFirst("/chat/completions$", "/models");
+            } else {
+                endpoint = normalizedProvider + "/models";
+            }
+
             return HttpRequest.newBuilder(URI.create(endpoint))
                     .GET()
                     .timeout(Duration.ofSeconds(20))

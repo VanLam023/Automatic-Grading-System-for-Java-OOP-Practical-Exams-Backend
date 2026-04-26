@@ -19,7 +19,7 @@ import java.time.Duration;
  *   <li>{@code "mistral"} → {@link OpenAIAdapter} (Mistral endpoint)</li>
  *   <li>{@code "xai"} / {@code "grok"} → {@link OpenAIAdapter} (xAI endpoint)</li>
  *   <li>{@code "claude"} / {@code "anthropic"} → {@link ClaudeAdapter} (Anthropic endpoint)</li>
- *   <li>Any URL starting with {@code http://} or {@code https://} → {@link OpenAIAdapter}
+ *   <li>Any URL starting with {@code http://} or {@code https://} → {@link SelfHostedOpenAIAdapter}
  *       with the given URL as endpoint (self-hosted / custom OpenAI-compatible)</li>
  *   <li>Unknown values default to {@link OpenAIAdapter} (OpenAI-compatible)</li>
  * </ul>
@@ -50,13 +50,16 @@ public class LLMAdapterFactory {
             return new GeminiAdapter(httpClient, objectMapper); // default
         }
 
-        String p = provider.trim().toLowerCase();
+        String rawProvider = provider.trim();
+        String p = rawProvider.toLowerCase();
 
-        // Custom URL — treat as OpenAI-compatible self-hosted
+        // Custom URL — route to dedicated self-hosted adapter so local AI tuning does not affect cloud providers.
         if (p.startsWith("http://") || p.startsWith("https://")) {
-            String endpoint = p.endsWith("/chat/completions") ? p
-                    : p.replaceAll("/+$", "") + "/chat/completions";
-            return new OpenAIAdapter(endpoint, httpClient, objectMapper);
+            String normalizedEndpoint = rawProvider.replaceAll("/+$", "");
+            String endpoint = normalizedEndpoint.endsWith("/chat/completions")
+                    ? normalizedEndpoint
+                    : normalizedEndpoint + "/chat/completions";
+            return new SelfHostedOpenAIAdapter(endpoint, httpClient, objectMapper);
         }
 
         return switch (p) {
