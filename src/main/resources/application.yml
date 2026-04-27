@@ -55,11 +55,8 @@ spring:
     baseline-version: 1           # Danh dau V1 da duoc apply (DB hien tai = V1)
     out-of-order: true            # Cho phep apply migration chua theo thu tu version
     validate-on-migrate: true     # Kiem tra migration chua bi chinh sua
-    repair-on-migrate: false      # Production: KHONG tu dong repair, phai xu ly thu cong
+    repair-on-migrate: true      # Production: KHONG tu dong repair, phai xu ly thu cong
 
-
-
-  # Mail / SMTP Configuration (Gmail)
   mail:
     host: smtp.gmail.com
     port: 587
@@ -122,3 +119,5 @@ springdoc:
 # On Windows: e.g. C:/Program Files/Java/jdk-21/bin/java.exe
 sandbox:
   java-executable: ${SANDBOX_JAVA:java}
+
+

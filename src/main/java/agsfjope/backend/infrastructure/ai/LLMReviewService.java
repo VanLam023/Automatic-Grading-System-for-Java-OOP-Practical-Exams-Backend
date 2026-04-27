@@ -62,7 +62,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class LLMReviewService {
 
-    private static final int MAX_SOURCE_CHARS = 12_000;
+    private static final int MAX_SOURCE_CHARS = 30_000;
 
     private final SystemConfigRepository systemConfigRepository;
     private final AesEncryptionUtil encryptionUtil;
