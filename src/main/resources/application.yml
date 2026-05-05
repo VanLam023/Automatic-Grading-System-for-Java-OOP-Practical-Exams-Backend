@@ -120,4 +120,3 @@ springdoc:
 sandbox:
   java-executable: ${SANDBOX_JAVA:java}
 
-

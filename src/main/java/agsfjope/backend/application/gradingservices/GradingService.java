@@ -195,18 +195,15 @@ public class GradingService {
                     } catch (GradingCancelledException e) {
                         log.info("Grading cancelled mid-submission {} in block {}",
                                 sub.getSubmissionId(), blockId);
-                        // @Transactional on grade() was rolled back — partial TC results gone from DB.
-                        submissionRepository.findById(sub.getSubmissionId())
-                                .filter(s -> s.getStatus() != SubmissionStatus.SUBMITTED)
-                                .ifPresent(s -> {
-                                    s.setStatus(SubmissionStatus.SUBMITTED);
-                                    submissionRepository.save(s);
-                                });
+                        markSubmissionSubmitted(sub.getSubmissionId());
+                    } catch (AIGradingFailedException e) {
+                        log.error("AI grading failed for submission {}: {}",
+                                sub.getSubmissionId(), e.getMessage(), e);
+                        markSubmissionFailed(sub.getSubmissionId());
                     } catch (Exception e) {
                         log.error("Grading failed for submission {}: {}",
                                 sub.getSubmissionId(), e.getMessage(), e);
-                        sub.setStatus(SubmissionStatus.SUBMITTED);
-                        submissionRepository.save(sub);
+                        markSubmissionFailed(sub.getSubmissionId());
                     } finally {
                         submissionSemaphore.release(); // always release, even on error
                     }
@@ -259,17 +256,21 @@ public class GradingService {
                 blockId, SubmissionStatus.GRADED);
         long grading = submissionRepository.countByBlock_BlockIdAndStatus(
                 blockId, SubmissionStatus.GRADING);
-        long pending = Math.max(0, total - graded - grading);
+        long failed  = submissionRepository.countByBlock_BlockIdAndStatus(
+                blockId, SubmissionStatus.GRADING_FAILED);
+        long pending = Math.max(0, total - graded - grading - failed);
 
-        int percent = total == 0 ? 0 : (int) Math.round((double) graded / total * 100);
+        long processed = graded + failed;
+        int percent = total == 0 ? 0 : (int) Math.round((double) processed / total * 100);
         boolean inProgress = activeBlockGradings.contains(blockId) || grading > 0;
         boolean stopping   = cancelledBlocks.contains(blockId);
 
         String status;
-        if (stopping)    status = "STOPPING";
+        if (stopping) status = "STOPPING";
         else if (inProgress) status = "IN_PROGRESS";
+        else if (processed == total && failed > 0) status = "COMPLETED_WITH_FAILURES";
         else if (graded == total && total > 0) status = "COMPLETED";
-        else             status = "PENDING";
+        else status = "PENDING";
 
         return GradingProgressResponse.builder()
                 .blockId(blockId)
@@ -277,6 +278,7 @@ public class GradingService {
                 .gradedCount(graded)
                 .gradingCount(grading)
                 .pendingCount(pending)
+                .failedCount(failed)
                 .progressPercent(percent)
                 .status(status)
                 .build();
@@ -295,7 +297,7 @@ public class GradingService {
         List<UUID> ids = request.getSubmissionIds();
 
         // submissionIds == null OR empty array → GRADE_ALL
-        // Include GRADING (stuck) and GRADED (re-grade) alongside SUBMITTED.
+        // Include GRADING (stuck), GRADED (re-grade), and GRADING_FAILED alongside SUBMITTED.
         // Two separate queries per status to avoid NAMED_ENUM IN-clause issues.
         if (ids == null || ids.isEmpty()) {
             List<Submission> submitted = submissionRepository.findByBlock_BlockIdAndStatus(
@@ -304,24 +306,52 @@ public class GradingService {
                     blockId, SubmissionStatus.GRADING);
             List<Submission> graded    = submissionRepository.findByBlock_BlockIdAndStatus(
                     blockId, SubmissionStatus.GRADED);
-            log.warn("[GRADING] resolveTargets: found {} SUBMITTED + {} GRADING + {} GRADED for block {}",
-                    submitted.size(), grading.size(), graded.size(), blockId);
+            List<Submission> failed    = submissionRepository.findByBlock_BlockIdAndStatus(
+                    blockId, SubmissionStatus.GRADING_FAILED);
+            log.warn("[GRADING] resolveTargets: found {} SUBMITTED + {} GRADING + {} GRADED + {} GRADING_FAILED for block {}",
+                    submitted.size(), grading.size(), graded.size(), failed.size(), blockId);
             List<Submission> merged = new java.util.ArrayList<>(submitted);
             merged.addAll(grading);
             merged.addAll(graded);
+            merged.addAll(failed);
             return merged;
         }
 
         // submissionIds = [id1, id2, ...] → GRADE_SELECTED or GRADE_SINGLE
-        // Accept SUBMITTED, GRADING (stuck), and GRADED (re-grade request).
+        // Accept SUBMITTED, GRADING (stuck), GRADED (re-grade request), and GRADING_FAILED.
         return submissionRepository.findAllById(ids).stream()
                 .filter(s -> s.getBlock().getBlockId().equals(blockId))
                 .filter(s -> s.getStatus() == SubmissionStatus.SUBMITTED
                           || s.getStatus() == SubmissionStatus.GRADING
-                          || s.getStatus() == SubmissionStatus.GRADED)
+                          || s.getStatus() == SubmissionStatus.GRADED
+                          || s.getStatus() == SubmissionStatus.GRADING_FAILED)
                 .toList();
     }
 
+    /**
+     * [OLD]
+     * // cancellation and generic failures both reset the submission back to SUBMITTED
+     *
+     * New behavior:
+     * - cancellation => SUBMITTED
+     * - grading/truncation/invalid AI => GRADING_FAILED
+     */
+    private void markSubmissionSubmitted(UUID submissionId) {
+        submissionRepository.findById(submissionId)
+                .filter(s -> s.getStatus() != SubmissionStatus.SUBMITTED)
+                .ifPresent(s -> {
+                    s.setStatus(SubmissionStatus.SUBMITTED);
+                    submissionRepository.save(s);
+                });
+    }
+
+    private void markSubmissionFailed(UUID submissionId) {
+        submissionRepository.findById(submissionId)
+                .ifPresent(s -> {
+                    s.setStatus(SubmissionStatus.GRADING_FAILED);
+                    submissionRepository.save(s);
+                });
+    }
 
     private void cleanup(UUID blockId) {
         activeBlockGradings.remove(blockId);

@@ -216,6 +216,7 @@ public class GradingPipelineService {
 
         Map<Integer, QuestionInput> questionInputs = new java.util.concurrent.ConcurrentHashMap<>();
         List<CompletableFuture<Void>> aiTasks = new ArrayList<>();
+        List<String> aiFatalErrors = Collections.synchronizedList(new ArrayList<>());
         ExecutorService aiExecutor = Executors.newFixedThreadPool(
                 Math.min(AI_PARALLELISM, answers.size()));
 
@@ -312,6 +313,7 @@ public class GradingPipelineService {
                             saveAIReview(answer, modeConfig.getMode().name(), aiResult);
                             // [OLD] questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult));
                             questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult, staticAnalysis));
+                            registerAiFailureIfNeeded(qNum, aiResult, aiFatalErrors);
                         });
                     }, aiExecutor);
                     aiTasks.add(aiTask);
@@ -349,6 +351,7 @@ public class GradingPipelineService {
                                 : QuestionInput.of(question.getMaxScore(),
                                         finalTcResult.passCount(), finalTcResult.totalCount(),
                                         aiResult, staticAnalysis));
+                        registerAiFailureIfNeeded(qNum, aiResult, aiFatalErrors);
                     });
                 }, aiExecutor);
                 aiTasks.add(aiTask);
@@ -358,14 +361,26 @@ public class GradingPipelineService {
             // Wait for all AI tasks to complete
             CompletableFuture.allOf(aiTasks.toArray(CompletableFuture[]::new)).join();
 
+            throwIfAnyAiFailures(subId, answers.size(), questionInputs, aiFatalErrors);
+
         } catch (GradingCancelledException e) {
             // Re-throw before generic catch — signals GradingService to break the loop.
             // shutdownNow() to interrupt any running AI threads immediately.
             // Cleanup is handled by the finally block (avoid calling it twice).
             aiExecutor.shutdownNow();
             throw e;
+        // [OLD]
+        // } catch (Exception e) {
+        //     log.error("Grading pipeline error for submission {}: {}", subId, e.getMessage(), e);
+        // }
+        // Old behavior swallowed the exception and still continued to score/save the submission.
+        // New behavior escalates so the caller can mark the submission as GRADING_FAILED.
         } catch (Exception e) {
             log.error("Grading pipeline error for submission {}: {}", subId, e.getMessage(), e);
+            if (e instanceof AIGradingFailedException aiFailure) {
+                throw aiFailure;
+            }
+            throw new AIGradingFailedException("Grading pipeline failed for submission " + subId + ": " + e.getMessage(), e);
         } finally {
             // Always shutdown executor and clean up temp dirs
             aiExecutor.shutdown();
@@ -376,12 +391,18 @@ public class GradingPipelineService {
         FinalGradingScore finalScore;
         try {
             finalScore = scoreCalculator.calculate(modeConfig, questionInputs);
+        // [OLD]
+        // } catch (Exception e) {
+        //     log.error("Score calculation failed for submission {}: {}", subId, e.getMessage(), e);
+        //     finalScore = new FinalGradingScore(List.of(), BigDecimal.ZERO,
+        //             BigDecimal.ZERO, BigDecimal.ZERO, false,
+        //             "Lỗi tính điểm: " + e.getMessage());
+        // }
+        // New behavior: score calculation error means this submission must be retried,
+        // not silently finalized with zero.
         } catch (Exception e) {
             log.error("Score calculation failed for submission {}: {}", subId, e.getMessage(), e);
-            // Fallback to zero score so we still persist a result
-            finalScore = new FinalGradingScore(List.of(), BigDecimal.ZERO,
-                    BigDecimal.ZERO, BigDecimal.ZERO, false,
-                    "Lỗi tính điểm: " + e.getMessage());
+            throw new AIGradingFailedException("Score calculation failed for submission " + subId + ": " + e.getMessage(), e);
         }
 
         // ── Step D: Persist GradingResult ─────────────────────────────────────
@@ -574,6 +595,36 @@ public class GradingPipelineService {
         }
     }
 
+    /**
+     * [OLD]
+     * The pipeline persisted AIReview and always continued toward score calculation,
+     * even when aiResult.aiError() was true.
+     *
+     * New behavior records the AIReview for debugging, then fails the whole submission
+     * after all question tasks finish so staff can regrade only the failed submissions.
+     */
+    private void registerAiFailureIfNeeded(int questionNumber, AIReviewResult aiResult, List<String> aiFatalErrors) {
+        if (aiResult != null && aiResult.aiError()) {
+            aiFatalErrors.add("Q" + questionNumber + ": " + aiResult.errorMessage());
+        }
+    }
+
+    private void throwIfAnyAiFailures(UUID submissionId,
+                                      int expectedQuestionCount,
+                                      Map<Integer, QuestionInput> questionInputs,
+                                      List<String> aiFatalErrors) {
+        if (!aiFatalErrors.isEmpty()) {
+            throw new AIGradingFailedException(
+                    "AI grading returned invalid / truncated data for submission " + submissionId
+                            + " => " + String.join(" | ", aiFatalErrors));
+        }
+        if (questionInputs.size() != expectedQuestionCount) {
+            throw new AIGradingFailedException(
+                    "Missing grading inputs for submission " + submissionId
+                            + ": expected " + expectedQuestionCount + " questions but only got " + questionInputs.size());
+        }
+    }
+
     // ─── SAVE HELPERS ────────────────────────────────────────────────────────
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -591,6 +642,7 @@ public class GradingPipelineService {
             rawMap.put("violations",        ai.violations());
             rawMap.put("hardCodedValues",   ai.hardCodedValues());
             rawMap.put("criteriaResults",   ai.criteriaResults());
+            rawMap.put("comment",           ai.comment());
             rawMap.put("isOopViolated",     ai.oopViolated());
             rawMap.put("aiError",           ai.aiError());
             rawMap.put("errorMessage",      ai.errorMessage());

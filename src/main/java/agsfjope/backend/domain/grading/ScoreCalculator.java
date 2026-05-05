@@ -161,6 +161,10 @@ public class ScoreCalculator {
 
         // Step 1: Raw scores
         BigDecimal tcRaw     = calculateTcRaw(passed, total, maxScore);
+
+        // [OLD] BigDecimal oopRaw = calculateOopRaw(input.aiResult(), maxScore);
+        // New rule: AI grading errors must fail fast instead of silently becoming 0 OOP.
+        validateAiResultOrThrow(questionNumber, input);
         BigDecimal oopRaw    = calculateOopRaw(input.aiResult(), maxScore);
 
         // Step 2: Guard rules (in priority order — first match wins)
@@ -240,19 +244,40 @@ public class ScoreCalculator {
     }
 
         /**
+         * [OLD]
+         * private BigDecimal calculateOopRaw(AIReviewResult ai, BigDecimal maxScore) {
+         *     if (ai == null || ai.aiError() || ai.oopScore() == null) {
+         *         return BigDecimal.ZERO;
+         *     }
+         *     ...
+         * }
+         */
+
+        private void validateAiResultOrThrow(int questionNumber, QuestionInput input) {
+            AIReviewResult ai = input.aiResult();
+            if (input.missingFile() || input.hasExamFileTampering()) {
+                return;
+            }
+            if (ai != null && ai.aiError()) {
+                throw new IllegalStateException(
+                        "AI grading failed for question " + questionNumber + ": " + ai.errorMessage());
+            }
+        }
+
+        /**
          * Raw OOP score for a question:
          * {@code aiOopScore} (AI prompt now returns score directly on this question's maxScore scale).
-         * Returns 0 if AI evaluation failed (graceful degradation).
+         * Throws earlier via {@link #validateAiResultOrThrow(int, QuestionInput)} if AI failed.
          */
     private BigDecimal calculateOopRaw(AIReviewResult ai, BigDecimal maxScore) {
-        if (ai == null || ai.aiError() || ai.oopScore() == null) {
+        if (ai == null || ai.oopScore() == null) {
             return BigDecimal.ZERO;
         }
-                BigDecimal safeMax = maxScore != null ? maxScore : BigDecimal.ZERO;
-                return ai.oopScore()
-                                .max(BigDecimal.ZERO)
-                                .min(safeMax)
-                                .setScale(SCALE, ROUNDING);
+        BigDecimal safeMax = maxScore != null ? maxScore : BigDecimal.ZERO;
+        return ai.oopScore()
+                .max(BigDecimal.ZERO)
+                .min(safeMax)
+                .setScale(SCALE, ROUNDING);
     }
 
 
