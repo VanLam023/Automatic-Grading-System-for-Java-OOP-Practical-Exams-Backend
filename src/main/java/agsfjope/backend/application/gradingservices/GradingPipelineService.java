@@ -77,7 +77,7 @@ import java.util.stream.Collectors;
 public class GradingPipelineService {
 
     // Parallel AI calls per submission (up to 5 questions → 5 parallel AI calls)
-    private static final int AI_PARALLELISM = 1;
+    private static final int AI_PARALLELISM = 5;
 
     private final AnswerRepository           answerRepository;
     private final SubmissionRepository       submissionRepository;

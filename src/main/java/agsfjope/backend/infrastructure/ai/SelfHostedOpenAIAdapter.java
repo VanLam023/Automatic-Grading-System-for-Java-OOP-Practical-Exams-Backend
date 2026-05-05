@@ -2,7 +2,6 @@ package agsfjope.backend.infrastructure.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,7 +17,6 @@ import java.time.Duration;
  * providers can use their own timeout and evolve independently without affecting cloud
  * providers like OpenAI, DeepSeek, Grok, or Mistral.</p>
  */
-@Slf4j
 public class SelfHostedOpenAIAdapter implements LLMAdapter {
 
     private static final int TIMEOUT_SECONDS = 300;
@@ -45,39 +43,17 @@ public class SelfHostedOpenAIAdapter implements LLMAdapter {
                 .header("Authorization", "Bearer " + apiKey)
                 .build();
 
-        long startedAt = System.currentTimeMillis();
-        log.warn("[SELF-AI-HTTP-START] endpoint={} model={} promptLen={} bodyLen={} timeoutSeconds={}",
-                endpoint, model, prompt != null ? prompt.length() : 0, body.length(), TIMEOUT_SECONDS);
-
-        HttpResponse<String> response;
-        try {
-            response = httpClient.send(
-                    request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
-            );
-        } catch (Exception ex) {
-            long durationMs = System.currentTimeMillis() - startedAt;
-            log.error("[SELF-AI-HTTP-EX] endpoint={} model={} durationMs={} exType={} msg={}",
-                    endpoint, model, durationMs, ex.getClass().getSimpleName(), ex.getMessage(), ex);
-            throw ex;
-        }
-
-        long durationMs = System.currentTimeMillis() - startedAt;
-        log.warn("[SELF-AI-HTTP-END] endpoint={} model={} status={} durationMs={} bodyLen={}",
-                endpoint, model, response.statusCode(), durationMs,
-                response.body() != null ? response.body().length() : 0);
+        HttpResponse<String> response = httpClient.send(
+                request,
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+        );
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            log.error("[SELF-AI-HTTP-FAIL] endpoint={} model={} status={} body={}",
-                    endpoint, model, response.statusCode(), truncate(response.body(), 500));
             throw new RuntimeException("Self-hosted OpenAI-compatible API HTTP " + response.statusCode()
                     + ": " + truncate(response.body(), 300));
         }
 
-        String text = extractText(response.body());
-        log.warn("[SELF-AI-HTTP-TEXT] endpoint={} model={} textLen={} preview={}",
-                endpoint, model, text != null ? text.length() : 0, truncate(text, 300));
-        return text;
+        return extractText(response.body());
     }
 
     private String buildRequestBody(String prompt, String model) {
@@ -137,7 +113,6 @@ public class SelfHostedOpenAIAdapter implements LLMAdapter {
         if (s == null) {
             return "";
         }
-        String normalized = s.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t");
-        return normalized.length() <= max ? normalized : normalized.substring(0, max) + "...";
+        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 }
