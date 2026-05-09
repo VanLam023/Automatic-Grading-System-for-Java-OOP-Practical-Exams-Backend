@@ -23,7 +23,7 @@ public class SubmissionListItemResponse {
     UUID   submissionId;
     String fileName;
     Long   fileSizeBytes;
-    SubmissionStatus submissionStatus;   // SUBMITTED | GRADING | GRADED | GRADING_FAILED
+    SubmissionStatus submissionStatus;   // SUBMITTED | GRADING | GRADED
     OffsetDateTime   submittedAt;
 
     // ── Student ────────────────────────────────────────────────────────────────

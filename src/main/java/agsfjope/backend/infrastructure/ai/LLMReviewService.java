@@ -11,30 +11,58 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
- * AI rubric review service.
+ * AI OOP Review Service — provider-agnostic.
  *
- * <p>Current design intentionally uses ONE prompt only. The old 2-prompt flow
- * created very large payloads for rubric-heavy Java questions and was the main
- * source of truncated / half-JSON responses from Gemini Flash.</p>
+ * <h3>Design: Strategy Pattern</h3>
+ * The correct {@link LLMAdapter} is selected at runtime from
+ * {@link LLMAdapterFactory}
+ * based on the {@code AI_PROVIDER} value in {@code SystemConfig}.
+ * Switching providers (Gemini → ChatGPT → OpenRouter) requires only a config
+ * change —
+ * no code changes needed.
+ *
+ * <h3>2-Prompt Strategy:</h3>
+ * <ol>
+ * <li><b>Prompt 1 (Analysis)</b>: Provide exam question UML context + student
+ * source code.
+ * AI performs deep OOP analysis across 5 criteria (encapsulation, inheritance,
+ * polymorphism, design quality, code integrity / anti-cheat).</li>
+ * <li><b>Prompt 2 (Result)</b>: Ask AI to return its analysis as structured
+ * JSON
+ * with per-criterion scores, violations list, hard-coded values, and overall
+ * verdict.</li>
+ * </ol>
+ *
+ * <p>
+ * SystemConfig keys used:
+ * </p>
+ * <ul>
+ * <li>{@code AI_PROVIDER} — provider name or URL (e.g., "gemini", "openai",
+ * "https://...")</li>
+ * <li>{@code AI_API_KEY} (AES-encrypted) — API key</li>
+ * <li>{@code AI_MODEL} — model ID (e.g., "gemini-2.0-flash", "gpt-4o")</li>
+ * <li>{@code AI_LANGUAGE} — language for review comments (e.g.,
+ * "Vietnamese")</li>
+ * </ul>
+ *
+ * <p>
+ * If AI call fails → {@link AIReviewResult#failure} is returned — the grading
+ * pipeline
+ * continues without interruption.
+ * </p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LLMReviewService {
 
-    private static final int MAX_SOURCE_CHARS = 20_000;
-    private static final int MAX_ANALYSIS_CHARS = 12_000;
-    private static final BigDecimal SCORE_EPSILON = new BigDecimal("0.05");
+    private static final int MAX_SOURCE_CHARS = 30_000;
 
     private final SystemConfigRepository systemConfigRepository;
     private final AesEncryptionUtil encryptionUtil;
@@ -43,15 +71,30 @@ public class LLMReviewService {
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
+    /**
+     * Evaluates student source code against the exam question's OOP requirements.
+     *
+     * @param request exam question context + student source code + target language
+     * @return AI evaluation result; never null — fails gracefully with
+     *         {@link AIReviewResult#failure}
+     */
     public AIReviewResult review(AIReviewRequest request) {
+        // Lấy cấu hình AI từ DB (provider, model, api key, ngôn ngữ phản hồi)
         AIConfig config;
         try {
             config = loadConfig();
         } catch (Exception e) {
             log.error("AI config load failed: {}", e.getMessage());
+            // AI chưa cấu hình — trả về failure nhưng không crash pipeline chấm bài
             return AIReviewResult.failure("AI chưa được cấu hình: " + e.getMessage());
         }
 
+        // Chọn Adapter phù hợp theo provider (Gemini, OpenAI, hay URL tương thích
+        // OpenAI)
+        LLMAdapter adapter = adapterFactory.getAdapter(config.provider());
+
+        // Bảo vệ: không thể chấm bài nếu không có source code — bỏ qua luôn, không lỗi
+        // Guard: cannot review without source code
         if (request.sourceCode() == null || request.sourceCode().isBlank()) {
             log.warn("AI review skipped for question '{}' — no student source code available.",
                     request.questionTitle());
@@ -59,23 +102,45 @@ public class LLMReviewService {
         }
 
         try {
-            LLMAdapter adapter = adapterFactory.getAdapter(config.provider());
-            String prompt = buildRubricPrompt(request, config.language());
+            log.debug("AI review: provider={}, model={}, question={}",
+                    config.provider(), config.model(), request.questionTitle());
 
-            log.debug("AI review: provider={}, model={}, question={}, promptLength={}",
-                    config.provider(), config.model(), request.questionTitle(), prompt.length());
+            // [PERF-STEP2] Use callWithRetry() instead of direct adapter calls to handle
+            // Gemini rate limits / transient errors without failing the whole grading.
+            // Sử dụng callWithRetry() thay cho gọi trực tiếp adapter — tự động thử lại khi
+            // gặp lỗi.
 
-            String resultJson = callWithRetry(
-                    adapter,
-                    prompt,
-                    config.apiKey(),
-                    config.model(),
-                    true,
-                    request.questionTitle());
+            // Chiến lược 2-PROMPT:
+            // Prompt 1: yêu cầu AI phân tích sâu — kết quả là văn bản tự do
+            // Prompt 2: yêu cầu AI đóng gói phân tích thành JSON có cấu trúc để hệ thống
+            // đọc được
+            // Tách 2 bước giúp tăng chất lượng phân tích không bị ảnh hưởng bởi format
+            // output.
 
-            return parseStrictResult(resultJson, request.maxScore(), config.language());
+            // Prompt 1: Deep OOP analysis with exam context
+            // [OLD] String analysis = adapter.chat(
+            // buildAnalysisPrompt(request), config.apiKey(), config.model());
+            String analysis = callWithRetry(adapter, buildAnalysisPrompt(request),
+                    config.apiKey(), config.model(), false, request.questionTitle());
+
+            // Prompt 2: Return structured JSON — use chatJson() for providers that support
+            // JSON mode (responseMimeType) to avoid markdown wrapping and truncation.
+            // [OLD] String resultJson = adapter.chatJson(
+            // buildResultPrompt(analysis, config.language()), config.apiKey(),
+            // config.model());
+            // Prompt 2: Bước này dùng chatJson() — với Gemini sẽ bật JSON mode để tránh
+            // markdown wrapper
+            String resultJson = callWithRetry(adapter,
+                    buildResultPrompt(analysis, config.language(), request.maxScore()),
+                    config.apiKey(), config.model(), true, request.questionTitle());
+
+            // Phân tích JSON trả về thành AIReviewResult object
+            return parseResult(resultJson, request.maxScore());
+
         } catch (Exception e) {
-            log.error("AI review failed [question={}]: {}", request.questionTitle(), e.getMessage());
+            // Mọi lỗi đều được bắt ở đây — trả về failure không crash luồng chấm bài
+            log.error("AI review failed [provider={}, question={}]: {}",
+                    config.provider(), request.questionTitle(), e.getMessage());
             return AIReviewResult.failure("AI trả về lỗi: " + e.getMessage());
         }
     }
@@ -83,347 +148,394 @@ public class LLMReviewService {
     // ─── RETRY HELPER ────────────────────────────────────────────────────────
 
     /**
-     * [OLD]
-     * private String callWithRetry(...) {
-     *     // always retried 3 times, even for MAX_TOKENS / truncated JSON
-     * }
+     * [PERF-STEP2] Calls AI adapter with exponential-backoff retry.
+     *
+     * <p>
+     * Motivation: Gemini rate limits (429) or transient network errors can cause
+     * the response to be empty or the JSON to be truncated mid-stream. Retrying
+     * with a short pause almost always succeeds on the 2nd attempt.
+     *
+     * @param adapter      the LLM adapter to call
+     * @param prompt       the prompt to send
+     * @param apiKey       provider API key
+     * @param model        model ID
+     * @param jsonMode     true → call {@code chatJson()}, false → call
+     *                     {@code chat()}
+     * @param questionHint short label for log messages (e.g. question title)
+     * @return response text from the model
+     * @throws Exception re-thrown after all retries exhausted
      */
     private String callWithRetry(LLMAdapter adapter, String prompt,
-                                 String apiKey, String model,
-                                 boolean jsonMode, String questionHint) throws Exception {
+            String apiKey, String model,
+            boolean jsonMode, String questionHint) throws Exception {
+        // [PERF-STEP2] Max 3 attempts: original + 2 retries
+        // Tối đa 3 lần: lần 1 (gọc) + 2 lần thử lại nếu gặp rate limit hoặc network
+        // error
         int maxAttempts = 3;
+        // Base delay in ms; doubles each retry: 2s → 4s → 6s
+        // Thời gian chờ tăng dần: lần 1 thất bại chờ 2s, lần 2 chờ 4s (exponential
+        // backoff nhẹ)
         long baseDelayMs = 2_000L;
 
         Exception lastException = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
+                // Gọi AI theo mode: chatJson() cho prompt 2, chat() cho prompt 1
                 return jsonMode
                         ? adapter.chatJson(prompt, apiKey, model)
                         : adapter.chat(prompt, apiKey, model);
             } catch (Exception e) {
                 lastException = e;
-
-                if (!isRetryableException(e) || attempt >= maxAttempts) {
-                    if (attempt >= maxAttempts) {
-                        log.error("[AI-RETRY] All {} attempts failed for question '{}': {}",
-                                maxAttempts, questionHint, e.getMessage());
+                if (attempt < maxAttempts) {
+                    long delayMs = baseDelayMs * attempt; // 2s, 4s, (would be 6s but no 3rd delay)
+                    // Chưa hết số lần thử — log cảnh báo và chờ rồi thử lại
+                    log.warn("[AI-RETRY] Attempt {}/{} failed for question '{}': {}. Retrying in {}ms...",
+                            attempt, maxAttempts, questionHint, e.getMessage(), delayMs);
+                    try {
+                        Thread.sleep(delayMs);
+                    } catch (InterruptedException ie) {
+                        // Thread bị interrupt giữa chờ — phuc hồi cờ interrupt và throw ngay
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("AI retry interrupted", ie);
                     }
-                    throw e;
-                }
-
-                long delayMs = baseDelayMs * attempt;
-                log.warn("[AI-RETRY] Attempt {}/{} failed for question '{}': {}. Retrying in {}ms...",
-                        attempt, maxAttempts, questionHint, e.getMessage(), delayMs);
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("AI retry interrupted", ie);
+                } else {
+                    // Đã hết số lần thử — log error, throw ra ngoài cho review() bắt và trả về
+                    // failure
+                    log.error("[AI-RETRY] All {} attempts failed for question '{}': {}",
+                            maxAttempts, questionHint, e.getMessage());
                 }
             }
         }
         throw lastException;
     }
 
-    private boolean isRetryableException(Exception e) {
-        String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
-
-        if (msg.contains("truncated")
-                || msg.contains("max_tokens")
-                || msg.contains("max tokens")
-                || msg.contains("failed to parse ai json")
-                || msg.contains("missing required fields")
-                || msg.contains("score mismatch")) {
-            return false;
-        }
-
-        return msg.contains("429")
-                || msg.contains("rate limit")
-                || msg.contains("timeout")
-                || msg.contains("temporarily unavailable")
-                || msg.contains("connection reset")
-                || msg.contains("503")
-                || msg.contains("502")
-                || msg.contains("504");
-    }
-
     // ─── PROMPT BUILDERS ─────────────────────────────────────────────────────
 
-    /**
-     * [OLD]
-     * private String buildAnalysisPrompt(AIReviewRequest request) { ... }
-     *
-     * private String buildResultPrompt(String analysis, String language, BigDecimal maxScore) { ... }
-     *
-     * Old flow used 2 prompts:
-     * 1) long free-form analysis
-     * 2) convert analysis to JSON + long comment per criterion
-     * This was kept here as a reference only. New flow uses ONE compact JSON prompt.
-     */
+    private String buildAnalysisPrompt(AIReviewRequest request) {
+        String src = request.sourceCode();
+        if (src != null && src.length() > MAX_SOURCE_CHARS) {
+            src = src.substring(0, MAX_SOURCE_CHARS) + "\n... [TRUNCATED]";
+        }
 
-    private String buildRubricPrompt(AIReviewRequest request, String language) {
-        String sourceCode = limitText(request.sourceCode(), MAX_SOURCE_CHARS, "SOURCE_CODE");
-        String structuredAnalysis = limitText(
-                Optional.ofNullable(request.structuredAnalysis())
-                        .filter(s -> !s.isBlank())
-                        .orElse("(Static analysis not available for this submission)"),
-                MAX_ANALYSIS_CHARS,
-                "STATIC_ANALYSIS");
-
-        String maxScoreStr = safeMaxScore(request.maxScore()).stripTrailingZeros().toPlainString();
+        // [NEW] Include structured analysis from JavaParser + Reflection if available
+        // This gives AI "hard facts" about the code structure — reduces hallucination
+        String staticAnalysisSection;
+        if (request.structuredAnalysis() != null && !request.structuredAnalysis().isBlank()) {
+            staticAnalysisSection = request.structuredAnalysis();
+        } else {
+            staticAnalysisSection = "(Static analysis not available for this submission)";
+        }
 
         return """
-                You are a strict Java programming examiner.
-                Grade ONE student submission against the EXACT rubric contained in the exam description.
+                You are an expert Java OOP examiner. Your task is to evaluate a student's Java code submission \
+                against the exam question requirements and provide a detailed OOP analysis.
 
-                Return ONLY valid JSON. No markdown. No explanation outside JSON.
-
-                LANGUAGE:
-                - All natural-language reasons and summary must be in %s.
-                - Preserve Java identifiers exactly as written in code/spec (class names, method names, fields).
-
-                CORE RULES:
-                1. Use ONLY rubric criteria and point values that appear in the exam description.
-                2. Do NOT invent new criteria, bonus points, penalties, or hidden checks.
-                3. Do NOT normalize scores. Do NOT rescale scores.
-                4. Do NOT double-deduct for the same mistake.
-                5. If a method/class signature is wrong, dependent logic criteria for that method/class must receive 0.
-                6. Anti-cheat / hardcode findings must be reflected only when TRUE hardcode exists.
-                7. Keep each reason short (max 160 characters).
-                8. Omit optional arrays when empty.
-                9. oopScore MUST equal the sum of criteriaResults[*].earnedPoints, rounded to 2 decimals.
-                10. oopScore MUST stay in range [0, %s].
-
-                OUTPUT JSON SCHEMA:
-                {
-                  "oopScore": <number>,
-                  "criteriaResults": [
-                    {
-                      "name": "<criterion name exactly from rubric>",
-                      "maxPoints": <number>,
-                      "earnedPoints": <number>,
-                      "deductedPoints": <number>,
-                      "status": "met|partial|violated",
-                      "reason": "<short evidence-based reason; omit when full marks>"
-                    }
-                  ],
-                  "violations": ["<optional>", "<optional>"],
-                  "hardCodedValues": ["<optional>", "<optional>"],
-                  "summary": "<2 short lines max>",
-                  "isOopViolated": <true|false>
-                }
-
-                EXAM QUESTION
+                ═══════════════════════════════════════════════
+                EXAM QUESTION CONTEXT
+                ═══════════════════════════════════════════════
                 Title: %s
 
-                Description and Rubric:
+                Description and Class Diagram:
                 %s
 
-                STATIC ANALYSIS (objective precomputed facts)
-                %s
+                IMPORTANT — Reading the class diagram:
+                • Fields/methods starting with "-" are PRIVATE (must be private in code)
+                • Fields/methods starting with "+" are PUBLIC (must be public in code)
+                • "has-a" relationship MUST use a collection (ArrayList, List, Set, Map, array, or any \
+                  appropriate data structure) — NOT extends
+                • "is-a" relationship MUST use extends/implements — NOT a collection field
 
+                ═══════════════════════════════════════════════
                 STUDENT SOURCE CODE
+                ═══════════════════════════════════════════════
                 %s
+
+                ═══════════════════════════════════════════════
+                STATIC CODE ANALYSIS (JavaParser + Java Reflection)
+                ═══════════════════════════════════════════════
+                The following is objective, pre-computed analysis of the student code structure.
+                Use this as ground-truth facts when evaluating OOP criteria.
+                Hard-coded suspects listed here MUST be reflected in your scoring.
+                %s
+
+                ═══════════════════════════════════════════════
+                GRADING INSTRUCTIONS
+                ═══════════════════════════════════════════════
+                The exam description above specifies the OOP criteria for THIS specific question.
+                Read and follow ONLY those criteria. Do NOT evaluate any OOP criterion that is
+                not mentioned in the exam description.
+
+                // ─── DEFAULT 5-CRITERIA REMOVED — criteria now come from the exam description ──────────────
+                // A. ENCAPSULATION (0–2):
+                //    • Are all fields marked private as required by the diagram?
+                //    • Are getter/setter methods provided for ALL private fields?
+                //    • Is data hidden and accessed only through methods?
+                //
+                // B. INHERITANCE & RELATIONSHIPS (0–2):
+                //    • Are "has-a" relationships implemented using the correct data structure — NOT extends?
+                //    • Are "is-a" relationships implemented using extends/implements — NOT a collection field?
+                //    • Check ALL data structures and relationships, not just ArrayList
+                //    • Are extends/implements used exactly as specified in the diagram?
+                //
+                // C. POLYMORPHISM (0–2):
+                //    • Are abstract classes/methods used correctly per the diagram?
+                //    • Are interfaces implemented correctly per the diagram?
+                //    • Is method overriding correct (same signature, @Override annotation)?
+                //
+                // D. DESIGN QUALITY (0–2):
+                //    • Are methods placed in the correct class (no misplaced logic)?
+                //    • Does the code follow Single Responsibility per the diagram?
+                //    • Is the naming consistent and structure clean?
+                // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+                ANTI-CHEAT RULE (ALWAYS APPLY for every question, regardless of exam criteria):
+                Hardcode means the student DELIBERATELY returns a fixed value to pass a test
+                instead of implementing the correct algorithm.
+
+                ✅ NOT hardcode (LEGITIMATE constants — do NOT flag):
+                • Error/format messages required by the problem: e.g., wrong format, Invalid
+                • String prefixes/suffixes from the spec: e.g., New_, DATA_
+                • File extensions or filenames: e.g., .txt, data.txt, New_DATA.txt
+                • Status labels from the problem: e.g., PASS, FAIL, ACTIVE
+                • toString() format strings matching the required output format in the spec
+
+                ❌ TRUE hardcode (flag ONLY these):
+                • Returning exact expected output without computation: e.g., return Student[S001, John, 3.5]
+                • Returning a fixed number instead of computing it: e.g., return 8.5 instead of return this.score
+                • Checking specific input to return specific answer: e.g., if (id.equals(S001)) return 3.5
+                • All meaningful logic placed inside main() to bypass class structure
+
+                ⚠️ REPORTING RULE FOR HARDCODE:
+                • ONLY mention hardcode in your analysis if you have DETECTED TRUE hardcode.
+                • If no hardcode is found, do NOT write anything about hardcode — skip it entirely.
+                • Do NOT write phrases like "no hardcode detected", "no cheat found", or any equivalent statement.
+
+                Perform a thorough analysis. Note ALL violations with specific examples from the code.
                 """.formatted(
-                language,
-                maxScoreStr,
                 request.questionTitle(),
-                Optional.ofNullable(request.questionDescription()).orElse("(no description)"),
-                structuredAnalysis,
-                sourceCode
+                request.questionDescription() != null ? request.questionDescription() : "(no description)",
+                src != null ? src : "(no source code)",
+                staticAnalysisSection  // [NEW] structured analysis from JavaParser + Reflection
         );
     }
 
-    private String limitText(String value, int maxChars, String label) {
-        if (value == null) return "";
-        if (value.length() <= maxChars) return value;
-        return value.substring(0, maxChars) + "\n... [" + label + " TRUNCATED BY SERVER]";
+    private String buildResultPrompt(String analysis, String language, java.math.BigDecimal maxScore) {
+        // Lấy điểm tối đa của câu từ đề thi; fallback về 10 nếu null (không nên xảy ra)
+        String maxScoreStr = (maxScore != null) ? maxScore.stripTrailingZeros().toPlainString() : "10";
+
+        return """
+                Below is your OOP analysis of a student's Java submission:
+
+                ─── ANALYSIS ───────────────────────────────────────────────────
+                %s
+                ────────────────────────────────────────────────────────────────
+
+                Based on the analysis above, return a structured JSON evaluation result.
+
+                RULES:
+                1. Return ONLY valid JSON — no markdown, no text outside JSON
+                2. All comments and violation descriptions must be in: %s
+                     3. STRICT RUBRIC SCORING:
+                         - Use ONLY scoring criteria and point values explicitly defined in the exam description.
+                         - Do NOT invent new criteria, new weights, or hidden bonus/penalty rules.
+                         - For each criterion, compute: earnedPoints = maxPoints - deductedPoints (clamp to [0, maxPoints]).
+                         - Each deduction MUST cite concrete code evidence (class/method/line snippet context).
+                     4. Score consistency is mandatory:
+                         - oopScore = SUM(criteriaResults[*].earnedPoints), rounded to 2 decimals.
+                         - oopScore MUST be within [0, %s].
+                         - If the exam rubric total differs from %s, normalize proportionally to %s and explain briefly in comment.
+                     5. isOopViolated = true if the student earned LESS THAN 50%% of the max score
+                         (i.e., oopScore < %s * 0.5).
+                         Hardcode findings must be reflected in score deduction/comments, but do NOT
+                         automatically set isOopViolated=true unless the final criteria-based result justifies it.
+                            6. The "comment" field MUST contain EXACTLY ONE line per rubric criterion from the exam.
+                                Do NOT merge criteria into one line and do NOT skip any criterion.
+                                Each line MUST include criterion name and score values of that criterion in this format:
+                                "[N]. [CriterionName] (tối đa [maxPoints] điểm): đạt được [earnedPoints] điểm, bị trừ [deductedPoints] điểm - [nhận xét cụ thể dựa trên bằng chứng code]"
+                                If there is an anti-cheat criterion, it MUST be the LAST line.
+
+                                *** DISQUALIFICATION EXCEPTION (hardcode/file tampering — all scores = 0) ***
+                                Use ONLY when the ENTIRE submission is disqualified because the student modified
+                                precompiled files provided by the exam (e.g., Main.java, Main.class,
+                                IBook.class, IFile.class, or any other pre-built .class file) or deliberately
+                                hardcoded outputs to bypass all logic. In this case:
+                                - Set ALL criteriaResults earnedPoints = 0, oopScore = 0, isOopViolated = true.
+                                - Write EACH comment line in this simplified format (NO toi-da/dat-duoc/bi-tru):
+                                  "[N]. [CriterionName]: 0 diem - BI HUY do [specific reason]"
+                     7. Include "violations" ONLY IF violations are detected.
+                         If no violations are found, OMIT the "violations" field entirely.
+                     8. Include "hardCodedValues" ONLY IF true hardcode/cheat is detected.
+                         If no hardcode is found, OMIT the "hardCodedValues" field entirely — do NOT
+                         write null, [], or any message like "no hardcode detected".
+                         Do NOT include error messages, format strings, or spec-required constants.
+                            9. PRESERVE IDENTIFIER NAMES - variable names, method names, class names,
+                                 interface names, field names from the exam or student code MUST be kept
+                                 in their ORIGINAL form. Do NOT translate identifiers to Vietnamese.
+                                 Correct: `getPrice()`, `bookList`, `IBook`, `addBook()`
+                                 WRONG:   `layGia()`, `danhSachSach`, `GiaoTienSach`, `themSach()`
+
+                Return exactly this JSON:
+                {
+                  "oopScore": <number 0-%s>,
+                        "criteriaResults": [
+                          {
+                             "name": "<criterion name from exam>",
+                             "maxPoints": <number>,
+                             "deductedPoints": <number>,
+                             "earnedPoints": <number>,
+                             "status": "met|partial|violated",
+                             "evidence": "<specific class/method/code evidence>"
+                          }
+                        ],
+                        "violations": ["<specific violation with code example>"],
+                        "hardCodedValues": ["<only TRUE cheat values — NOT error messages or spec-required constants>"],
+                  "comment": "<numbered list in %s — exactly one line per criterion, include max/earned/deducted points per line as in RULE 6>",
+                  "isOopViolated": <true|false>
+                }
+                     """
+                .formatted(analysis, language, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr, maxScoreStr,
+                        language);
     }
 
     // ─── RESULT PARSING ──────────────────────────────────────────────────────
 
     /**
-     * [OLD]
-     * private AIReviewResult parseResult(String rawJson, BigDecimal maxScore) {
-     *     // accepted comment-only payloads and could silently fall back to legacy parser
-     * }
+     * Parses the AI response for the new flexible prompt format.
+     *
+     * <p>
+     * The new format does NOT include a {@code criteriaBreakdown} block —
+     * criteria results are embedded in the free-text {@code comment} field
+     * as a numbered list. All breakdown fields are set to ZERO.
+     * Use {@link #parseResultLegacy(String)} if you need per-criterion scores.
      */
-    private AIReviewResult parseStrictResult(String rawJson, BigDecimal maxScore, String language) {
+    private AIReviewResult parseResult(String rawJson, BigDecimal maxScore) {
         try {
             String json = extractJsonBlock(rawJson);
             JsonNode node = objectMapper.readTree(json);
 
-            JsonNode oopScoreNode = node.get("oopScore");
-            JsonNode criteriaNode = node.get("criteriaResults");
-            if (oopScoreNode == null || criteriaNode == null || !criteriaNode.isArray() || criteriaNode.isEmpty()) {
-                throw new IllegalArgumentException("Missing required fields: oopScore/criteriaResults");
+            // Validate bắt buộc field quan trọng
+            JsonNode oopScoreNode = node.path("oopScore");
+            String comment = node.path("comment").asText("");
+            if (oopScoreNode.isMissingNode() || oopScoreNode.isNull() || comment.isBlank()) {
+                throw new IllegalArgumentException("Missing required fields: oopScore/comment");
             }
 
-            BigDecimal safeMax = safeMaxScore(maxScore);
-            BigDecimal reportedOopScore = clampScore(asBigDecimal(oopScoreNode), safeMax);
-            List<Map<String, Object>> normalizedCriteria = normalizeCriteriaResults(criteriaNode, safeMax);
-
-            BigDecimal criteriaSum = normalizedCriteria.stream()
-                    .map(this::extractEarnedPoints)
-                    .filter(Objects::nonNull)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .setScale(2, RoundingMode.HALF_UP);
-
-            if (reportedOopScore.subtract(criteriaSum).abs().compareTo(SCORE_EPSILON) > 0) {
-                throw new IllegalArgumentException(
-                        "Score mismatch between oopScore=" + reportedOopScore + " and criteria sum=" + criteriaSum);
-            }
-
-            List<String> violations = readStringArray(node.get("violations"));
-            List<String> hardCoded = readStringArray(node.get("hardCodedValues"));
-            String summary = node.path("summary").asText("").trim();
+            // Lấy tổng điểm OOP và ép về miền hợp lệ [0..maxScore]
+            BigDecimal parsedScore = asBigDecimal(oopScoreNode);
+            BigDecimal safeMax = (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
+                    ? maxScore
+                    : BigDecimal.TEN;
+            BigDecimal oopScore = parsedScore.max(BigDecimal.ZERO).min(safeMax);
             boolean oopViolated = node.path("isOopViolated").asBoolean(false);
 
-            String comment = buildCompactComment(normalizedCriteria, summary, language);
+            // Danh sách vi phạm và hardcode (null-safe)
+            JsonNode violationsNode = node.path("violations");
+            List<String> violations = violationsNode.isMissingNode() || violationsNode.isNull()
+                    ? Collections.emptyList()
+                    : objectMapper.convertValue(violationsNode, new TypeReference<>() {
+                    });
+            if (violations == null) {
+                violations = Collections.emptyList();
+            }
 
+            JsonNode hardCodedNode = node.path("hardCodedValues");
+            List<String> hardCoded = hardCodedNode.isMissingNode() || hardCodedNode.isNull()
+                    ? Collections.emptyList()
+                    : objectMapper.convertValue(hardCodedNode, new TypeReference<>() {
+                    });
+            if (hardCoded == null) {
+                hardCoded = Collections.emptyList();
+            }
+
+            // Parse criteriaResults from JSON (dynamic per-criterion list from AI prompt)
+            JsonNode criteriaNode = node.path("criteriaResults");
+            List<Map<String, Object>> criteriaResults = criteriaNode.isMissingNode() || criteriaNode.isNull()
+                    ? Collections.emptyList()
+                    : objectMapper.convertValue(criteriaNode, new TypeReference<>() {});
+            if (criteriaResults == null) criteriaResults = Collections.emptyList();
+
+            // criteriaBreakdown legacy fields are not in the new format — set to ZERO
             return new AIReviewResult(
-                    reportedOopScore,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    violations,
-                    hardCoded,
-                    normalizedCriteria,
-                    comment,
-                    oopViolated,
-                    false,
-                    null
-            );
+                    oopScore,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO,
+                    violations, hardCoded,
+                    criteriaResults, // ← must come before comment per record definition
+                    comment, oopViolated,
+                    false, null);
         } catch (Exception e) {
-            log.error("Failed to parse strict AI result JSON: {}", e.getMessage());
+            log.warn("Flexible parser failed, trying legacy parser: {}", e.getMessage());
+            AIReviewResult legacy = parseResultLegacy(rawJson);
+            if (!legacy.aiError()) {
+                // Legacy parser thành công
+                return legacy;
+            }
+            log.error("Failed to parse AI result JSON (both flexible and legacy): {}", e.getMessage());
             return AIReviewResult.failure("Failed to parse AI JSON: " + e.getMessage());
         }
     }
 
-    private List<Map<String, Object>> normalizeCriteriaResults(JsonNode criteriaNode, BigDecimal safeMax) {
-        List<Map<String, Object>> results = new ArrayList<>();
+    /**
+     * Legacy parser — kept for backward compatibility or rollback.
+     *
+     * <p>
+     * Parses the OLD 5-criteria fixed prompt format which includes a
+     * {@code criteriaBreakdown} JSON block with per-criterion scores
+     * (encapsulation, inheritance, polymorphism, designQuality, codeIntegrity).
+     * Use this if you need to switch back to the old rigid grading format.
+     */
+    private AIReviewResult parseResultLegacy(String rawJson) {
+        try {
+            String json = extractJsonBlock(rawJson);
+            JsonNode node = objectMapper.readTree(json);
 
-        for (JsonNode criterionNode : criteriaNode) {
-            String name = criterionNode.path("name").asText("").trim();
-            if (name.isBlank()) {
-                throw new IllegalArgumentException("Each criterion must contain a non-empty name");
+            BigDecimal oopScore = asBigDecimal(node.path("oopScore"));
+            JsonNode bd = node.path("criteriaBreakdown");
+            BigDecimal encapsulation = asBigDecimal(bd.path("encapsulation"));
+            BigDecimal inheritance = asBigDecimal(bd.path("inheritance"));
+            BigDecimal polymorphism = asBigDecimal(bd.path("polymorphism"));
+            BigDecimal designQuality = asBigDecimal(bd.path("designQuality"));
+            BigDecimal codeIntegrity = asBigDecimal(bd.path("codeIntegrity"));
+
+            List<String> violations = objectMapper.convertValue(
+                    node.path("violations"), new TypeReference<>() {
+                    });
+            if (violations == null) {
+                violations = Collections.emptyList();
             }
-
-            BigDecimal maxPoints = asBigDecimal(criterionNode.get("maxPoints"));
-            if (maxPoints.compareTo(BigDecimal.ZERO) < 0 || maxPoints.compareTo(safeMax) > 0) {
-                throw new IllegalArgumentException("Invalid maxPoints for criterion '" + name + "': " + maxPoints);
+            List<String> hardCoded = objectMapper.convertValue(
+                    node.path("hardCodedValues"), new TypeReference<>() {
+                    });
+            if (hardCoded == null) {
+                hardCoded = Collections.emptyList();
             }
+            String comment = node.path("comment").asText("");
+            boolean oopViolated = node.path("isOopViolated").asBoolean(false);
 
-            BigDecimal earnedPoints = clampScore(asBigDecimal(criterionNode.get("earnedPoints")), maxPoints);
-            BigDecimal deductedPoints = criterionNode.hasNonNull("deductedPoints")
-                    ? clampScore(asBigDecimal(criterionNode.get("deductedPoints")), maxPoints)
-                    : maxPoints.subtract(earnedPoints).max(BigDecimal.ZERO);
-
-            BigDecimal recomputedEarned = maxPoints.subtract(deductedPoints).setScale(2, RoundingMode.HALF_UP);
-            if (recomputedEarned.compareTo(earnedPoints) != 0) {
-                deductedPoints = maxPoints.subtract(earnedPoints).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-            }
-
-            String status = criterionNode.path("status").asText("").trim();
-            if (status.isBlank()) {
-                status = deriveStatus(earnedPoints, maxPoints);
-            }
-
-            String reason = criterionNode.path("reason").asText("").trim();
-            if (earnedPoints.compareTo(maxPoints) == 0) {
-                reason = "";
-            }
-
-            Map<String, Object> normalized = new LinkedHashMap<>();
-            normalized.put("name", name);
-            normalized.put("maxPoints", maxPoints.setScale(2, RoundingMode.HALF_UP));
-            normalized.put("earnedPoints", earnedPoints.setScale(2, RoundingMode.HALF_UP));
-            normalized.put("deductedPoints", deductedPoints.setScale(2, RoundingMode.HALF_UP));
-            normalized.put("status", status);
-            if (!reason.isBlank()) {
-                normalized.put("reason", truncateReason(reason));
-            }
-            results.add(normalized);
+            return new AIReviewResult(
+                    oopScore, encapsulation, inheritance, polymorphism,
+                    designQuality, codeIntegrity,
+                    violations, hardCoded,
+                    Collections.emptyList(), // legacy format has no criteriaResults field
+                    comment, oopViolated,
+                    false, null);
+        } catch (Exception e) {
+            log.error("Failed to parse AI result JSON (legacy): {}", e.getMessage());
+            return AIReviewResult.failure("Failed to parse AI JSON: " + e.getMessage());
         }
-
-        return results;
-    }
-
-    private String buildCompactComment(List<Map<String, Object>> criteriaResults, String summary, String language) {
-        StringBuilder sb = new StringBuilder();
-        int index = 1;
-        for (Map<String, Object> item : criteriaResults) {
-            BigDecimal maxPoints = extractBigDecimal(item.get("maxPoints"));
-            BigDecimal earnedPoints = extractBigDecimal(item.get("earnedPoints"));
-            BigDecimal deductedPoints = extractBigDecimal(item.get("deductedPoints"));
-            String name = Objects.toString(item.get("name"), "Tiêu chí");
-            String reason = Objects.toString(item.get("reason"), "").trim();
-
-            sb.append(index++)
-                    .append(". ")
-                    .append(name)
-                    .append(" (tối đa ")
-                    .append(formatScore(maxPoints))
-                    .append(" điểm): đạt ")
-                    .append(formatScore(earnedPoints))
-                    .append(" điểm, bị trừ ")
-                    .append(formatScore(deductedPoints))
-                    .append(" điểm");
-            if (!reason.isBlank()) {
-                sb.append(" - ").append(reason);
-            }
-            sb.append("\n");
-        }
-
-        if (!summary.isBlank()) {
-            if (sb.length() > 0) sb.append("\n");
-            sb.append(language.equalsIgnoreCase("Vietnamese") ? "Tóm tắt: " : "Summary: ")
-                    .append(summary);
-        }
-
-        return sb.toString().trim();
-    }
-
-    private String truncateReason(String reason) {
-        if (reason == null) return "";
-        String normalized = reason.replace("\r", " ").replace("\n", " ").trim();
-        return normalized.length() <= 160 ? normalized : normalized.substring(0, 157) + "...";
-    }
-
-    private BigDecimal clampScore(BigDecimal value, BigDecimal maxAllowed) {
-        BigDecimal safeValue = value != null ? value : BigDecimal.ZERO;
-        BigDecimal safeMax = maxAllowed != null ? maxAllowed : BigDecimal.ZERO;
-        return safeValue.max(BigDecimal.ZERO).min(safeMax).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private String deriveStatus(BigDecimal earnedPoints, BigDecimal maxPoints) {
-        if (earnedPoints.compareTo(BigDecimal.ZERO) == 0) {
-            return "violated";
-        }
-        if (earnedPoints.compareTo(maxPoints) == 0) {
-            return "met";
-        }
-        return "partial";
-    }
-
-    private List<String> readStringArray(JsonNode node) {
-        if (node == null || node.isNull() || !node.isArray()) {
-            return Collections.emptyList();
-        }
-        List<String> values = objectMapper.convertValue(node, new TypeReference<>() {});
-        return values != null ? values : Collections.emptyList();
     }
 
     /** Strips markdown fences and extracts the first {...} JSON block. */
     private String extractJsonBlock(String raw) {
-        if (raw == null) return "{}";
+        if (raw == null)
+            return "{}";
         String s = raw.trim();
         if (s.startsWith("```")) {
             int nl = s.indexOf('\n');
-            if (nl != -1) s = s.substring(nl + 1);
-            if (s.endsWith("```")) s = s.substring(0, s.length() - 3).trim();
+            if (nl != -1)
+                s = s.substring(nl + 1);
+            if (s.endsWith("```"))
+                s = s.substring(0, s.length() - 3).trim();
         }
         int start = s.indexOf('{');
         int end = s.lastIndexOf('}');
@@ -431,39 +543,7 @@ public class LLMReviewService {
     }
 
     private BigDecimal asBigDecimal(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            return new BigDecimal(node.asText());
-        } catch (Exception e) {
-            return BigDecimal.ZERO;
-        }
-    }
-
-    private BigDecimal extractBigDecimal(Object value) {
-        if (value == null) return BigDecimal.ZERO;
-        if (value instanceof BigDecimal bd) return bd;
-        try {
-            return new BigDecimal(String.valueOf(value));
-        } catch (Exception e) {
-            return BigDecimal.ZERO;
-        }
-    }
-
-    private BigDecimal extractEarnedPoints(Map<String, Object> item) {
-        return extractBigDecimal(item.get("earnedPoints"));
-    }
-
-    private String formatScore(BigDecimal value) {
-        BigDecimal safe = value != null ? value : BigDecimal.ZERO;
-        return safe.stripTrailingZeros().toPlainString();
-    }
-
-    private BigDecimal safeMaxScore(BigDecimal maxScore) {
-        return (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
-                ? maxScore
-                : BigDecimal.TEN;
+        return node.isMissingNode() || node.isNull() ? BigDecimal.ZERO : node.decimalValue();
     }
 
     // ─── CONFIG ──────────────────────────────────────────────────────────────
@@ -496,12 +576,24 @@ public class LLMReviewService {
         return new AIConfig(provider, apiKey, model, language);
     }
 
+    /**
+     * Maps an ISO language code or full language name to the full English name used
+     * in AI prompts (e.g. {@code "vi"} → {@code "Vietnamese"}).
+     *
+     * <p>
+     * New languages can be added here without changing DB schema or frontend.
+     * </p>
+     *
+     * @param code value stored in {@code SystemConfigs.AI_LANGUAGE}
+     * @return full language name safe to embed directly in the prompt
+     */
     private String resolveLanguageName(String code) {
-        if (code == null) return "Vietnamese";
+        if (code == null)
+            return "Vietnamese";
         return switch (code.toLowerCase().strip()) {
             case "vi", "vie", "vietnamese" -> "Vietnamese";
             case "en", "eng", "english" -> "English";
-            default -> code;
+            default -> code; // admin entered full name directly (e.g. "Japanese")
         };
     }
 

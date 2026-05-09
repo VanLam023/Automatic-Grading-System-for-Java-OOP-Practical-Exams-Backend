@@ -276,9 +276,6 @@ public class GradingQueryService {
         BigDecimal encapsulation = null, inheritance = null, polymorphism = null,
                 designQuality = null, codeIntegrity = null;
         List<String> violations = null, hardCodedValues = null;
-        List<java.util.Map<String, Object>> criteriaResults = null;
-        boolean aiError = false;
-        String errorMessage = null;
 
         String raw = ai.getRawResponse();
         if (raw != null && !raw.isBlank()) {
@@ -289,11 +286,8 @@ public class GradingQueryService {
                 polymorphism   = toBD(root.get("polymorphism"));
                 designQuality  = toBD(root.get("designQuality"));
                 codeIntegrity  = toBD(root.get("codeIntegrity"));
-                violations      = toStringList(root.get("violations"));
+                violations     = toStringList(root.get("violations"));
                 hardCodedValues = toStringList(root.get("hardCodedValues"));
-                criteriaResults = toMapList(root.get("criteriaResults"));
-                aiError         = root.path("aiError").asBoolean(false);
-                errorMessage    = root.path("errorMessage").asText(null);
             } catch (Exception e) {
                 log.warn("Could not parse rawResponse for AIReview {}: {}", ai.getAiReviewId(), e.getMessage());
             }
@@ -307,12 +301,9 @@ public class GradingQueryService {
                 .polymorphismScore(polymorphism)
                 .designQualityScore(designQuality)
                 .codeIntegrityScore(codeIntegrity)
-                .criteriaResults(criteriaResults)
                 .violations(violations)
                 .hardCodedValues(hardCodedValues)
                 .comment(ai.getComment())
-                .aiError(aiError)
-                .errorMessage(errorMessage)
                 .oopViolated(Boolean.TRUE.equals(ai.getIsOopViolated()))
                 .build();
     }
@@ -327,20 +318,6 @@ public class GradingQueryService {
         if (node == null || node.isNull() || !node.isArray()) return new ArrayList<>();
         List<String> list = new ArrayList<>();
         node.forEach(n -> { if (!n.isNull()) list.add(n.asText()); });
-        return list;
-    }
-
-    private List<java.util.Map<String, Object>> toMapList(JsonNode node) {
-        if (node == null || node.isNull() || !node.isArray()) return new ArrayList<>();
-        List<java.util.Map<String, Object>> list = new ArrayList<>();
-        node.forEach(n -> {
-            if (n != null && n.isObject()) {
-                try {
-                    list.add(objectMapper.convertValue(n, java.util.Map.class));
-                } catch (Exception ignored) {
-                }
-            }
-        });
         return list;
     }
 }
