@@ -80,10 +80,11 @@ public class ExamPaperController {
             @PathVariable UUID examId,
             @PathVariable UUID blockId,
             @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "examCode", required = false) String examCode,
             Authentication authentication
     ) {
         UUID staffId = extractUserId(authentication);
-        ExamPaperResponse response = examPaperService.upload(examId, blockId, staffId, file);
+        ExamPaperResponse response = examPaperService.upload(examId, blockId, staffId, file, examCode);
         return ResponseEntity.ok(buildSuccessResponse(
                 "Upload đề thi thành công. Đã parse " + response.getTotalQuestions() +
                 " câu hỏi với tổng " + response.getTotalTestCases() + " test cases.",

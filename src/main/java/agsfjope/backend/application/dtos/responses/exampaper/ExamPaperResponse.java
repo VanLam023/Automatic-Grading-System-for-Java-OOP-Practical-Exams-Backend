@@ -29,6 +29,9 @@ public class ExamPaperResponse {
     /** Original file name of the uploaded archive (e.g., {@code PRO192_PE_FA25_071125.zip}). */
     private String fileName;
 
+    /** Mã đề thi do giảng viên nhập khi upload. Null nếu không điền. */
+    private String examCode;
+
     /** File size in bytes. Used to display file size in the UI (e.g., "5.2 MB"). */
     private Long fileSizeBytes;
 

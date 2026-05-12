@@ -30,6 +30,13 @@ public class ExamPaper {
     @Column(name = "FileName", nullable = false, length = 255)
     private String fileName;
 
+    /**
+     * Mã đề thi do giảng viên nhập khi upload, ví dụ: {@code PRO192_PE_FA25}.
+     * Bắt buộc nhập — dùng để định danh đề thi trong block.
+     */
+    @Column(name = "ExamCode", nullable = false, length = 50)
+    private String examCode;
+
     @Column(name = "FilePath", nullable = false, columnDefinition = "TEXT")
     private String filePath;
 

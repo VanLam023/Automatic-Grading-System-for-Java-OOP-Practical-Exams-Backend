@@ -78,9 +78,15 @@ public class ExamPaperServiceImpl implements ExamPaperService {
 
     @Override
     @Transactional
-    public ExamPaperResponse upload(UUID examId, UUID blockId, UUID staffId, MultipartFile file) {
-        log.info("ExamPaperService.upload: examId={}, blockId={}, staffId={}, file={}",
-                examId, blockId, staffId, file.getOriginalFilename());
+    public ExamPaperResponse upload(UUID examId, UUID blockId, UUID staffId, MultipartFile file, String examCode) {
+        log.info("ExamPaperService.upload: examId={}, blockId={}, staffId={}, file={}, examCode={}",
+                examId, blockId, staffId, file.getOriginalFilename(), examCode);
+
+        // ── 0. Validate examCode (bắt buộc) ─────────────────────────────────
+        if (examCode == null || examCode.isBlank()) {
+            throw new IllegalArgumentException("Mã đề thi là bắt buộc. Vui lòng nhập mã đề trước khi upload.");
+        }
+        String trimmedExamCode = examCode.trim();
 
         // ── 1. Validate exam exists ───────────────────────────────────────────
         if (!examRepository.existsById(examId)) {
@@ -179,6 +185,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
                         .block(block)
                         .uploadedBy(staff)
                         .fileName(originalFilename)
+                        .examCode(trimmedExamCode)
                         .filePath(objectPath)
                         .fileSizeBytes(fileSize)
                         .totalQuestions(totalQuestions)
@@ -485,6 +492,7 @@ public class ExamPaperServiceImpl implements ExamPaperService {
                 .blockId(paper.getBlock().getBlockId())
                 .blockName(paper.getBlock().getName())
                 .fileName(paper.getFileName())
+                .examCode(paper.getExamCode())
                 .fileSizeBytes(paper.getFileSizeBytes())
                 .totalQuestions(paper.getTotalQuestions())
                 .totalTestCases(paper.getTotalTestCases())

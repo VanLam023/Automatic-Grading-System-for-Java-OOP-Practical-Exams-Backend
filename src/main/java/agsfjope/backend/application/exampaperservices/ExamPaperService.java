@@ -41,6 +41,7 @@ public interface ExamPaperService {
      * @param blockId block identifier (must belong to the given exam)
      * @param staffId UUID of the Exam Staff performing the upload
      * @param file    the uploaded archive file (must be .zip or .rar, max 20 MB)
+     * @param examCode optional exam code entered by staff (e.g. "PRO192_PE_FA25"), may be null
      * @return full exam paper response including parsed questions and test cases
      * @throws agsfjope.backend.core.exceptions.auth.NotFoundException if exam or block not found
      * @throws IllegalArgumentException if block does not belong to the exam
@@ -48,7 +49,7 @@ public interface ExamPaperService {
      * @throws agsfjope.backend.core.exceptions.exampaper.InvalidZipStructureException if archive cannot be parsed
      * @throws IllegalStateException if file type is not .zip or .rar, or size exceeds limit
      */
-    ExamPaperResponse upload(UUID examId, UUID blockId, UUID staffId, MultipartFile file);
+    ExamPaperResponse upload(UUID examId, UUID blockId, UUID staffId, MultipartFile file, String examCode);
 
     /**
      * Returns the exam paper metadata and all parsed questions/test cases for the given block.
