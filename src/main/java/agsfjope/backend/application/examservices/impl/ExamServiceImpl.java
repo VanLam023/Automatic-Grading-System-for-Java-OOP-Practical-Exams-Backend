@@ -135,8 +135,9 @@ public class ExamServiceImpl implements ExamService {
 
         examRepository.save(exam);
 
-        // BR-08: Auto-create Block 10 + Block 3 for this exam
-        blockService.createDefaultBlocks(exam);
+        // [DEPRECATED] BR-08: Auto-create Block 10 + Block 3 for this exam
+        // Block được tạo thủ công qua API POST /api/exams/{examId}/blocks
+        // blockService.createDefaultBlocks(exam);
 
         return mapToResponse(exam);
     }

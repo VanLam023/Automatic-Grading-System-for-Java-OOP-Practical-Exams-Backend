@@ -65,4 +65,7 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
      * Dùng cho Scheduler để nhắc nhở kỳ thi sắp mở.
      */
     List<Block> findByStartTimeBetween(java.time.OffsetDateTime after, java.time.OffsetDateTime before);
+
+    /** Kiểm tra tên block đã tồn tại trong exam chưa (unique constraint ExamID + Name). */
+    boolean existsByExam_ExamIdAndName(UUID examId, String name);
 }

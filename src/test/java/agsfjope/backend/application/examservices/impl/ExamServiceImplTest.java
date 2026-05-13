@@ -135,7 +135,8 @@ class ExamServiceImplTest {
         when(examRepository.existsBySemesterAndDeletedAtIsNull("SP2026")).thenReturn(false);
         when(systemConfigRepository.findByConfigKey("DEFAULT_GRADING_MODE")).thenReturn(Optional.of(gradingConfig));
         when(examRepository.save(any(Exam.class))).thenAnswer(inv -> inv.getArgument(0));
-        doNothing().when(blockService).createDefaultBlocks(any(Exam.class));
+        // [DEPRECATED] Block không còn auto-create khi tạo exam
+        // doNothing().when(blockService).createDefaultBlocks(any(Exam.class));
 
         // ── Act ───────────────────────────────────────────────────────────────
         ExamResponse response = examService.createExam(request);
@@ -147,7 +148,8 @@ class ExamServiceImplTest {
         assertEquals(String.valueOf(CURRENT_YEAR), response.getAcademicYear());
         assertEquals(GradingMode.MODE_1, response.getGradingMode());
         verify(examRepository).save(any(Exam.class));
-        verify(blockService).createDefaultBlocks(any(Exam.class));
+        // [DEPRECATED] Block không còn auto-create khi tạo exam
+        // verify(blockService).createDefaultBlocks(any(Exam.class));
     }
 
     @Test
@@ -168,7 +170,8 @@ class ExamServiceImplTest {
         // ── Act & Assert ──────────────────────────────────────────────────────
         assertThrows(IllegalArgumentException.class, () -> examService.createExam(request));
         verify(examRepository, never()).save(any());
-        verify(blockService, never()).createDefaultBlocks(any());
+        // [DEPRECATED] Block không còn auto-create khi tạo exam
+        // verify(blockService, never()).createDefaultBlocks(any());
     }
 
     @Test
@@ -233,7 +236,8 @@ class ExamServiceImplTest {
         when(examRepository.existsBySemesterAndDeletedAtIsNull("SP2026")).thenReturn(false);
         when(systemConfigRepository.findByConfigKey("DEFAULT_GRADING_MODE")).thenReturn(Optional.of(gradingConfig));
         when(examRepository.save(any(Exam.class))).thenAnswer(inv -> inv.getArgument(0));
-        doNothing().when(blockService).createDefaultBlocks(any(Exam.class));
+        // [DEPRECATED] Block không còn auto-create khi tạo exam
+        // doNothing().when(blockService).createDefaultBlocks(any(Exam.class));
 
         // ── Act & Assert ──────────────────────────────────────────────────────
         assertDoesNotThrow(() -> examService.createExam(request));

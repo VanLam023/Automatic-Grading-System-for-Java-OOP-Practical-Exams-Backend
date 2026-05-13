@@ -20,7 +20,7 @@ public class BlockResponse {
     /** UUID of the exam this block belongs to. */
     private UUID examId;
 
-    /** Block name — either "Block 10" or "Block 3" (BR-08). */
+    /** Block name — tên tuỳ chọn do Exam Staff đặt, unique trong exam. */
     private String name;
 
     /** Optional description of this block. */

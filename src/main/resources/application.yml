@@ -56,6 +56,7 @@ spring:
     out-of-order: true            # Cho phep apply migration chua theo thu tu version
     validate-on-migrate: true     # Kiem tra migration chua bi chinh sua
     repair-on-migrate: true      # Production: KHONG tu dong repair, phai xu ly thu cong
+    ignore-migration-patterns: "*:missing"  # Cho phep migration da apply nhung file bi mat (V16,V17,V18)
 
   mail:
     host: smtp.gmail.com
