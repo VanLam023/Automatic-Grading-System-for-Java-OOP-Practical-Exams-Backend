@@ -29,6 +29,9 @@ public class ExamPaperResponse {
     /** Original file name of the uploaded archive (e.g., {@code PRO192_PE_FA25_071125.zip}). */
     private String fileName;
 
+    /** Presigned URL to view/download the original exam paper file. */
+    private String fileUrl;
+
     /** Mã đề thi do giảng viên nhập khi upload. Null nếu không điền. */
     private String examCode;
 

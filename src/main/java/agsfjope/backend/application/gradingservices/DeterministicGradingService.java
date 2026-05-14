@@ -54,10 +54,11 @@ public class DeterministicGradingService {
         Block block = submission.getBlock();
         
         GradingModeConfig modeConfig = modeConfigRepository.findByMode(GradingMode.MODE_5)
-                .orElseThrow(() -> new IllegalStateException("MODE_5 config not found"));
+                .orElseThrow(() -> new GradingFailedException("Không tìm thấy cấu hình chế độ chấm MODE_5"));
 
         ExamPaper examPaper = examPaperRepository.findByBlock_BlockId(block.getBlockId())
-                .orElseThrow(() -> new IllegalStateException("Exam paper not found"));
+                .orElseThrow(() -> new GradingFailedException(
+                        "Không tìm thấy đề thi cho block " + block.getBlockId()));
 
         List<Answer> answers = answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(subId);
         
@@ -77,7 +78,13 @@ public class DeterministicGradingService {
                 Path qWorkDir = archiveExtractor.createWorkDir("det_" + subId + "_q" + q.getQuestionNumber());
                 
                 String subExt = getFileExtension(submission.getFilePath());
-                Path jar = archiveExtractor.extractStudentJar("submissions", submission.getFilePath(), q.getQuestionNumber(), subExt, qWorkDir);
+                Path jar;
+                try {
+                    jar = archiveExtractor.extractStudentJar("submissions", submission.getFilePath(), q.getQuestionNumber(), subExt, qWorkDir);
+                } catch (java.util.zip.ZipException e) {
+                    throw new GradingFailedException(
+                            "File nộp bị hỏng, không thể giải nén (corrupt archive): " + e.getMessage(), e);
+                }
                 Path src = archiveExtractor.extractStudentSources("submissions", submission.getFilePath(), q.getQuestionNumber(), subExt, qWorkDir);
 
                 // 1. Run Tests (Isolated)
@@ -141,12 +148,29 @@ public class DeterministicGradingService {
                 log.warn("Failed to send notification for submission {}: {}", subId, e.getMessage());
             }
 
-        } catch (Exception e) {
+        } catch (GradingFailedException e) {
+            // Xóa kết quả cũ (nếu có) khi chấm thất bại
+            try {
+                transactionTemplate.executeWithoutResult(status -> {
+                    gradingResultRepository.deleteBySubmission_SubmissionId(subId);
+                });
+            } catch (Exception cleanupEx) {
+                log.warn("Failed to clean up results for submission {}: {}", subId, cleanupEx.getMessage());
+            }
+            throw e;
+        } catch (Throwable e) {
             log.error("[MODE_5] Critical failure for submission {}: {}", subId, e.getMessage());
-            transactionTemplate.executeWithoutResult(status -> {
-                submission.setStatus(SubmissionStatus.SUBMITTED);
-                submissionRepository.save(submission);
-            });
+            try {
+                transactionTemplate.executeWithoutResult(status -> {
+                    submissionRepository.findById(submission.getSubmissionId())
+                            .ifPresent(s -> {
+                                s.setStatus(SubmissionStatus.SUBMITTED);
+                                submissionRepository.save(s);
+                            });
+                });
+            } catch (Exception ex) {
+                log.error("Failed to reset submission status for {}: {}", subId, ex.getMessage());
+            }
         } finally {
             if (subWorkDir != null) archiveExtractor.cleanupWorkDir(subWorkDir);
         }

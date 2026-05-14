@@ -1,6 +1,7 @@
 package agsfjope.backend.application.exampaperservices.impl;
 
 import agsfjope.backend.application.dtos.responses.exampaper.ExamPaperResponse;
+import agsfjope.backend.application.ports.out.FileStoragePort;
 import agsfjope.backend.configuration.storage.MinioConfig;
 import agsfjope.backend.core.entities.*;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
@@ -61,7 +62,7 @@ class ExamPaperServiceImplTest {
     @Mock private SubmissionRepository submissionRepository;
     @Mock private UserRepository       userRepository;
     @Mock private SystemConfigRepository systemConfigRepository;
-    @Mock private MinioService         minioService;
+    @Mock private FileStoragePort      minioService;   // FileStoragePort, not MinioService
     @Mock private MinioConfig          minioConfig;
     @Mock private ZipExamPaperParser   parser;
 
@@ -73,14 +74,16 @@ class ExamPaperServiceImplTest {
     private UUID examId;
     private UUID blockId;
     private UUID staffId;
+    private String examCode;   // thêm examCode — tham số mới của upload()
     private Block block;
     private User staff;
     private ExamPaper existingPaper;
 
     @BeforeEach
     void setUp() {
-        examId  = UUID.randomUUID();
-        blockId = UUID.randomUUID();
+        examId   = UUID.randomUUID();
+        blockId  = UUID.randomUUID();
+        examCode = "PRO192_PE_FA25";  // examCode hợp lệ
 
         // Exam entity
         Exam exam = new Exam();
@@ -147,6 +150,22 @@ class ExamPaperServiceImplTest {
     // =========================================================================
 
     @Test
+    @DisplayName("[A] upload - Throw IllegalArgumentException khi examCode là null hoặc blank")
+    void upload_BlankExamCode_ThrowIllegalArgumentException() throws IOException {
+        // Arrange — examCode được validate trước khi gọi bất kỳ repository nào
+        MultipartFile file = buildValidZipFile("DeThi.zip");
+
+        // Act & Assert
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, "  "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Mã đề thi là bắt buộc");
+
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Mã đề thi là bắt buộc");
+    }
+
+    @Test
     @DisplayName("[N] upload - Upload file 'DeThi.zip' (1 MB) thành công cho block 'Block PRO192', lưu ExamPaper + Questions + TestCases")
     void upload_ValidZipFile_SavesExamPaperSuccessfully() throws Exception {
         // Arrange
@@ -180,7 +199,7 @@ class ExamPaperServiceImplTest {
         when(testCaseRepository.findByQuestion_QuestionIdOrderByTestCaseNumberAsc(any())).thenReturn(List.of());
 
         // Act
-        ExamPaperResponse response = service.upload(examId, blockId, staffId, file);
+        ExamPaperResponse response = service.upload(examId, blockId, staffId, file, examCode);
 
         // Assert
         assertThat(response).isNotNull();
@@ -200,7 +219,7 @@ class ExamPaperServiceImplTest {
         when(examRepository.existsById(examId)).thenReturn(false);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Không tìm thấy kỳ thi với ID:");
 
@@ -217,7 +236,7 @@ class ExamPaperServiceImplTest {
         when(blockRepository.findByBlockId(blockId)).thenReturn(Optional.empty());
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Không tìm thấy block với ID:");
 
@@ -239,7 +258,7 @@ class ExamPaperServiceImplTest {
         when(blockRepository.findByBlockId(blockId)).thenReturn(Optional.of(wrongBlock));
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("không thuộc kỳ thi");
 
@@ -256,7 +275,7 @@ class ExamPaperServiceImplTest {
         when(submissionRepository.existsByBlock_BlockId(blockId)).thenReturn(true);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(ExamPaperHasSubmissionsException.class)
                 .hasMessageContaining("BR-11");
 
@@ -276,7 +295,7 @@ class ExamPaperServiceImplTest {
         when(submissionRepository.existsByBlock_BlockId(blockId)).thenReturn(false);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("File upload rỗng");
     }
@@ -295,7 +314,7 @@ class ExamPaperServiceImplTest {
         when(submissionRepository.existsByBlock_BlockId(blockId)).thenReturn(false);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("20 MB (BR-16)");
     }
@@ -319,7 +338,7 @@ class ExamPaperServiceImplTest {
         when(submissionRepository.existsByBlock_BlockId(blockId)).thenReturn(false);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("1 MB (BR-16)");
         }
@@ -337,7 +356,7 @@ class ExamPaperServiceImplTest {
         when(submissionRepository.existsByBlock_BlockId(blockId)).thenReturn(false);
 
         // Act & Assert
-        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file))
+        assertThatThrownBy(() -> service.upload(examId, blockId, staffId, file, examCode))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Định dạng file không được hỗ trợ");
     }
@@ -375,7 +394,7 @@ class ExamPaperServiceImplTest {
         when(testCaseRepository.findByQuestion_QuestionIdOrderByTestCaseNumberAsc(any())).thenReturn(List.of());
 
         // Act
-        ExamPaperResponse response = service.upload(examId, blockId, staffId, file);
+        ExamPaperResponse response = service.upload(examId, blockId, staffId, file, examCode);
 
         // Assert — phải gọi xóa đề cũ (BR-09) rồi mới lưu đề mới
         verify(testCaseRepository).deleteByQuestion_ExamPaper_ExamPaperId(existingPaper.getExamPaperId());

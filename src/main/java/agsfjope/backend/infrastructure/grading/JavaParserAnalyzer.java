@@ -89,9 +89,11 @@ public class JavaParserAnalyzer {
                 // Parse file — skip silently if parse fails (student may have syntax errors)
                 ParseResult<CompilationUnit> parseResult = parser.parse(javaFile);
                 if (!parseResult.isSuccessful() || parseResult.getResult().isEmpty()) {
-                    log.warn("[PARSER] Failed to parse {}: {}",
-                            javaFile.getFileName(),
-                            parseResult.getProblems());
+                    String firstProblem = parseResult.getProblems().isEmpty()
+                            ? "unknown error"
+                            : parseResult.getProblems().get(0).getMessage();
+                    log.warn("[PARSER] Failed to parse {} — student syntax error: {}",
+                            javaFile.getFileName(), firstProblem);
                     continue;
                 }
 

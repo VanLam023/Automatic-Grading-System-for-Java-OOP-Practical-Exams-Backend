@@ -89,10 +89,11 @@ public class BlockSubmissionsController {
         }).toList();
 
         // 4. Stats — full block counts (before any filter)
-        long totalAll     = allItems.size();
+        long totalAll       = allItems.size();
         long totalSubmitted = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.SUBMITTED).count();
         long totalGrading   = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.GRADING).count();
         long totalGraded    = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.GRADED).count();
+        long totalFailed    = allItems.stream().filter(i -> i.getSubmissionStatus() == SubmissionStatus.GRADING_FAILED).count();
 
         // 5. In-memory filter: status
         SubmissionStatus statusFilter = null;
@@ -138,6 +139,7 @@ public class BlockSubmissionsController {
         stats.put("submitted", totalSubmitted);
         stats.put("grading",   totalGrading);
         stats.put("graded",    totalGraded);
+        stats.put("failed",    totalFailed);
 
         Map<String, Object> pagination = new HashMap<>();
         pagination.put("page",          safePage);

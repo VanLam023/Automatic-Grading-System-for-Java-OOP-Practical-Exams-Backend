@@ -183,7 +183,7 @@ public class ArchiveExtractor {
         // [DEBUG] Dump ZIP entry paths to see actual structure for diagnosis
         logArchiveEntries(archivePath, extension, q);
 
-        // Single-pass: collect every .java that belongs to this question,
+        // Single-pass: collect every .java and .class that belongs to this question,
         // regardless of how deep or how the student structured their zip.
         //
         // Covers (all applied simultaneously):
@@ -191,19 +191,20 @@ public class ArchiveExtractor {
         //   Tier 2 — outer-wrapped: .../n/src/*.java |  .../Q{n}/src/*.java
         //   Tier 3 — last-resort  : any .java anywhere under {n}/ or Q{n}/
         //                           handles src/src/, double-zip, full NetBeans project dump, etc.
+        // Also extracts .class files (exam-provided interfaces given as pre-compiled bytecode).
         int extracted = extractAllMatchingEntries(archivePath, extension, srcDir,
-                entry -> entry.toLowerCase().endsWith(".java")
+                entry -> (entry.toLowerCase().endsWith(".java") || entry.toLowerCase().endsWith(".class"))
                         && (entry.startsWith(q + "/")
                            || entry.startsWith("Q" + q + "/")
                            || entry.contains("/" + q + "/")
                            || entry.toLowerCase().contains("/q" + q + "/")));
 
         if (extracted > 0) {
-            log.warn("[EXTRACT-SRC] Q{}: extracted {} .java file(s).", q, extracted);
+            log.warn("[EXTRACT-SRC] Q{}: extracted {} source/class file(s).", q, extracted);
             return srcDir;
         }
 
-        log.warn("[EXTRACT-SRC] Q{}: no .java files found in archive.", q);
+        log.warn("[EXTRACT-SRC] Q{}: no .java or .class files found in archive.", q);
         return null;
     }
 

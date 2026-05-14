@@ -84,4 +84,14 @@ public interface SubmissionService {
      * @throws agsfjope.backend.core.exceptions.auth.NotFoundException if no submission found
      */
     InputStream downloadMySubmission(UUID examId, UUID blockId, UUID studentId);
+
+    /**
+     * Returns submission metadata for a specific submission by its ID.
+     * Used by staff/admin to view file details without requiring examId/blockId context.
+     *
+     * @param submissionId the submission UUID
+     * @return submission metadata (fileName, fileSizeBytes, submittedAt, status, …)
+     * @throws agsfjope.backend.core.exceptions.auth.NotFoundException if submission not found
+     */
+    SubmissionResponse getSubmissionById(UUID submissionId);
 }
