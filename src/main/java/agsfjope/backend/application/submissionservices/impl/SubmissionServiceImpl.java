@@ -271,6 +271,25 @@ public class SubmissionServiceImpl implements SubmissionService {
         );
     }
 
+    // ─── GET BY ID ────────────────────────────────────────────────────────────
+
+    @Override
+    @jakarta.transaction.Transactional
+    public SubmissionResponse getSubmissionById(UUID submissionId) {
+        Submission submission = submissionRepository.findById(submissionId)
+                .orElseThrow(() -> new NotFoundException(
+                        "Không tìm thấy bài nộp với ID: " + submissionId));
+
+        List<Answer> answers =
+                answerRepository.findBySubmission_SubmissionIdOrderByQuestion_QuestionNumberAsc(submissionId);
+
+        List<Question> questions = questionRepository
+                .findByExamPaper_Block_BlockIdOrderByQuestionNumberAsc(
+                        submission.getBlock().getBlockId());
+
+        return toResponse(submission, answers, questions, false);
+    }
+
     // ─── Private Helpers ─────────────────────────────────────────────────────
 
     private long resolveMaxUploadSizeBytes() {

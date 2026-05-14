@@ -68,4 +68,16 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
 
     /** Kiểm tra tên block đã tồn tại trong exam chưa (unique constraint ExamID + Name). */
     boolean existsByExam_ExamIdAndName(UUID examId, String name);
+
+    /**
+     * Lấy toàn bộ Block kèm Exam (JOIN FETCH để tránh N+1 / LazyInitializationException).
+     * Dùng cho endpoint GET /api/staff/blocks — trả về danh sách Block + Exam trong 1 lần.
+     * Sắp xếp: Semester DESC → Tên Exam ASC → Tên Block ASC.
+     *
+     * @return danh sách Block với Exam đã load sẵn
+     */
+    @Query("SELECT b FROM Block b JOIN FETCH b.exam e WHERE e.deletedAt IS NULL " +
+           "ORDER BY e.semester DESC, e.name ASC, b.name ASC")
+    List<Block> findAllWithExamOrderBySemesterDesc();
 }
+

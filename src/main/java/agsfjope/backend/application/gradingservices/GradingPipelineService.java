@@ -8,28 +8,30 @@ import agsfjope.backend.core.enums.TestCaseStatus;
 import agsfjope.backend.core.repositories.config.GradingModeConfigRepository;
 import agsfjope.backend.core.repositories.exampaper.ExamPaperRepository;
 import agsfjope.backend.core.repositories.exampaper.TestCaseRepository;
-import agsfjope.backend.core.repositories.grading.AIReviewRepository;
+import agsfjope.backend.core.repositories.grading.CriteriaResultRepository;
+import agsfjope.backend.core.repositories.grading.GradingCriteriaRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.AnswerRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import agsfjope.backend.core.repositories.auth.UserRepository;
+import agsfjope.backend.domain.grading.DeterministicOopScorer;
 import agsfjope.backend.domain.grading.FinalGradingScore;
 import agsfjope.backend.domain.grading.QuestionScore;
 import agsfjope.backend.domain.grading.ScoreCalculator;
 import agsfjope.backend.domain.grading.ScoreCalculator.QuestionInput;
 import agsfjope.backend.application.notificationservices.NotificationService;
 import agsfjope.backend.application.ports.out.EmailService;
-import agsfjope.backend.infrastructure.ai.AIReviewRequest;
-import agsfjope.backend.infrastructure.ai.AIReviewResult;
-import agsfjope.backend.infrastructure.ai.LLMReviewService;
 import agsfjope.backend.infrastructure.grading.ArchiveExtractor;
 import agsfjope.backend.infrastructure.grading.ExecutionResult;
 import agsfjope.backend.infrastructure.grading.JavaParserAnalyzer;
 import agsfjope.backend.infrastructure.grading.JarSandboxExecutor;
 import agsfjope.backend.infrastructure.grading.ReflectionAnalyzer;
 import agsfjope.backend.infrastructure.grading.StaticAnalysisResult;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import agsfjope.backend.infrastructure.grading.criteria.SourceCodeContext;
+import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParseResult;
+import com.github.javaparser.ast.CompilationUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,14 +40,20 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.nio.file.Path;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.*;
 import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.Set;
 import java.util.stream.Collectors;
+// [OLD-AI] import agsfjope.backend.core.repositories.grading.AIReviewRepository;
+// [OLD-AI] import agsfjope.backend.infrastructure.ai.AIReviewRequest;
+// [OLD-AI] import agsfjope.backend.infrastructure.ai.AIReviewResult;
+// [OLD-AI] import agsfjope.backend.infrastructure.ai.LLMReviewService;
+// [OLD-AI] import com.fasterxml.jackson.databind.ObjectMapper;
+// [OLD-AI] import java.util.concurrent.CompletableFuture;
+// [OLD-AI] import java.util.concurrent.ExecutorService;
+// [OLD-AI] import java.util.concurrent.Executors;
 
 /**
  * Core pipeline that grades a single {@link Submission}.
@@ -76,29 +84,30 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class GradingPipelineService {
 
-    // Parallel AI calls per submission (up to 5 questions → 5 parallel AI calls)
-    private static final int AI_PARALLELISM = 5;
+    private final AnswerRepository              answerRepository;
+    private final SubmissionRepository          submissionRepository;
+    private final UserRepository                userRepository;
+    private final TestCaseRepository            testCaseRepository;
+    private final TestCaseResultRepository      testCaseResultRepository;
+    private final GradingResultRepository       gradingResultRepository;
+    private final ExamPaperRepository           examPaperRepository;
+    private final GradingModeConfigRepository   gradingModeConfigRepository;
+    private final GradingCriteriaRepository     gradingCriteriaRepository;
+    private final CriteriaResultRepository      criteriaResultRepository;
 
-    private final AnswerRepository           answerRepository;
-    private final SubmissionRepository       submissionRepository;
-    private final UserRepository             userRepository;
-    private final TestCaseRepository         testCaseRepository;
-    private final TestCaseResultRepository   testCaseResultRepository;
-    private final AIReviewRepository         aiReviewRepository;
-    private final GradingResultRepository    gradingResultRepository;
-    private final ExamPaperRepository        examPaperRepository;
-    private final GradingModeConfigRepository gradingModeConfigRepository;
-
-    private final ArchiveExtractor    archiveExtractor;
-    private final JarSandboxExecutor  jarSandboxExecutor;
-    private final LLMReviewService    llmReviewService;
-    private final ScoreCalculator     scoreCalculator;
-    private final JavaParserAnalyzer  javaParserAnalyzer;  // [NEW] static AST analysis
-    private final ReflectionAnalyzer  reflectionAnalyzer;  // [NEW] runtime class inspection
-    private final ObjectMapper        objectMapper;
-    private final NotificationService notificationService;
-    private final EmailService        emailService;
-    private final TransactionTemplate transactionTemplate;
+    private final ArchiveExtractor       archiveExtractor;
+    private final JarSandboxExecutor     jarSandboxExecutor;
+    private final ScoreCalculator        scoreCalculator;
+    private final JavaParserAnalyzer     javaParserAnalyzer;
+    private final ReflectionAnalyzer     reflectionAnalyzer;
+    private final DeterministicOopScorer deterministicOopScorer;
+    private final NotificationService    notificationService;
+    private final EmailService           emailService;
+    private final TransactionTemplate    transactionTemplate;
+    // [OLD-AI] private static final int AI_PARALLELISM = 5;
+    // [OLD-AI] private final AIReviewRepository         aiReviewRepository;
+    // [OLD-AI] private final LLMReviewService           llmReviewService;
+    // [OLD-AI] private final ObjectMapper               objectMapper;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -157,8 +166,8 @@ public class GradingPipelineService {
             GradingModeConfig modeConfig = resolveGradingModeConfig(block);
 
             ExamPaper examPaper = examPaperRepository.findByBlock_BlockId(block.getBlockId())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "No exam paper found for block " + block.getBlockId()));
+                    .orElseThrow(() -> new GradingFailedException(
+                            "Không tìm thấy đề thi cho block " + block.getBlockId()));
             // Force-init ExamPaper fields
             examPaper.getFilePath();
 
@@ -203,59 +212,59 @@ public class GradingPipelineService {
             return;
         }
 
-        // ── Short TX 2: Delete old results (commits immediately, releases locks) ──
+        // ── Short TX 2: Delete old results ──────────────────────────────────
         transactionTemplate.executeWithoutResult(tx -> {
             testCaseResultRepository.deleteByAnswer_Submission_SubmissionId(subId);
-            aiReviewRepository.deleteByAnswer_Submission_SubmissionId(subId);
-        }); // TX 2 commits — AIReviews table unlocked before async INSERTs begin
+            criteriaResultRepository.deleteByAnswer_Submission_SubmissionId(subId);
+        });
 
         String subExt  = getFileExtension(finalSubmission.getFilePath());
         String examExt = getFileExtension(examPaper.getFilePath());
         log.warn("[GRADING] Submission {} — filePath='{}' ext='{}' | exam filePath='{}' ext='{}'",
                 subId, finalSubmission.getFilePath(), subExt, examPaper.getFilePath(), examExt);
 
-        Map<Integer, QuestionInput> questionInputs = new java.util.concurrent.ConcurrentHashMap<>();
-        List<CompletableFuture<Void>> aiTasks = new ArrayList<>();
-        ExecutorService aiExecutor = Executors.newFixedThreadPool(
-                Math.min(AI_PARALLELISM, answers.size()));
+        Map<Integer, QuestionInput> questionInputs = new HashMap<>();
 
         Path subWorkDir = null;
         try {
-            subWorkDir = archiveExtractor.createWorkDir("sub_" + subId.toString().replace("-", ""));
+            try {
+                subWorkDir = archiveExtractor.createWorkDir("sub_" + subId.toString().replace("-", ""));
+            } catch (Exception e) {
+                throw new GradingFailedException(
+                        "Lỗi tạo thư mục tạm để chấm bài: " + e.getMessage(), e);
+            }
 
             for (Answer answer : answers) {
 
-                // ── CANCELLATION CHECK (before each question) ────────────────
+                // ── CANCELLATION CHECK ───────────────────────────────────────
                 if (cancelledBlocks != null && cancelledBlocks.contains(block.getBlockId())) {
                     log.info("Grading of submission {} cancelled before Q{}",
                             subId, answer.getQuestion().getQuestionNumber());
                     submission.setStatus(SubmissionStatus.SUBMITTED);
-                    aiExecutor.shutdownNow();
                     throw new GradingCancelledException(
                             "Grading stopped by staff for block " + block.getBlockId());
                 }
 
-                Question question   = answer.getQuestion();
-                int qNum            = question.getQuestionNumber();
-                Path qWorkDir       = archiveExtractor.createWorkDir(
+                Question question = answer.getQuestion();
+                int qNum          = question.getQuestionNumber();
+                Path qWorkDir     = archiveExtractor.createWorkDir(
                         "sub_" + subId.toString().replace("-", "") + "_q" + qNum);
 
-                // ── Pre-check: extract JAR and src upfront ────────────────────
-                // Both are needed; if either is missing, fail the question
-                // immediately without running executor or AI.
+                // ── Extract JAR + src ────────────────────────────────────────
                 Path preJar    = null;
                 Path preSrcDir = null;
                 try {
                     preJar = archiveExtractor.extractStudentJar(
-                            "submissions", finalSubmission.getFilePath(),
-                            qNum, subExt, qWorkDir);
+                            "submissions", finalSubmission.getFilePath(), qNum, subExt, qWorkDir);
+                } catch (java.util.zip.ZipException e) {
+                    throw new GradingFailedException(
+                            "File nộp bị hỏng, không thể giải nén (corrupt archive): " + e.getMessage(), e);
                 } catch (Exception e) {
                     log.warn("[PRE-CHECK] Q{}: JAR extraction failed: {}", qNum, e.getMessage());
                 }
                 try {
                     preSrcDir = archiveExtractor.extractStudentSources(
-                            "submissions", finalSubmission.getFilePath(),
-                            qNum, subExt, qWorkDir);
+                            "submissions", finalSubmission.getFilePath(), qNum, subExt, qWorkDir);
                 } catch (Exception e) {
                     log.warn("[PRE-CHECK] Q{}: src extraction failed: {}", qNum, e.getMessage());
                 }
@@ -274,101 +283,60 @@ public class GradingPipelineService {
 
                     List<TestCase> tcList = testCaseRepository
                             .findByQuestion_QuestionIdOrderByTestCaseNumberAsc(question.getQuestionId());
-                    List<TestCaseResult> errorResults = tcList.stream()
-                            .map(tc -> buildErrorResult(answer, tc, missingNote))
-                            .toList();
-                    testCaseResultRepository.saveAll(errorResults);
+                    testCaseResultRepository.saveAll(
+                            tcList.stream().map(tc -> buildErrorResult(answer, tc, missingNote)).toList());
 
-                    final int totalTc      = tcList.size();
-                    final BigDecimal maxSc = question.getMaxScore();
-                    final String note      = missingNote;
-
-                    // Force 0 ONLY in 2 cases requested:
-                    // 1) Missing both .jar + /src
-                    // 2) Missing /src (even if .jar exists)
-                    boolean forceMissingRule =
-                            (preJar == null && preSrcDir == null)
-                            || (preJar != null && preSrcDir == null);
-
+                    boolean forceMissingRule = (preJar == null && preSrcDir == null)
+                                           || (preJar != null && preSrcDir == null);
                     if (forceMissingRule) {
-                        log.warn("[MISSING-FILE] Q{}: áp dụng rule thiếu file => ép 0 điểm", qNum);
-                        // Use QuestionInput.missing() so ScoreCalculator applies mandatory FailIfMissingFile rule
-                        questionInputs.put(qNum, QuestionInput.missing(maxSc, totalTc, note));
+                        questionInputs.put(qNum, QuestionInput.missing(question.getMaxScore(), tcList.size(), missingNote));
                         continue;
                     }
-
-                    // Case còn lại: thiếu .jar nhưng vẫn có /src
-                    // -> không chạy được test case (pass=0), nhưng vẫn AI review và KHÔNG ép 0 bởi missing rule.
-                    final Path finalSrcDir = preSrcDir;
-                    CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
-                        // [NEW] JAR null ở nhánh này — ReflectionAnalyzer sẽ skip, chỉ JavaParser chạy
-                        StaticAnalysisResult staticAnalysis = runStaticAnalysis(finalSrcDir, null);
-
-                        // [OLD] AIReviewResult aiResult = runAIReview(finalSubmission, answer, question, finalSrcDir);
-                        AIReviewResult aiResult = runAIReview(
-                                finalSubmission, answer, question, finalSrcDir, staticAnalysis);
-
-                        transactionTemplate.executeWithoutResult(tx -> {
-                            saveAIReview(answer, modeConfig.getMode().name(), aiResult);
-                            // [OLD] questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult));
-                            questionInputs.put(qNum, QuestionInput.of(maxSc, 0, totalTc, aiResult, staticAnalysis));
-                        });
-                    }, aiExecutor);
-                    aiTasks.add(aiTask);
+                    // Has src but no JAR: run OOP check only, TC score = 0
+                    StaticAnalysisResult sa = runStaticAnalysis(preSrcDir, null);
+                    SourceCodeContext ctx   = buildContext(preSrcDir, null);
+                    QuestionInput qi        = runOopAndBuildInput(answer, question, ctx, sa, 0, tcList.size(), false, null);
+                    questionInputs.put(qNum, qi);
                     continue;
-
                 }
 
-                // ── Step A: Run test cases (JAR + src both exist) ─────────────
+                // ── Step A: Run test cases ───────────────────────────────────
                 QuestionTcResult tcResult = runTestCases(
                         finalSubmission, examPaper, answer, question, qWorkDir, examExt, preJar);
-
                 testCaseResultRepository.saveAll(tcResult.results());
 
-                // ── Step B: AI Review ─────────────────────────────────────────
-                final Path finalSrcDir      = preSrcDir;
-                final Path finalJar         = preJar;   // [NEW] capture preJar — not effectively final because assigned in try-catch
-                final QuestionTcResult finalTcResult = tcResult;
+                if (tcResult.isTampered()) {
+                    questionInputs.put(qNum, QuestionInput.tampered(question.getMaxScore(),
+                            tcResult.passCount(), tcResult.totalCount(), tcResult.tamperDetail()));
+                    continue;
+                }
 
-                // Run AI review (parallel, in background)
-                CompletableFuture<Void> aiTask = CompletableFuture.runAsync(() -> {
-                    StaticAnalysisResult staticAnalysis = runStaticAnalysis(finalSrcDir, finalJar);
-                    AIReviewResult aiResult = runAIReview(
-                            finalSubmission, answer, question, finalSrcDir, staticAnalysis);
-
-                    transactionTemplate.executeWithoutResult(tx -> {
-                        saveAIReview(answer, modeConfig.getMode().name(), aiResult);
-
-                        log.warn("[AI-SCORE] Q{}: oopScore={} aiError={} oopViolated={}",
-                                qNum, aiResult.oopScore(), aiResult.aiError(), aiResult.oopViolated());
-
-                        questionInputs.put(qNum, finalTcResult.isTampered()
-                                ? QuestionInput.tampered(question.getMaxScore(),
-                                        finalTcResult.passCount(), finalTcResult.totalCount(),
-                                        finalTcResult.tamperDetail())
-                                : QuestionInput.of(question.getMaxScore(),
-                                        finalTcResult.passCount(), finalTcResult.totalCount(),
-                                        aiResult, staticAnalysis));
-                    });
-                }, aiExecutor);
-                aiTasks.add(aiTask);
+                // ── Step B: Deterministic OOP scoring (synchronous) ──────────
+                StaticAnalysisResult sa = runStaticAnalysis(preSrcDir, preJar);
+                SourceCodeContext ctx   = buildContext(preSrcDir, preJar);
+                QuestionInput qi        = runOopAndBuildInput(answer, question, ctx, sa,
+                        tcResult.passCount(), tcResult.totalCount(), false, null);
+                questionInputs.put(qNum, qi);
             }
 
-
-            // Wait for all AI tasks to complete
-            CompletableFuture.allOf(aiTasks.toArray(CompletableFuture[]::new)).join();
-
         } catch (GradingCancelledException e) {
-            // Re-throw before generic catch — signals GradingService to break the loop.
-            // shutdownNow() to interrupt any running AI threads immediately.
-            // Cleanup is handled by the finally block (avoid calling it twice).
-            aiExecutor.shutdownNow();
             throw e;
-        } catch (Exception e) {
+        } catch (GradingFailedException e) {
+            // Xóa kết quả đã lưu dở khi chấm thất bại
+            try {
+                transactionTemplate.executeWithoutResult(tx -> {
+                    testCaseResultRepository.deleteByAnswer_Submission_SubmissionId(subId);
+                    criteriaResultRepository.deleteByAnswer_Submission_SubmissionId(subId);
+                    gradingResultRepository.findBySubmission_SubmissionId(subId)
+                            .ifPresent(gradingResultRepository::delete);
+                });
+            } catch (Exception cleanupEx) {
+                log.warn("Failed to clean up partial results for submission {}: {}", subId, cleanupEx.getMessage());
+            }
+            throw e;
+        } catch (Throwable e) {
             log.error("Grading pipeline error for submission {}: {}", subId, e.getMessage(), e);
         } finally {
-            // Always shutdown executor and clean up temp dirs
-            aiExecutor.shutdown();
             if (subWorkDir != null) archiveExtractor.cleanupWorkDir(subWorkDir);
         }
 
@@ -491,20 +459,8 @@ public class GradingPipelineService {
         return new QuestionTcResult(results, passCount, testCases.size(), tampered, tamperDetail);
     }
 
-    // ─── AI REVIEW ───────────────────────────────────────────────────────────
+    // ─── STATIC ANALYSIS + DETERMINISTIC OOP ─────────────────────────────────
 
-    /**
-     * [NEW] Runs JavaParser (AST) + Reflection (runtime) analysis on the student submission.
-     * Results are merged into a single {@link StaticAnalysisResult} that is used by:
-     * <ol>
-     *   <li>The AI prompt (via {@code structuredAnalysis} field in {@link AIReviewRequest}).</li>
-     *   <li>{@link agsfjope.backend.domain.grading.ScoreCalculator} for immediate hardcode detection.</li>
-     * </ol>
-     * Failures in either analyzer are swallowed — never abort grading.
-     *
-     * @param srcDir     student’s source directory (may be null)
-     * @param studentJar student’s compiled JAR (may be null when JAR is missing)
-     */
     private StaticAnalysisResult runStaticAnalysis(Path srcDir, Path studentJar) {
         try {
             StaticAnalysisResult parserResult     = javaParserAnalyzer.analyze(srcDir);
@@ -520,97 +476,230 @@ public class GradingPipelineService {
         }
     }
 
-    private AIReviewResult runAIReview(Submission submission, Answer answer,
-                                       Question question, Path srcDir,
-                                       StaticAnalysisResult staticAnalysis) {
-        try {
-            log.warn("[AI-SRC] sub={} Q{}: srcDir={}",
-                    submission.getSubmissionId(), question.getQuestionNumber(),
-                    srcDir != null ? srcDir.toAbsolutePath() : "NULL");
-
-            String sourceCode = readSourceFiles(srcDir);
-            log.warn("[AI-SRC] sourceCode length={}, blank={}",
-                    sourceCode.length(), sourceCode.isBlank());
-
-            // [NEW] Serialize structured analysis report for AI prompt
-            String structuredAnalysisText = (staticAnalysis != null)
-                    ? staticAnalysis.toFormattedReport()
-                    : null;
-
-            AIReviewRequest aiRequest = new AIReviewRequest(
-                    question.getTitle(),
-                    question.getDescription(),
-                    sourceCode,
-                    structuredAnalysisText,
-                    "Vietnamese",
-                    question.getMaxScore()
-            );
-
-            return llmReviewService.review(aiRequest);
-        } catch (Exception e) {
-            log.error("AI review failed for submission {} Q{}: {}",
-                    submission.getSubmissionId(), question.getQuestionNumber(), e.getMessage());
-            return AIReviewResult.failure("Source extraction failed: " + e.getMessage());
-        }
-    }
-
-    private String readSourceFiles(Path srcDir) {
-        if (srcDir == null) return "(no source files found)";
-        try (var walk = java.nio.file.Files.walk(srcDir)) {
-            StringBuilder sb = new StringBuilder();
-            walk.filter(p -> p.toString().endsWith(".java"))
-                .sorted()
-                .forEach(p -> {
+    private SourceCodeContext buildContext(Path srcDir, Path jarPath) {
+        List<CompilationUnit> cuList = new ArrayList<>();
+        if (srcDir != null && Files.isDirectory(srcDir)) {
+            try (var walk = Files.walk(srcDir)) {
+                JavaParser parser = new JavaParser();
+                walk.filter(p -> p.toString().endsWith(".java")).sorted().forEach(p -> {
                     try {
-                        sb.append("// ─── ").append(p.getFileName()).append(" ───\n");
-                        sb.append(java.nio.file.Files.readString(p)).append("\n\n");
+                        ParseResult<CompilationUnit> pr = parser.parse(p);
+                        pr.getResult().ifPresent(cuList::add);
                     } catch (Exception e) {
-                        sb.append("// [Could not read ").append(p.getFileName()).append("]\n\n");
+                        log.warn("[AST] Cannot parse {}: {}", p.getFileName(), e.getMessage());
                     }
                 });
-            return sb.toString().isBlank() ? "(no .java files found)" : sb.toString();
-        } catch (Exception e) {
-            return "(failed to read source dir: " + e.getMessage() + ")";
+            } catch (Exception e) {
+                log.warn("[AST] Cannot walk srcDir {}: {}", srcDir, e.getMessage());
+            }
         }
+
+        // Load .class files from srcDir (e.g., pre-compiled interfaces provided by the exam)
+        // These are indexed by simple name so handlers can call context.loadedClass("ICalculator")
+        Map<String, Class<?>> loadedClasses = new LinkedHashMap<>(loadClassesFromSrcDir(srcDir));
+
+        // If a JAR was also provided, merge JAR classes (JAR wins on conflict)
+        if (jarPath != null && Files.exists(jarPath)) {
+            loadedClasses.putAll(loadClassesFromJar(jarPath));
+        }
+
+        boolean jarAvailable = jarPath != null || !loadedClasses.isEmpty();
+        return new SourceCodeContext(cuList, jarAvailable, loadedClasses);
     }
+
+    /**
+     * Scans srcDir for pre-compiled .class files (e.g., exam-provided interfaces)
+     * and loads them using an isolated URLClassLoader.
+     * Returns a map of simpleClassName -> Class<?> for handler lookup.
+     */
+    private Map<String, Class<?>> loadClassesFromSrcDir(Path srcDir) {
+        if (srcDir == null || !Files.isDirectory(srcDir)) return Map.of();
+
+        Map<String, Class<?>> result = new LinkedHashMap<>();
+        try {
+            // Collect all .class paths
+            List<Path> classFiles;
+            try (var walk = Files.walk(srcDir)) {
+                classFiles = walk
+                        .filter(p -> p.toString().endsWith(".class") && !p.getFileName().toString().contains("$"))
+                        .toList();
+            }
+
+            if (classFiles.isEmpty()) return Map.of();
+
+            // URLClassLoader with srcDir as classpath root — NOT initialized (safe)
+            try (URLClassLoader loader = new URLClassLoader(
+                    new URL[]{srcDir.toUri().toURL()}, null)) {
+
+                for (Path classFile : classFiles) {
+                    // Convert relative path to binary class name: "src/ICalculator.class" → "ICalculator"
+                    String relative = srcDir.relativize(classFile).toString()
+                            .replace(java.io.File.separatorChar, '.')
+                            .replace("/", ".")
+                            .replace(".class", "");
+
+                    try {
+                        Class<?> cls = Class.forName(relative, false, loader);
+                        result.put(cls.getSimpleName(), cls);
+                        log.debug("[CTX] Loaded .class from srcDir: {} (isInterface={})",
+                                cls.getSimpleName(), cls.isInterface());
+                    } catch (UnsupportedClassVersionError e) {
+                        // Phiên bản Java không khớp → bỏ qua file này, tiếp tục chấm (Reflection sẽ không load được)
+                        log.warn("[CTX] Java version mismatch in srcDir class '{}': {}", relative, e.getMessage());
+                    } catch (Exception e) {
+                        log.debug("[CTX] Cannot load .class '{}': {}", relative, e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[CTX] loadClassesFromSrcDir error: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    /**
+     * Loads classes from a student JAR, indexed by simple name.
+     * Skips inner classes ($).
+     */
+    private Map<String, Class<?>> loadClassesFromJar(Path jarPath) {
+        Map<String, Class<?>> result = new LinkedHashMap<>();
+        try (var jis = new java.util.jar.JarInputStream(Files.newInputStream(jarPath))) {
+            List<String> classNames = new ArrayList<>();
+            java.util.jar.JarEntry entry;
+            while ((entry = jis.getNextJarEntry()) != null) {
+                String name = entry.getName();
+                if (name.endsWith(".class") && !name.contains("$")) {
+                    classNames.add(name.replace('/', '.').replace(".class", ""));
+                }
+            }
+
+            if (!classNames.isEmpty()) {
+                try (URLClassLoader loader = new URLClassLoader(
+                        new URL[]{jarPath.toUri().toURL()}, null)) {
+                    for (String className : classNames) {
+                        try {
+                            Class<?> cls = Class.forName(className, false, loader);
+                            result.put(cls.getSimpleName(), cls);
+                        } catch (UnsupportedClassVersionError e) {
+                            // Phiên bản Java không khớp → bỏ qua class này, tiếp tục (OOP check sẽ không dùng được class này)
+                            log.warn("[CTX] Java version mismatch in JAR class '{}': {}", className, e.getMessage());
+                        } catch (Exception e) {
+                            log.debug("[CTX] Cannot load JAR class '{}': {}", className, e.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[CTX] loadClassesFromJar error: {}", e.getMessage());
+        }
+        return result;
+    }
+
+    private QuestionInput runOopAndBuildInput(Answer answer, Question question,
+                                              SourceCodeContext ctx, StaticAnalysisResult sa,
+                                              int passCount, int totalTc,
+                                              boolean tampered, String tamperDetail) {
+        if (tampered) {
+            return QuestionInput.tampered(question.getMaxScore(), passCount, totalTc, tamperDetail);
+        }
+        // ── Wrap evaluate + save inside a short TX so Hibernate session stays alive
+        // for all lazy associations (GradingCriteria.question, CriteriaResult.criteria, etc.)
+        return transactionTemplate.execute(tx -> {
+            List<GradingCriteria> criteria = gradingCriteriaRepository
+                    .findByQuestion_QuestionIdOrderByDisplayOrderAsc(question.getQuestionId());
+            log.info("[OOP] Q{} questionId={} → found {} criteria",
+                    question.getQuestionNumber(), question.getQuestionId(), criteria.size());
+            if (criteria.isEmpty()) {
+                return QuestionInput.ofNoCriteria(question.getMaxScore(), passCount, totalTc, sa);
+            }
+
+            List<CriteriaResult> results = deterministicOopScorer.evaluate(answer, ctx, criteria);
+
+            // Persist while session is still open (avoids detached-proxy errors on FK fields)
+            criteriaResultRepository.saveAll(results);
+
+            // Read aggregates while session is open — avoids lazy-proxy access outside TX
+            BigDecimal oopRaw   = deterministicOopScorer.sumOopScore(results);
+            boolean oopViolated = deterministicOopScorer.isOopViolated(results);
+
+            log.info("[OOP] Q{}: oopRaw={} violated={}", question.getQuestionNumber(), oopRaw, oopViolated);
+            return QuestionInput.of(question.getMaxScore(), passCount, totalTc, oopRaw, oopViolated, sa);
+        });
+    }
+
+
+    // ─── [OLD-AI] AI REVIEW — commented out, replaced by deterministic OOP ───
+    //
+    // private AIReviewResult runAIReview(Submission submission, Answer answer,
+    //                                    Question question, Path srcDir,
+    //                                    StaticAnalysisResult staticAnalysis) {
+    //     try {
+    //         log.warn("[AI-SRC] sub={} Q{}: srcDir={}",
+    //                 submission.getSubmissionId(), question.getQuestionNumber(),
+    //                 srcDir != null ? srcDir.toAbsolutePath() : "NULL");
+    //         String sourceCode = readSourceFiles(srcDir);
+    //         log.warn("[AI-SRC] sourceCode length={}, blank={}", sourceCode.length(), sourceCode.isBlank());
+    //         String structuredAnalysisText = (staticAnalysis != null) ? staticAnalysis.toFormattedReport() : null;
+    //         AIReviewRequest aiRequest = new AIReviewRequest(
+    //                 question.getTitle(), question.getDescription(),
+    //                 sourceCode, structuredAnalysisText, "Vietnamese", question.getMaxScore());
+    //         return llmReviewService.review(aiRequest);
+    //     } catch (Exception e) {
+    //         log.error("AI review failed for submission {} Q{}: {}",
+    //                 submission.getSubmissionId(), question.getQuestionNumber(), e.getMessage());
+    //         return AIReviewResult.failure("Source extraction failed: " + e.getMessage());
+    //     }
+    // }
+    //
+    // private String readSourceFiles(Path srcDir) {
+    //     if (srcDir == null) return "(no source files found)";
+    //     try (var walk = java.nio.file.Files.walk(srcDir)) {
+    //         StringBuilder sb = new StringBuilder();
+    //         walk.filter(p -> p.toString().endsWith(".java")).sorted().forEach(p -> {
+    //             try {
+    //                 sb.append("// ─── ").append(p.getFileName()).append(" ───\n");
+    //                 sb.append(java.nio.file.Files.readString(p)).append("\n\n");
+    //             } catch (Exception e) {
+    //                 sb.append("// [Could not read ").append(p.getFileName()).append("]\n\n");
+    //             }
+    //         });
+    //         return sb.toString().isBlank() ? "(no .java files found)" : sb.toString();
+    //     } catch (Exception e) {
+    //         return "(failed to read source dir: " + e.getMessage() + ")";
+    //     }
+    // }
+    //
+    // @Transactional(propagation = Propagation.REQUIRES_NEW)
+    // AIReview saveAIReview(Answer answer, String modelName, AIReviewResult ai) {
+    //     try {
+    //         Map<String, Object> rawMap = new java.util.LinkedHashMap<>();
+    //         rawMap.put("oopScore",        ai.oopScore());
+    //         rawMap.put("encapsulation",   ai.encapsulation());
+    //         rawMap.put("inheritance",     ai.inheritance());
+    //         rawMap.put("polymorphism",    ai.polymorphism());
+    //         rawMap.put("designQuality",   ai.designQuality());
+    //         rawMap.put("codeIntegrity",   ai.codeIntegrity());
+    //         rawMap.put("violations",      ai.violations());
+    //         rawMap.put("hardCodedValues", ai.hardCodedValues());
+    //         rawMap.put("criteriaResults", ai.criteriaResults());
+    //         rawMap.put("isOopViolated",   ai.oopViolated());
+    //         rawMap.put("aiError",         ai.aiError());
+    //         rawMap.put("errorMessage",    ai.errorMessage());
+    //         String rawJson = objectMapper.writeValueAsString(rawMap);
+    //         AIReview review = AIReview.builder()
+    //                 .answer(answer).aiModel(modelName)
+    //                 .oopScore(ai.oopScore()).comment(ai.comment())
+    //                 .rawResponse(rawJson).isOopViolated(ai.oopViolated()).build();
+    //         return aiReviewRepository.save(review);
+    //     } catch (Exception e) {
+    //         log.error("Failed to save AIReview: {}", e.getMessage());
+    //         return null;
+    //     }
+    // }
+    // ─── [/OLD-AI] ────────────────────────────────────────────────────────────
 
     // ─── SAVE HELPERS ────────────────────────────────────────────────────────
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    AIReview saveAIReview(Answer answer, String modelName, AIReviewResult ai) {
-        try {
-            // Store the full evaluation in RawResponse (JSONB) — this is the source of truth
-            // for criteria breakdown since AIReviews table has no dedicated columns for them.
-            Map<String, Object> rawMap = new java.util.LinkedHashMap<>();
-            rawMap.put("oopScore",          ai.oopScore());
-            rawMap.put("encapsulation",     ai.encapsulation());
-            rawMap.put("inheritance",       ai.inheritance());
-            rawMap.put("polymorphism",      ai.polymorphism());
-            rawMap.put("designQuality",     ai.designQuality());
-            rawMap.put("codeIntegrity",     ai.codeIntegrity());
-            rawMap.put("violations",        ai.violations());
-            rawMap.put("hardCodedValues",   ai.hardCodedValues());
-            rawMap.put("criteriaResults",   ai.criteriaResults());
-            rawMap.put("isOopViolated",     ai.oopViolated());
-            rawMap.put("aiError",           ai.aiError());
-            rawMap.put("errorMessage",      ai.errorMessage());
-            String rawJson = objectMapper.writeValueAsString(rawMap);
-
-            AIReview review = AIReview.builder()
-                    .answer(answer)
-                    .aiModel(modelName)
-                    .oopScore(ai.oopScore())
-                    .comment(ai.comment())
-                    .rawResponse(rawJson)
-                    .isOopViolated(ai.oopViolated())
-                    .build();
-
-            return aiReviewRepository.save(review);
-        } catch (Exception e) {
-            log.error("Failed to save AIReview: {}", e.getMessage());
-            return null;
-        }
-    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void saveGradingResult(Submission submission, User gradedBy,

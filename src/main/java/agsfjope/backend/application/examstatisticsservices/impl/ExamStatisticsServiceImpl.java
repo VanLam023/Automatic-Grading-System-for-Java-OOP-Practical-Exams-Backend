@@ -3,16 +3,15 @@ package agsfjope.backend.application.examstatisticsservices.impl;
 import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse;
 import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse.*;
 import agsfjope.backend.application.examstatisticsservices.ExamStatisticsService;
-import agsfjope.backend.core.entities.AIReview;
+import agsfjope.backend.core.entities.CriteriaResult;
+import agsfjope.backend.core.enums.CriterionType;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
-import agsfjope.backend.core.repositories.grading.AIReviewRepository;
+import agsfjope.backend.core.repositories.grading.CriteriaResultRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,29 +19,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.*;
 
 /**
  * Implementation of {@link ExamStatisticsService} — PROC-006.
  *
  * <p>Generates block-level statistics by aggregating data from
- * GradingResult, AIReview, Appeal, and WalletTransaction tables.</p>
+ * GradingResult, CriteriaResult, Appeal, and WalletTransaction tables.</p>
  *
- * <h3>Important validation:</h3>
- * <p>Validates that the blockId belongs to the given examId to prevent
- * cross-exam data leakage (user's explicit requirement).</p>
- *
- * <h3>AI OOP criteria violations:</h3>
- * <p>Criteria breakdown (encapsulation, inheritance, polymorphism, designQuality, codeIntegrity)
- * is stored in {@code AIReview.rawResponse} (JSONB), not in dedicated DB columns.
- * This service parses the JSON at runtime to count violations (score &lt; 2).</p>
+ * <h3>OOP criteria violations:</h3>
+ * <p>Criteria breakdown (encapsulation, inheritance, polymorphism) is now derived
+ * from {@code CriteriaResult} rows (JavaParser/deterministic grading output),
+ * grouped by {@link CriterionType}:
+ * <ul>
+ *   <li>Encapsulation  → FIELD_CHECK, GETTER_SETTER</li>
+ *   <li>Inheritance    → EXTENDS_CHECK, IMPLEMENTS_CHECK, CLASS_EXISTS, INTERFACE_EXISTS</li>
+ *   <li>Polymorphism   → METHOD_SIGNATURE, CONSTRUCTOR_CHECK, NAMING_CONVENTION</li>
+ * </ul>
+ * Hard-coded value detection is not persisted in CriteriaResult; that field is set to 0.
+ * </p>
  */
 @Slf4j
 @Service
@@ -50,38 +45,28 @@ import java.util.regex.Pattern;
 @Transactional(readOnly = true)
 public class ExamStatisticsServiceImpl implements ExamStatisticsService {
 
-    /** Threshold: a criterion score below this value is considered a violation. */
-    private static final BigDecimal VIOLATION_THRESHOLD = new BigDecimal("2");
-        private static final List<String> LEGACY_CRITERIA_KEYS = List.of(
-            "encapsulation", "inheritance", "polymorphism", "designQuality", "codeIntegrity"
-        );
-
-        // [N]. [Criterion] (tối đa X điểm): đạt được Y điểm, bị trừ Z điểm - ...
-        private static final Pattern COMMENT_CRITERION_PATTERN = Pattern.compile(
-            "^\\s*\\d+\\.\\s*(.+?)\\s*\\(\\s*t[ốo]i\\s*đa\\s*([0-9]+(?:[.,][0-9]+)?)\\s*đ?i[ểe]m\\s*\\)\\s*:\\s*"
-                + "đạt\\s*được\\s*([0-9]+(?:[.,][0-9]+)?)\\s*đ?i[ểe]m\\s*,\\s*"
-                + "bị\\s*trừ\\s*([0-9]+(?:[.,][0-9]+)?)\\s*đ?i[ểe]m.*$",
-            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
-        );
-
-        // [N]. [Criterion]: 0 diem - BI HUY do ...
-        private static final Pattern COMMENT_DISQUALIFIED_PATTERN = Pattern.compile(
-            "^\\s*\\d+\\.\\s*(.+?)\\s*:\\s*0(?:[.,]0+)?\\s*d[ií]e?m\\s*-\\s*BI\\s*HUY.*$",
-            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
-        );
+    // CriterionType → OOP category mapping
+    private static final Set<CriterionType> ENCAPSULATION_TYPES = Set.of(
+            CriterionType.FIELD_CHECK, CriterionType.GETTER_SETTER
+    );
+    private static final Set<CriterionType> INHERITANCE_TYPES = Set.of(
+            CriterionType.EXTENDS_CHECK, CriterionType.IMPLEMENTS_CHECK,
+            CriterionType.CLASS_EXISTS, CriterionType.INTERFACE_EXISTS
+    );
+    private static final Set<CriterionType> POLYMORPHISM_TYPES = Set.of(
+            CriterionType.METHOD_SIGNATURE, CriterionType.CONSTRUCTOR_CHECK,
+            CriterionType.NAMING_CONVENTION
+    );
 
     private final BlockRepository          blockRepository;
     private final SubmissionRepository     submissionRepository;
     private final GradingResultRepository  gradingResultRepository;
-    private final AIReviewRepository       aiReviewRepository;
+    private final CriteriaResultRepository criteriaResultRepository;
     private final AppealRepository         appealRepository;
     private final SystemConfigRepository   systemConfigRepository;
-    private final ObjectMapper             objectMapper;
 
     @Override
     public BlockStatisticsResponse getBlockStatistics(UUID examId, UUID blockId) {
-        // ── VALIDATION: block phải thuộc đúng exam (tránh lấy nhầm block của exam khác) ──
-        // Dùng derived query để tránh LazyInitializationException khi load Block.exam
         if (!blockRepository.existsById(blockId)) {
             throw new NotFoundException("Block không tồn tại.");
         }
@@ -89,21 +74,11 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
             throw new NotFoundException("Block không thuộc kỳ thi này.");
         }
 
-        // ── (1) SUBMISSION OVERVIEW ──────────────────────────────────────────
-        // Đếm tổng bài nộp (mọi trạng thái) và bài đã chấm xong
-        long totalSubmissions = submissionRepository.countByBlock_BlockId(blockId);
+        long totalSubmissions  = submissionRepository.countByBlock_BlockId(blockId);
         long gradedSubmissions = gradingResultRepository.countGradedByBlockId(blockId);
 
-        // ── (2) SCORE ANALYSIS ──────────────────────────────────────────────
-        // Tính các chỉ số điểm: trung bình / cao nhất / thấp nhất / pass-fail / histogram
-        ScoreAnalysis scoreAnalysis = buildScoreAnalysis(blockId, gradedSubmissions);
-
-        // ── (3) AI OOP ANALYSIS ─────────────────────────────────────────────
-        // Load toàn bộ AIReview của block → parse JSON rawResponse → đếm vi phạm
-        AiOopAnalysis aiOopAnalysis = buildAiOopAnalysis(blockId, gradedSubmissions);
-
-        // ── (4) APPEAL & FINANCIAL ──────────────────────────────────────────
-        // Đếm đơn phúc khảo theo trạng thái, tính doanh thu từ wallet transactions
+        ScoreAnalysis         scoreAnalysis   = buildScoreAnalysis(blockId, gradedSubmissions);
+        AiOopAnalysis         aiOopAnalysis   = buildAiOopAnalysis(blockId);
         AppealFinancialAnalysis appealFinancial = buildAppealFinancial(blockId);
 
         return BlockStatisticsResponse.builder()
@@ -117,34 +92,26 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
 
     // ─── SCORE ANALYSIS ─────────────────────────────────────────────────────
 
-    /**
-     * Builds score analysis metrics for a block.
-     * Queries avg/max/min/pass/fail from GradingResultRepository and builds histogram.
-     */
     private ScoreAnalysis buildScoreAnalysis(UUID blockId, long gradedCount) {
-        // Lấy avg/max/min từ native query — trả về Double (nullable) nếu chưa có bài chấm
         Double avgRaw = gradingResultRepository.avgScoreByBlockId(blockId);
         Double maxRaw = gradingResultRepository.maxScoreByBlockId(blockId);
         Double minRaw = gradingResultRepository.minScoreByBlockId(blockId);
 
-        // Convert Double → BigDecimal; trả về ZERO nếu null (chưa có bài chấm)
         BigDecimal avgScore = avgRaw != null ? BigDecimal.valueOf(avgRaw).setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
         BigDecimal maxScore = maxRaw != null ? BigDecimal.valueOf(maxRaw).setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
         BigDecimal minScore = minRaw != null ? BigDecimal.valueOf(minRaw).setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
         long passCount = gradingResultRepository.countPassByBlockId(blockId);
         long failCount = gradingResultRepository.countFailByBlockId(blockId);
 
-        // Tính tỷ lệ % (tránh chia cho 0)
         double passRate = gradedCount > 0 ? round(passCount * 100.0 / gradedCount) : 0;
         double failRate = gradedCount > 0 ? round(failCount * 100.0 / gradedCount) : 0;
 
-        // Build histogram 10 buckets (0-1, 1-2, ..., 9-10)
         List<ScoreBucket> distribution = buildScoreDistribution(blockId, gradedCount);
 
         return ScoreAnalysis.builder()
-                .avgScore(avgScore != null ? avgScore.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO)
-                .maxScore(maxScore != null ? maxScore.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO)
-                .minScore(minScore != null ? minScore.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO)
+                .avgScore(avgScore.setScale(2, RoundingMode.HALF_UP))
+                .maxScore(maxScore.setScale(2, RoundingMode.HALF_UP))
+                .minScore(minScore.setScale(2, RoundingMode.HALF_UP))
                 .passCount(passCount)
                 .failCount(failCount)
                 .passRate(passRate)
@@ -153,20 +120,13 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                 .build();
     }
 
-    /**
-     * Builds score distribution histogram with 10 buckets.
-     * Bucket ranges: [0,1), [1,2), ..., [8,9), [9,10.01) — last bucket includes 10.0.
-     */
     private List<ScoreBucket> buildScoreDistribution(UUID blockId, long gradedCount) {
         List<ScoreBucket> buckets = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             BigDecimal lower = BigDecimal.valueOf(i);
-            // Bucket cuối (9-10) dùng 10.01 làm upper bound để bao gồm điểm 10.0
             BigDecimal upper = (i == 9) ? new BigDecimal("10.01") : BigDecimal.valueOf(i + 1);
-
             long count = gradingResultRepository.countByBlockIdAndScoreRange(blockId, lower, upper);
             double percentage = gradedCount > 0 ? round(count * 100.0 / gradedCount) : 0;
-
             buckets.add(ScoreBucket.builder()
                     .range(i + "-" + (i + 1))
                     .count(count)
@@ -176,18 +136,26 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
         return buckets;
     }
 
-    // ─── AI OOP ANALYSIS ────────────────────────────────────────────────────
+    // ─── OOP ANALYSIS (từ CriteriaResult — JavaParser/Deterministic) ─────────
 
     /**
-     * Builds AI OOP analysis by loading all AIReviews for the block and parsing rawResponse.
-     * Counts violations per criterion (score < 2), OOP violations, and hard-coded values.
+     * Builds OOP analysis by loading all {@link CriteriaResult} rows for the block.
+     *
+     * <p>Replaces the previous approach that parsed {@code AIReview.rawResponse} JSON.
+     * Now uses deterministic grading results persisted by {@code DeterministicOopScorer}.</p>
+     *
+     * <p>Violation mapping by {@link CriterionType}:
+     * <ul>
+     *   <li>Encapsulation  → FIELD_CHECK, GETTER_SETTER</li>
+     *   <li>Inheritance    → EXTENDS_CHECK, IMPLEMENTS_CHECK, CLASS_EXISTS, INTERFACE_EXISTS</li>
+     *   <li>Polymorphism   → METHOD_SIGNATURE, CONSTRUCTOR_CHECK, NAMING_CONVENTION</li>
+     * </ul>
+     * </p>
      */
-    private AiOopAnalysis buildAiOopAnalysis(UUID blockId, long gradedCount) {
-        // Load tất cả AI Reviews trong block — JPQL join qua Answer → Submission → Block
-        List<AIReview> reviews = aiReviewRepository.findAllByBlockId(blockId);
+    private AiOopAnalysis buildAiOopAnalysis(UUID blockId) {
+        List<CriteriaResult> results = criteriaResultRepository.findAllByBlockId(blockId);
 
-        if (reviews.isEmpty()) {
-            // Không có AI review nào → trả về tất cả giá trị = 0
+        if (results.isEmpty()) {
             return AiOopAnalysis.builder()
                     .avgOopScore(BigDecimal.ZERO)
                     .oopViolatedCount(0).oopViolatedRate(0)
@@ -201,281 +169,98 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                     .build();
         }
 
-        long totalReviews = reviews.size();
+        long totalResults      = results.size();
+        long encViolations     = 0;
+        long inhViolations     = 0;
+        long polyViolations    = 0;
+        long oopViolatedCount  = 0; // bài có ít nhất 1 criterion failed
+        BigDecimal sumEarned   = BigDecimal.ZERO;
+        BigDecimal sumMax      = BigDecimal.ZERO;
 
-        // Tính OOP score trung bình
-        BigDecimal sumOop = BigDecimal.ZERO;
-        long oopViolatedCount = 0;
-        long hardCodeCount = 0;
-
-        // Đếm vi phạm từng tiêu chí (score < 2)
-        long encViolations = 0, inhViolations = 0, polyViolations = 0;
-        long dqViolations = 0, ciViolations = 0;
+        // Per-criterion dynamic stats (keyed by description)
         Map<String, CriterionAccumulator> criteriaMap = new LinkedHashMap<>();
 
-        for (AIReview review : reviews) {
-            // Tính tổng OOP score (dùng để tính trung bình)
-            if (review.getOopScore() != null) {
-                sumOop = sumOop.add(review.getOopScore());
+        // Track which answers have at least 1 failed criterion
+        Set<UUID> violatedAnswers = new HashSet<>();
+
+        for (CriteriaResult cr : results) {
+            if (cr.getCriteria() == null) continue;
+
+            CriterionType type        = cr.getCriteria().getCriterionType();
+            String        description = cr.getCriteria().getDescription();
+            BigDecimal    maxScore    = cr.getCriteria().getMaxScore();
+            BigDecimal    earned      = cr.getEarnedScore() != null ? cr.getEarnedScore() : BigDecimal.ZERO;
+            boolean       failed      = !cr.isPassed();
+
+            // Tính avg OOP score
+            sumEarned = sumEarned.add(earned);
+            if (maxScore != null) sumMax = sumMax.add(maxScore);
+
+            // Đếm vi phạm theo OOP category
+            if (type != null) {
+                if (ENCAPSULATION_TYPES.contains(type) && failed)  encViolations++;
+                if (INHERITANCE_TYPES.contains(type)   && failed)  inhViolations++;
+                if (POLYMORPHISM_TYPES.contains(type)  && failed)  polyViolations++;
             }
 
-            // Đếm bài bị OOP violated
-            if (Boolean.TRUE.equals(review.getIsOopViolated())) {
-                oopViolatedCount++;
+            // Track violated answers
+            if (failed && cr.getAnswer() != null) {
+                violatedAnswers.add(cr.getAnswer().getAnswerId());
             }
 
-            // Parse rawResponse JSONB để lấy criteria breakdown và hardCodedValues
-            String raw = review.getRawResponse();
-            if (raw == null || raw.isBlank()) continue;
-
-            try {
-                JsonNode root = objectMapper.readTree(raw);
-
-                // Kiểm tra hard-coded values — đếm bài nào có mảng hardCodedValues không rỗng
-                JsonNode hardCodedNode = root.get("hardCodedValues");
-                if (hardCodedNode != null && hardCodedNode.isArray() && !hardCodedNode.isEmpty()) {
-                    hardCodeCount++;
-                }
-
-                // Ưu tiên format động: criteriaResults[]
-                boolean hasDynamicCriteria = parseDynamicCriteria(root, criteriaMap);
-
-                // Fallback legacy nếu không có criteriaResults[]
-                if (!hasDynamicCriteria) {
-                    // Guard: format prompt mới có thể lưu placeholder 0 cho 5 tiêu chí cũ.
-                    // Nếu cả 5 đều = 0 thì bỏ qua để tránh đếm sai (false violations).
-                    if (isLegacyPlaceholderAllZero(root)) {
-                        // Cố gắng parse từ comment (không cần chấm lại dữ liệu cũ)
-                        if (!parseCriteriaFromComment(root, review.getComment(), criteriaMap)) {
-                            continue;
-                        }
-                    } else {
-                        if (isCriterionViolated(root, "encapsulation"))  encViolations++;
-                        if (isCriterionViolated(root, "inheritance"))    inhViolations++;
-                        if (isCriterionViolated(root, "polymorphism"))   polyViolations++;
-                        if (isCriterionViolated(root, "designQuality"))  dqViolations++;
-                        if (isCriterionViolated(root, "codeIntegrity"))  ciViolations++;
-
-                        // Đồng thời đưa vào map động để FE render thống nhất
-                        addLegacyCriteriaToMap(root, criteriaMap);
-                    }
-                }
-
-            } catch (Exception e) {
-                // JSON parse thất bại — bỏ qua review này, không ảnh hưởng thống kê
-                log.warn("Failed to parse rawResponse for AIReview {}: {}",
-                        review.getAiReviewId(), e.getMessage());
-            }
+            // Dynamic criterion map
+            boolean violated = failed;
+            criteriaMap.computeIfAbsent(description, k -> new CriterionAccumulator())
+                    .add(earned, maxScore, violated);
         }
 
-        // Tính trung bình OOP score
-        BigDecimal avgOop = sumOop.divide(BigDecimal.valueOf(totalReviews), 2, RoundingMode.HALF_UP);
+        oopViolatedCount = violatedAnswers.size();
 
-        // Dùng gradedCount (tổng bài đã chấm) làm mẫu số cho tỷ lệ %
-        // vì 1 submission có thể có nhiều AIReview (1 per question), ta dùng totalReviews
-        // cho các chỉ số per-review, nhưng gom theo submission bằng gradedCount
-        long denominator = totalReviews; // dùng totalReviews vì mỗi AIReview = 1 câu hỏi
+        // avgOopScore = tỷ lệ % điểm OOP đạt được (scale 0-10)
+        BigDecimal avgOop = BigDecimal.ZERO;
+        if (sumMax.compareTo(BigDecimal.ZERO) > 0) {
+            avgOop = sumEarned.divide(sumMax, 4, RoundingMode.HALF_UP)
+                              .multiply(BigDecimal.TEN)
+                              .setScale(2, RoundingMode.HALF_UP);
+        }
+
+        long denominator = totalResults;
 
         List<CriterionStat> criteriaStats = criteriaMap.entrySet().stream()
-            .map(entry -> toCriterionStat(entry.getKey(), entry.getValue()))
-            .sorted(Comparator.comparing(CriterionStat::getName, String.CASE_INSENSITIVE_ORDER))
-            .toList();
+                .map(e -> toCriterionStat(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparing(CriterionStat::getName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
 
         return AiOopAnalysis.builder()
                 .avgOopScore(avgOop)
                 .oopViolatedCount(oopViolatedCount)
                 .oopViolatedRate(denominator > 0 ? round(oopViolatedCount * 100.0 / denominator) : 0)
-                .hardCodeCount(hardCodeCount)
-                .hardCodeRate(denominator > 0 ? round(hardCodeCount * 100.0 / denominator) : 0)
+                .hardCodeCount(0)     // hard-code detection không lưu vào CriteriaResult
+                .hardCodeRate(0)
                 .encapsulationViolations(encViolations)
                 .encapsulationViolationRate(denominator > 0 ? round(encViolations * 100.0 / denominator) : 0)
                 .inheritanceViolations(inhViolations)
                 .inheritanceViolationRate(denominator > 0 ? round(inhViolations * 100.0 / denominator) : 0)
                 .polymorphismViolations(polyViolations)
                 .polymorphismViolationRate(denominator > 0 ? round(polyViolations * 100.0 / denominator) : 0)
-                .designQualityViolations(dqViolations)
-                .designQualityViolationRate(denominator > 0 ? round(dqViolations * 100.0 / denominator) : 0)
-                .codeIntegrityViolations(ciViolations)
-                .codeIntegrityViolationRate(denominator > 0 ? round(ciViolations * 100.0 / denominator) : 0)
+                .designQualityViolations(0)    // không còn category này trong deterministic grading
+                .designQualityViolationRate(0)
+                .codeIntegrityViolations(0)    // không còn category này trong deterministic grading
+                .codeIntegrityViolationRate(0)
                 .criteriaStats(criteriaStats)
                 .build();
     }
 
-    private boolean parseDynamicCriteria(JsonNode root, Map<String, CriterionAccumulator> criteriaMap) {
-        JsonNode arr = root.get("criteriaResults");
-        if (arr == null || !arr.isArray() || arr.isEmpty()) return false;
-
-        boolean parsedAny = false;
-        for (JsonNode item : arr) {
-            if (item == null || item.isNull()) continue;
-
-            String name = textOrNull(item.get("name"));
-            // Flexible prompt hiện tại trả về earnedPoints/maxPoints/status
-            // (không dùng score/maxScore như bản cũ).
-            BigDecimal score = toBigDecimal(item.get("earnedPoints"));
-            if (score == null) {
-                // Backward compatibility cho payload cũ
-                score = toBigDecimal(item.get("score"));
-            }
-            if (name == null || score == null) continue;
-
-            BigDecimal maxScore = toBigDecimal(item.get("maxPoints"));
-            if (maxScore == null) {
-                // Backward compatibility cho payload cũ
-                maxScore = toBigDecimal(item.get("maxScore"));
-            }
-            Boolean violated = item.has("violated") && !item.get("violated").isNull()
-                    ? item.get("violated").asBoolean()
-                    : null;
-            String status = textOrNull(item.get("status"));
-
-            boolean isViolated = violated != null
-                    ? violated
-                    : (status != null
-                        ? "violated".equalsIgnoreCase(status)
-                        : (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0
-                            ? score.compareTo(maxScore) < 0
-                            : score.compareTo(VIOLATION_THRESHOLD) < 0));
-
-            criteriaMap.computeIfAbsent(name.trim(), k -> new CriterionAccumulator())
-                    .add(score, isViolated);
-            parsedAny = true;
-        }
-        return parsedAny;
-    }
-
-    private void addLegacyCriteriaToMap(JsonNode root, Map<String, CriterionAccumulator> criteriaMap) {
-        putLegacyCriterion(root, criteriaMap, "encapsulation", "Encapsulation");
-        putLegacyCriterion(root, criteriaMap, "inheritance", "Inheritance & Relationships");
-        putLegacyCriterion(root, criteriaMap, "polymorphism", "Polymorphism");
-        putLegacyCriterion(root, criteriaMap, "designQuality", "Design Quality");
-        putLegacyCriterion(root, criteriaMap, "codeIntegrity", "Code Integrity / Anti-Cheat");
-    }
-
-    private void putLegacyCriterion(JsonNode root, Map<String, CriterionAccumulator> criteriaMap,
-                                    String key, String displayName) {
-        BigDecimal score = toBigDecimal(root.get(key));
-        if (score == null) return;
-        boolean violated = score.compareTo(VIOLATION_THRESHOLD) < 0;
-        criteriaMap.computeIfAbsent(displayName, k -> new CriterionAccumulator())
-                .add(score, violated);
-    }
-
-    private boolean isLegacyPlaceholderAllZero(JsonNode root) {
-        boolean hasAny = false;
-        for (String key : LEGACY_CRITERIA_KEYS) {
-            JsonNode n = root.get(key);
-            if (n == null || n.isNull()) continue;
-            hasAny = true;
-            BigDecimal v = toBigDecimal(n);
-            if (v == null || v.compareTo(BigDecimal.ZERO) != 0) {
-                return false;
-            }
-        }
-        return hasAny;
-    }
-
-    /**
-     * Fallback parser cho dữ liệu cũ không có criteriaResults.
-     * Đọc các dòng trong field comment theo format prompt mới để dựng lại criteriaStats.
-     */
-    private boolean parseCriteriaFromComment(JsonNode root, String reviewComment,
-                                             Map<String, CriterionAccumulator> criteriaMap) {
-        String comment = textOrNull(root.get("comment"));
-        if (comment == null || comment.isBlank()) {
-            comment = reviewComment;
-        }
-        if (comment == null) {
-            return false;
-        }
-
-        boolean parsedAny = false;
-        String[] lines = comment.split("\\R");
-        for (String line : lines) {
-            if (line == null || line.isBlank()) continue;
-
-            Matcher disqualified = COMMENT_DISQUALIFIED_PATTERN.matcher(line.trim());
-            if (disqualified.matches()) {
-                String name = disqualified.group(1) != null ? disqualified.group(1).trim() : null;
-                if (name != null && !name.isBlank()) {
-                    criteriaMap.computeIfAbsent(name, k -> new CriterionAccumulator())
-                            .add(BigDecimal.ZERO, true);
-                    parsedAny = true;
-                }
-                continue;
-            }
-
-            Matcher m = COMMENT_CRITERION_PATTERN.matcher(line.trim());
-            if (!m.matches()) {
-                continue;
-            }
-
-            String name = m.group(1) != null ? m.group(1).trim() : null;
-            BigDecimal maxPoints = toBigDecimalString(m.group(2));
-            BigDecimal earnedPoints = toBigDecimalString(m.group(3));
-            if (name == null || name.isBlank() || earnedPoints == null) {
-                continue;
-            }
-
-            boolean violated = maxPoints != null && maxPoints.compareTo(BigDecimal.ZERO) > 0
-                    ? earnedPoints.compareTo(maxPoints) < 0
-                    : earnedPoints.compareTo(VIOLATION_THRESHOLD) < 0;
-
-            criteriaMap.computeIfAbsent(name, k -> new CriterionAccumulator())
-                    .add(earnedPoints, violated);
-            parsedAny = true;
-        }
-
-        return parsedAny;
-    }
-
-    private BigDecimal toBigDecimalString(String raw) {
-        if (raw == null) return null;
-        try {
-            return new BigDecimal(raw.replace(',', '.')).setScale(2, RoundingMode.HALF_UP);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * Checks if a specific criterion is violated (score < 2) in the AI review JSON.
-     *
-     * @param root          parsed JSON root node of rawResponse
-     * @param criterionName the criterion key (e.g., "encapsulation")
-     * @return true if the criterion score exists and is less than 2
-     */
-    private boolean isCriterionViolated(JsonNode root, String criterionName) {
-        JsonNode node = root.get(criterionName);
-        if (node == null || node.isNull()) return false;
-        try {
-            BigDecimal score = new BigDecimal(node.asText());
-            return score.compareTo(VIOLATION_THRESHOLD) < 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
-    private String textOrNull(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        String s = node.asText(null);
-        return (s == null || s.isBlank()) ? null : s;
-    }
-
-    private BigDecimal toBigDecimal(JsonNode node) {
-        if (node == null || node.isNull()) return null;
-        try {
-            return new BigDecimal(node.asText()).setScale(2, RoundingMode.HALF_UP);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     private CriterionStat toCriterionStat(String name, CriterionAccumulator acc) {
         long sample = acc.sampleSize;
-        BigDecimal avg = sample > 0
-                ? acc.sumScore.divide(BigDecimal.valueOf(sample), 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        BigDecimal avg = BigDecimal.ZERO;
+        if (sample > 0 && acc.sumMax.compareTo(BigDecimal.ZERO) > 0) {
+            avg = acc.sumEarned.divide(acc.sumMax, 4, RoundingMode.HALF_UP)
+                               .multiply(acc.sumMax.divide(BigDecimal.valueOf(sample), 4, RoundingMode.HALF_UP))
+                               .setScale(2, RoundingMode.HALF_UP);
+            // Simpler: avg earned score per evaluation
+            avg = acc.sumEarned.divide(BigDecimal.valueOf(sample), 2, RoundingMode.HALF_UP);
+        }
         double rate = sample > 0 ? round(acc.violationCount * 100.0 / sample) : 0;
 
         return CriterionStat.builder()
@@ -488,13 +273,14 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
     }
 
     private static final class CriterionAccumulator {
-        private BigDecimal sumScore = BigDecimal.ZERO;
-        private long violationCount = 0;
-        private long sampleSize = 0;
+        private BigDecimal sumEarned = BigDecimal.ZERO;
+        private BigDecimal sumMax    = BigDecimal.ZERO;
+        private long violationCount  = 0;
+        private long sampleSize      = 0;
 
-        private void add(BigDecimal score, boolean violated) {
-            if (score == null) return;
-            sumScore = sumScore.add(score);
+        private void add(BigDecimal earned, BigDecimal max, boolean violated) {
+            if (earned != null) sumEarned = sumEarned.add(earned);
+            if (max    != null) sumMax    = sumMax.add(max);
             sampleSize++;
             if (violated) violationCount++;
         }
@@ -502,36 +288,24 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
 
     // ─── APPEAL & FINANCIAL ─────────────────────────────────────────────────
 
-    /**
-     * Builds appeal and financial analysis for a block.
-     * Counts appeals by status and calculates revenue from wallet transaction amounts.
-     */
     private AppealFinancialAnalysis buildAppealFinancial(UUID blockId) {
-        // Đếm tổng đơn phúc khảo và từng trạng thái
-        long totalAppeals   = appealRepository.countByBlockId(blockId);
-        long pendingCount   = appealRepository.countByBlockIdAndStatus(blockId, "PENDING");
+        long totalAppeals    = appealRepository.countByBlockId(blockId);
+        long pendingCount    = appealRepository.countByBlockIdAndStatus(blockId, "PENDING");
         long processingCount = appealRepository.countByBlockIdAndStatus(blockId, "PROCESSING");
-        long approvedCount  = appealRepository.countByBlockIdAndStatus(blockId, "APPROVED");
-        long deniedCount    = appealRepository.countByBlockIdAndStatus(blockId, "DENIED");
+        long approvedCount   = appealRepository.countByBlockIdAndStatus(blockId, "APPROVED");
+        long deniedCount     = appealRepository.countByBlockIdAndStatus(blockId, "DENIED");
 
-        // Tính tỷ lệ % dựa trên tổng đơn đã có kết quả (approved + denied)
-        long decidedCount = approvedCount + deniedCount;
+        long decidedCount   = approvedCount + deniedCount;
         double approvedRate = decidedCount > 0 ? round(approvedCount * 100.0 / decidedCount) : 0;
-        double deniedRate   = decidedCount > 0 ? round(deniedCount * 100.0 / decidedCount) : 0;
+        double deniedRate   = decidedCount > 0 ? round(deniedCount   * 100.0 / decidedCount) : 0;
 
-        // Tính doanh thu từ phúc khảo:
-        // totalFeesCollected = số đơn đã thanh toán × phí mỗi đơn (lấy từ tổng APPEAL_PAYMENT)
-        // totalRefunded = số đơn approved × phí mỗi đơn (lấy từ tổng APPEAL_REFUND)
-        // Hiện tại chưa có query trực tiếp WalletTransaction theo block →
-        // lấy phí từ SystemConfigs (mặc định 200,000 VND)
         BigDecimal appealFee = getAppealFee();
-        // Tổng phí thu = tổng đơn (trừ PENDING_PAYMENT, CANCELLED) × phí
         long paidAppeals = totalAppeals
                 - appealRepository.countByBlockIdAndStatus(blockId, "PENDING_PAYMENT")
                 - appealRepository.countByBlockIdAndStatus(blockId, "CANCELLED");
-        BigDecimal totalFees = appealFee.multiply(BigDecimal.valueOf(Math.max(0, paidAppeals)));
+        BigDecimal totalFees    = appealFee.multiply(BigDecimal.valueOf(Math.max(0, paidAppeals)));
         BigDecimal totalRefunded = appealFee.multiply(BigDecimal.valueOf(approvedCount));
-        BigDecimal netRevenue = totalFees.subtract(totalRefunded);
+        BigDecimal netRevenue   = totalFees.subtract(totalRefunded);
 
         return AppealFinancialAnalysis.builder()
                 .totalAppeals(totalAppeals)
@@ -550,20 +324,14 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
     private BigDecimal getAppealFee() {
         return systemConfigRepository.findByConfigKey("APPEAL_FEE")
                 .map(config -> {
-                    try {
-                        return new BigDecimal(config.getConfigValue());
-                    } catch (Exception e) {
-                        return new BigDecimal("200000");
-                    }
+                    try { return new BigDecimal(config.getConfigValue()); }
+                    catch (Exception e) { return new BigDecimal("200000"); }
                 })
                 .orElse(new BigDecimal("200000"));
     }
 
     // ─── UTILITIES ──────────────────────────────────────────────────────────
 
-    /**
-     * Rounds a double to 1 decimal place for percentage display.
-     */
     private double round(double value) {
         return Math.round(value * 10.0) / 10.0;
     }

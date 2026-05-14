@@ -8,6 +8,7 @@ import org.apache.poi.xwpf.usermodel.BodyElementType;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
@@ -420,7 +421,7 @@ public class ZipExamPaperParser {
         for (IBodyElement element : doc.getBodyElements()) {
             if (element.getElementType() == BodyElementType.PARAGRAPH) {
                 XWPFParagraph para = (XWPFParagraph) element;
-                String text = para.getText() != null ? para.getText().trim() : "";
+                String text = extractParagraphText(para);
                 if (!text.isEmpty()) {
                     blocks.add(text);
                 }
@@ -451,11 +452,23 @@ public class ZipExamPaperParser {
             List<String> cellTexts = new ArrayList<>();
 
             for (XWPFTableCell cell : row.getTableCells()) {
-                // Use getText() to capture all paragraph runs inside the cell.
-                String cellText = cell.getText() != null
-                        ? cell.getText().replace("\r\n", "\n").replace("\r", "\n").trim()
-                        : "";
-
+                StringBuilder cellContent = new StringBuilder();
+                for (IBodyElement elem : cell.getBodyElements()) {
+                    if (elem.getElementType() == BodyElementType.PARAGRAPH) {
+                        XWPFParagraph p = (XWPFParagraph) elem;
+                        String text = extractParagraphText(p);
+                        if (text != null && !text.isBlank()) {
+                            cellContent.append(text.trim()).append("<br>");
+                        }
+                    } else if (elem.getElementType() == BodyElementType.TABLE) {
+                        cellContent.append(flattenTableText((XWPFTable) elem).replace("\n", "<br>")).append("<br>");
+                    }
+                }
+                String cellText = cellContent.toString().trim();
+                if (cellText.endsWith("<br>")) {
+                    cellText = cellText.substring(0, cellText.length() - 4);
+                }
+                
                 // Keep placeholder for empty cell to preserve table shape.
                 cellTexts.add(cellText);
             }
@@ -468,6 +481,45 @@ public class ZipExamPaperParser {
         }
 
         return sb.toString().trim();
+    }
+
+    /**
+     * Extracts paragraph text while preserving explicit line breaks.
+     * Converts soft breaks inside a paragraph to <br> to keep Word formatting.
+     */
+    private String extractParagraphText(XWPFParagraph para) {
+        if (para == null) return "";
+        StringBuilder sb = new StringBuilder();
+        List<XWPFRun> runs = para.getRuns();
+        if (runs == null || runs.isEmpty()) {
+            String fallback = para.getText();
+            return fallback != null ? fallback.trim() : "";
+        }
+
+        for (XWPFRun run : runs) {
+            String text = run.text();
+            if (text != null && !text.isBlank()) {
+                sb.append(text);
+            }
+
+            if (run.getCTR() != null) {
+                int brCount = run.getCTR().sizeOfBrArray();
+                int crCount = run.getCTR().sizeOfCrArray();
+                int tabCount = run.getCTR().sizeOfTabArray();
+
+                for (int i = 0; i < brCount + crCount; i++) {
+                    sb.append("<br>");
+                }
+                for (int i = 0; i < tabCount; i++) {
+                    sb.append("\t");
+                }
+            }
+        }
+
+        String result = sb.toString().trim();
+        return result.replace("\r\n", "<br>")
+                .replace("\n", "<br>")
+                .replace("\r", "<br>");
     }
 
     /**

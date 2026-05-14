@@ -57,4 +57,11 @@ public class AnswerGradingDetail {
 
     /** AI OOP review result. */
     private AIReviewDetail aiReview;
+
+    /**
+     * Deterministic OOP criteria evaluation results.
+     * Each entry corresponds to one {@code GradingCriteria} evaluated against this answer.
+     * Non-null and non-empty when grading mode includes OOP structural checking (MODE_5, etc.).
+     */
+    private List<CriteriaResultDetail> criteriaResults;
 }

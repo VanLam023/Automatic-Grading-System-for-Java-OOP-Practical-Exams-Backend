@@ -4,6 +4,7 @@ import agsfjope.backend.application.dtos.responses.grading.*;
 import agsfjope.backend.core.entities.*;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.grading.AIReviewRepository;
+import agsfjope.backend.core.repositories.grading.CriteriaResultRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
 import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.AnswerRepository;
@@ -34,12 +35,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class GradingQueryService {
 
-    private final GradingResultRepository  gradingResultRepository;
-    private final TestCaseResultRepository testCaseResultRepository;
-    private final AIReviewRepository       aiReviewRepository;
-    private final AnswerRepository         answerRepository;
-    private final SubmissionRepository     submissionRepository;
-    private final ObjectMapper             objectMapper;
+    private final GradingResultRepository   gradingResultRepository;
+    private final TestCaseResultRepository  testCaseResultRepository;
+    private final AIReviewRepository        aiReviewRepository;
+    private final AnswerRepository          answerRepository;
+    private final SubmissionRepository      submissionRepository;
+    private final CriteriaResultRepository  criteriaResultRepository;
+    private final ObjectMapper              objectMapper;
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -49,6 +51,7 @@ public class GradingQueryService {
      * @param blockId block UUID
      * @return summary list — no per-question breakdown
      */
+    @Transactional(readOnly = true)
     public List<GradingResultResponse> getBlockResults(UUID blockId) {
         return gradingResultRepository.findAllBySubmission_Block_BlockId(blockId)
                 .stream()
@@ -81,6 +84,7 @@ public class GradingQueryService {
      * @param studentId the student's user ID
      * @return full grading result with per-question details
      */
+    @Transactional(readOnly = true)
     public GradingResultResponse getStudentResult(UUID blockId, UUID studentId) {
         Submission submission = submissionRepository
                 .findByStudent_UserIdAndBlock_BlockId(studentId, blockId)
@@ -101,6 +105,7 @@ public class GradingQueryService {
      * @param requesterId   user requesting (reserved for future access control)
      * @return detailed grading result with per-question breakdown
      */
+    @Transactional(readOnly = true)
     public GradingResultResponse getSubmissionResult(UUID submissionId, UUID requesterId) {
         GradingResult result = gradingResultRepository
                 .findBySubmission_SubmissionId(submissionId)
@@ -142,6 +147,7 @@ public class GradingQueryService {
                 .studentEmail(student.getEmail())
                 .semesterName(sub.getBlock().getExam().getSemester())
                 .blockName(sub.getBlock().getName())
+                .academicYear(sub.getBlock().getExam().getAcademicYear())
                 .gradingMode(gr.getGradingMode())
                 .status(gr.getStatus())
                 .totalScore(gr.getTotalScore())
@@ -167,6 +173,7 @@ public class GradingQueryService {
                 .studentEmail(student.getEmail())
                 .semesterName(sub.getBlock().getExam().getSemester())
                 .blockName(sub.getBlock().getName())
+                .academicYear(sub.getBlock().getExam().getAcademicYear())
                 .gradingMode(gr.getGradingMode())
                 .status(gr.getStatus())
                 .totalScore(gr.getTotalScore())
@@ -193,6 +200,10 @@ public class GradingQueryService {
         List<AIReview> allAiReviews = aiReviewRepository
                 .findByAnswer_Submission_SubmissionId(submissionId);
 
+        // Load all CriteriaResults for this submission (OOP structural checks)
+        List<CriteriaResult> allCriteriaResults = criteriaResultRepository
+                .findByAnswer_Submission_SubmissionId(submissionId);
+
         // Group TC results by answerId
         Map<UUID, List<TestCaseResult>> tcByAnswer = allTcResults.stream()
                 .collect(Collectors.groupingBy(tcr -> tcr.getAnswer().getAnswerId()));
@@ -204,6 +215,10 @@ public class GradingQueryService {
                         air -> air,
                         (a, b) -> a));
 
+        // Group criteria results by answerId
+        Map<UUID, List<CriteriaResult>> criteriaByAnswer = allCriteriaResults.stream()
+                .collect(Collectors.groupingBy(cr -> cr.getAnswer().getAnswerId()));
+
         // Build per-answer details from distinct answers, sorted by question number
         return answers.stream()
                 .sorted(Comparator.comparingInt(a -> a.getQuestion().getQuestionNumber()))
@@ -211,6 +226,7 @@ public class GradingQueryService {
                     UUID aid = answer.getAnswerId();
                     List<TestCaseResult> tcrs = tcByAnswer.getOrDefault(aid, List.of());
                     AIReview ai = aiByAnswer.get(aid);
+                    List<CriteriaResult> crs = criteriaByAnswer.getOrDefault(aid, List.of());
 
                     boolean hasJar = answer.getJarFilePath() != null && !answer.getJarFilePath().isBlank();
                     boolean hasSource = answer.getSourceCodePath() != null && !answer.getSourceCodePath().isBlank();
@@ -224,16 +240,26 @@ public class GradingQueryService {
                             .map(t -> t.getScoreEarned() != null ? t.getScoreEarned() : BigDecimal.ZERO)
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-                                        // rawOopScore = aiReview.oopScore (AI now returns score directly on question maxScore scale)
-                    BigDecimal rawOopScore = BigDecimal.ZERO;
-                    if (ai != null && ai.getOopScore() != null) {
-                                                BigDecimal maxScore = answer.getQuestion().getMaxScore();
-                                                BigDecimal safeMax = (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
-                                                                ? maxScore : BigDecimal.ZERO;
-                                                rawOopScore = ai.getOopScore()
-                                                                .max(BigDecimal.ZERO)
-                                                                .min(safeMax)
-                                                                .setScale(2, java.math.RoundingMode.HALF_UP);
+                    // rawOopScore = SUM(criteriaResults.earnedScore) — đây là oopRaw mà ScoreCalculator dùng
+                    // Cùng công thức: ScoreCalculator.scoreQuestion() nhận oopRaw = SUM(criteria_results.earned_score)
+                    // [OLD-AI] Trước đây đọc từ AIReview.oopScore — giờ AIReview không tính điểm nữa
+                    BigDecimal rawOopScore;
+                    if (!crs.isEmpty()) {
+                        // MODE_5: tính từ criteria results (nguồn chính xác)
+                        rawOopScore = crs.stream()
+                                .map(cr -> cr.getEarnedScore() != null ? cr.getEarnedScore() : BigDecimal.ZERO)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    } else if (ai != null && ai.getOopScore() != null) {
+                        // [OLD-AI] Fallback: nếu không có criteria nhưng có AI review cũ
+                        BigDecimal maxScore = answer.getQuestion().getMaxScore();
+                        BigDecimal safeMax = (maxScore != null && maxScore.compareTo(BigDecimal.ZERO) > 0)
+                                ? maxScore : BigDecimal.ZERO;
+                        rawOopScore = ai.getOopScore()
+                                .max(BigDecimal.ZERO)
+                                .min(safeMax)
+                                .setScale(2, java.math.RoundingMode.HALF_UP);
+                    } else {
+                        rawOopScore = BigDecimal.ZERO;
                     }
 
                     return AnswerGradingDetail.builder()
@@ -253,6 +279,7 @@ public class GradingQueryService {
                             .guardRuleNote(answer.getGuardRuleNote())
                             .testCaseResults(tcrs.stream().map(this::toTcDetail).toList())
                             .aiReview(ai != null ? toAiDetail(ai) : null)
+                            .criteriaResults(crs.stream().map(this::toCriteriaDetail).toList())
                             .build();
                 })
                 .toList();
@@ -264,10 +291,25 @@ public class GradingQueryService {
                 .testCaseResultId(tcr.getTestCaseResultId())
                 .testCaseNumber(tcr.getTestCase().getTestCaseNumber())
                 .status(tcr.getStatus())     // TestCaseStatus enum — matches builder type
+                .expectedOutput(tcr.getTestCase().getExpectedOutput())
                 .actualOutput(tcr.getActualOutput())
                 .executionTimeMs(tcr.getExecutionTimeMs())
                 .errorMessage(tcr.getErrorMessage())
                 .scoreEarned(tcr.getScoreEarned())
+                .build();
+    }
+
+    private CriteriaResultDetail toCriteriaDetail(CriteriaResult cr) {
+        GradingCriteria c = cr.getCriteria();
+        return CriteriaResultDetail.builder()
+                .criteriaResultId(cr.getCriteriaResultId())
+                .criteriaCode(c.getCriteriaCode())
+                .criterionType(c.getCriterionType() != null ? c.getCriterionType().name() : null)
+                .description(c.getDescription())
+                .maxScore(c.getMaxScore())
+                .passed(cr.isPassed())
+                .earnedScore(cr.getEarnedScore())
+                .feedback(cr.getFeedback())
                 .build();
     }
 

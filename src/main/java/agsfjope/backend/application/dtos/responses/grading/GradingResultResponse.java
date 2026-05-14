@@ -26,6 +26,7 @@ public class GradingResultResponse {
     private String studentEmail;
     private String semesterName;
     private String blockName;
+    private String academicYear;
 
     private GradingMode gradingMode;
 

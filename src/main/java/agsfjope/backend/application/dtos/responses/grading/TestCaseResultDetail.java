@@ -20,6 +20,9 @@ public class TestCaseResultDetail {
     /** Status: PASS_TESTCASE, FAIL_TESTCASE, ERROR, TIMEOUT. */
     private TestCaseStatus status;
 
+    /** Expected output from the exam paper (what correct answer should produce). */
+    private String expectedOutput;
+
     /** Actual output produced by the student's JAR (may be truncated for display). */
     private String actualOutput;
 

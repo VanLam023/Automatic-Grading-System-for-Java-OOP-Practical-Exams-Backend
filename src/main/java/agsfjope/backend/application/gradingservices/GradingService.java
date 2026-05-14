@@ -11,9 +11,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -72,6 +75,7 @@ public class GradingService {
     private final GradingPipelineService pipelineService;
     private final DeterministicGradingService deterministicGradingService;
     private final SubmissionRepository   submissionRepository;
+    private final TransactionTemplate    transactionTemplate;
 
     // [PERF-STEP3] Thread pool injected for running each submission in parallel
     private final Executor submissionExecutor;
@@ -80,11 +84,13 @@ public class GradingService {
     public GradingService(GradingPipelineService pipelineService,
                           DeterministicGradingService deterministicGradingService,
                           SubmissionRepository submissionRepository,
+                          TransactionTemplate transactionTemplate,
                           @Qualifier("submissionExecutor") Executor submissionExecutor) {
-        this.pipelineService      = pipelineService;
+        this.pipelineService             = pipelineService;
         this.deterministicGradingService = deterministicGradingService;
-        this.submissionRepository = submissionRepository;
-        this.submissionExecutor   = submissionExecutor;
+        this.submissionRepository        = submissionRepository;
+        this.transactionTemplate         = transactionTemplate;
+        this.submissionExecutor          = submissionExecutor;
     }
 
     // ─── PUBLIC API ──────────────────────────────────────────────────────────
@@ -121,6 +127,39 @@ public class GradingService {
                 log.info("Grading triggered for block {} but no eligible submissions found", blockId);
                 return;
             }
+
+            // Pre-load GradingMode for each submission inside a TX (session open).
+            // IMPORTANT: targets come from resolveTargets() which has no @Transactional,
+            // so those entities are DETACHED. Must reload via findById() inside this TX
+            // to get a managed entity whose lazy proxies (block → exam → gradingMode) work.
+            Map<UUID, GradingMode> gradingModeBySubId =
+                transactionTemplate.execute(tx -> {
+                    Map<UUID, GradingMode> modeMap = new HashMap<>();
+                    for (Submission s : targets) {
+                        GradingMode mode = GradingMode.MODE_1; // safe default
+                        try {
+                            // Reload as managed entity so lazy-load chain works
+                            Submission managed = submissionRepository.findById(s.getSubmissionId())
+                                    .orElse(null);
+                            if (managed != null
+                                    && managed.getBlock() != null
+                                    && managed.getBlock().getExam() != null
+                                    && managed.getBlock().getExam().getGradingMode() != null) {
+                                mode = managed.getBlock().getExam().getGradingMode();
+                                log.info("[GRADING] Sub {} → GradingMode={}", s.getSubmissionId(), mode);
+                            } else {
+                                log.warn("Cannot resolve GradingMode for sub {} — defaulting to MODE_1",
+                                        s.getSubmissionId());
+                            }
+                        } catch (Exception ex) {
+                            log.warn("Cannot resolve GradingMode for sub {} — defaulting to MODE_1: {}",
+                                    s.getSubmissionId(), ex.getMessage());
+                        }
+                        modeMap.put(s.getSubmissionId(), mode);
+                    }
+                    return modeMap;
+                });
+
 
             boolean isGradeAll = request.getSubmissionIds() == null;
             String modeLabel = isGradeAll ? "GRADE_ALL"
@@ -159,6 +198,10 @@ public class GradingService {
 
                 // Cần dùng biến final để lambda có thể capture
                 final Submission sub = submission;
+                // Snapshot GradingMode — đã resolve trong TX, an toàn để dùng trong async lambda
+                final GradingMode gradingMode = gradingModeBySubId != null
+                        ? gradingModeBySubId.getOrDefault(sub.getSubmissionId(), GradingMode.MODE_1)
+                        : GradingMode.MODE_1;
                 // Mỗi bài được giao cho một thread riêng trong submissionExecutor
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     try {
@@ -184,8 +227,8 @@ public class GradingService {
                         sub.setStatus(SubmissionStatus.GRADING);
                         submissionRepository.save(sub);
 
-                        // [MODE_5 BRANCH]
-                        if (sub.getBlock().getExam().getGradingMode() == GradingMode.MODE_5) {
+                        // [MODE_5 BRANCH] — dùng gradingMode đã snapshot, KHÔNG truy cập lazy proxy
+                        if (gradingMode == GradingMode.MODE_5) {
                             deterministicGradingService.grade(sub, triggeredBy, cancelledBlocks);
                         } else {
                             // [ORIGINAL PIPELINE]
@@ -202,11 +245,36 @@ public class GradingService {
                                     s.setStatus(SubmissionStatus.SUBMITTED);
                                     submissionRepository.save(s);
                                 });
-                    } catch (Exception e) {
+                    } catch (GradingFailedException e) {
+                        log.error("Grading FAILED (system error) for submission {}: {}",
+                                sub.getSubmissionId(), e.getMessage(), e);
+                        try {
+                            transactionTemplate.executeWithoutResult(tx -> {
+                                submissionRepository.findById(sub.getSubmissionId())
+                                        .ifPresent(s -> {
+                                            s.setStatus(SubmissionStatus.GRADING_FAILED);
+                                            submissionRepository.save(s);
+                                        });
+                            });
+                        } catch (Exception ex) {
+                            log.error("Failed to mark submission {} as GRADING_FAILED: {}",
+                                    sub.getSubmissionId(), ex.getMessage());
+                        }
+                    } catch (Throwable e) {
                         log.error("Grading failed for submission {}: {}",
                                 sub.getSubmissionId(), e.getMessage(), e);
-                        sub.setStatus(SubmissionStatus.SUBMITTED);
-                        submissionRepository.save(sub);
+                        try {
+                            transactionTemplate.executeWithoutResult(tx -> {
+                                submissionRepository.findById(sub.getSubmissionId())
+                                        .ifPresent(s -> {
+                                            s.setStatus(SubmissionStatus.SUBMITTED);
+                                            submissionRepository.save(s);
+                                        });
+                            });
+                        } catch (Exception ex) {
+                            log.error("Failed to reset submission status for {}: {}",
+                                    sub.getSubmissionId(), ex.getMessage());
+                        }
                     } finally {
                         submissionSemaphore.release(); // always release, even on error
                     }
@@ -259,16 +327,18 @@ public class GradingService {
                 blockId, SubmissionStatus.GRADED);
         long grading = submissionRepository.countByBlock_BlockIdAndStatus(
                 blockId, SubmissionStatus.GRADING);
-        long pending = Math.max(0, total - graded - grading);
+        long failed  = submissionRepository.countByBlock_BlockIdAndStatus(
+                blockId, SubmissionStatus.GRADING_FAILED);
+        long pending = Math.max(0, total - graded - grading - failed);
 
-        int percent = total == 0 ? 0 : (int) Math.round((double) graded / total * 100);
+        int percent = total == 0 ? 0 : (int) Math.round((double) (graded + failed) / total * 100);
         boolean inProgress = activeBlockGradings.contains(blockId) || grading > 0;
         boolean stopping   = cancelledBlocks.contains(blockId);
 
         String status;
         if (stopping)    status = "STOPPING";
         else if (inProgress) status = "IN_PROGRESS";
-        else if (graded == total && total > 0) status = "COMPLETED";
+        else if ((graded + failed) == total && total > 0) status = "COMPLETED";
         else             status = "PENDING";
 
         return GradingProgressResponse.builder()
@@ -276,6 +346,7 @@ public class GradingService {
                 .totalSubmissions(total)
                 .gradedCount(graded)
                 .gradingCount(grading)
+                .failedCount(failed)
                 .pendingCount(pending)
                 .progressPercent(percent)
                 .status(status)
@@ -304,11 +375,14 @@ public class GradingService {
                     blockId, SubmissionStatus.GRADING);
             List<Submission> graded    = submissionRepository.findByBlock_BlockIdAndStatus(
                     blockId, SubmissionStatus.GRADED);
-            log.warn("[GRADING] resolveTargets: found {} SUBMITTED + {} GRADING + {} GRADED for block {}",
-                    submitted.size(), grading.size(), graded.size(), blockId);
+            List<Submission> failed    = submissionRepository.findByBlock_BlockIdAndStatus(
+                    blockId, SubmissionStatus.GRADING_FAILED);
+            log.warn("[GRADING] resolveTargets: found {} SUBMITTED + {} GRADING + {} GRADED + {} GRADING_FAILED for block {}",
+                    submitted.size(), grading.size(), graded.size(), failed.size(), blockId);
             List<Submission> merged = new java.util.ArrayList<>(submitted);
             merged.addAll(grading);
             merged.addAll(graded);
+            merged.addAll(failed);
             return merged;
         }
 
@@ -318,7 +392,8 @@ public class GradingService {
                 .filter(s -> s.getBlock().getBlockId().equals(blockId))
                 .filter(s -> s.getStatus() == SubmissionStatus.SUBMITTED
                           || s.getStatus() == SubmissionStatus.GRADING
-                          || s.getStatus() == SubmissionStatus.GRADED)
+                          || s.getStatus() == SubmissionStatus.GRADED
+                          || s.getStatus() == SubmissionStatus.GRADING_FAILED)
                 .toList();
     }
 

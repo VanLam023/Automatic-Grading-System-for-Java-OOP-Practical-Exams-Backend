@@ -2,7 +2,6 @@ package agsfjope.backend.domain.grading;
 
 import agsfjope.backend.core.entities.GradingModeConfig;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
-import agsfjope.backend.infrastructure.ai.AIReviewResult;
 import agsfjope.backend.infrastructure.grading.StaticAnalysisResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,14 +13,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calculates the final score for a submission based on test case results and AI OOP review.
+ * Calculates the final score for a submission based on test case results and deterministic OOP score.
  *
  * <h3>Scoring Algorithm (3-step, per-question):</h3>
  *
  * <pre>
  * Step 1 — Raw Per-Question Score:
  *   tcRaw  = (passCount / totalTcCount) × maxScore
- *   oopRaw = aiOopScore    (AI now returns score directly on question maxScore scale)
+ *   oopRaw = SUM(criteria_results.earned_score)  ← pre-computed by DeterministicOopScorer
  *
  * Step 2 — Apply Guard Rules (from GradingModeConfig):
  *   ┌─ FailIfOopViolated && isOopViolated  → questionFinal = 0, record note with original scores
@@ -161,7 +160,7 @@ public class ScoreCalculator {
 
         // Step 1: Raw scores
         BigDecimal tcRaw     = calculateTcRaw(passed, total, maxScore);
-        BigDecimal oopRaw    = calculateOopRaw(input.aiResult(), maxScore);
+        BigDecimal oopRaw    = input.oopRawScore() != null ? input.oopRawScore() : BigDecimal.ZERO;
 
         // Step 2: Guard rules (in priority order — first match wins)
 
@@ -192,11 +191,8 @@ public class ScoreCalculator {
                     BigDecimal.ZERO, true, note, passed, total);
         }
 
-        // 2d. FailIfOopViolated — override to 0 if AI says code fundamentally violates OOP
-        if (Boolean.TRUE.equals(config.getFailIfOopViolated())
-                && input.aiResult() != null
-                && !input.aiResult().aiError()
-                && input.aiResult().oopViolated()) {
+        // 2d. FailIfOopViolated — override to 0 if structural check says code violates OOP
+        if (Boolean.TRUE.equals(config.getFailIfOopViolated()) && input.oopViolated()) {
             String note = buildGuardNote("FailIfOopViolated", tcRaw, oopRaw);
             return new QuestionScore(questionNumber, maxScore,
                     tcRaw, oopRaw, BigDecimal.ZERO, true, note, passed, total);
@@ -239,25 +235,20 @@ public class ScoreCalculator {
                 .setScale(SCALE, ROUNDING);
     }
 
-        /**
-         * Raw OOP score for a question:
-         * {@code aiOopScore} (AI prompt now returns score directly on this question's maxScore scale).
-         * Returns 0 if AI evaluation failed (graceful degradation).
-         */
-    private BigDecimal calculateOopRaw(AIReviewResult ai, BigDecimal maxScore) {
-        if (ai == null || ai.aiError() || ai.oopScore() == null) {
-            return BigDecimal.ZERO;
-        }
-                BigDecimal safeMax = maxScore != null ? maxScore : BigDecimal.ZERO;
-                return ai.oopScore()
-                                .max(BigDecimal.ZERO)
-                                .min(safeMax)
-                                .setScale(SCALE, ROUNDING);
-    }
-
-
+    // [OLD-AI] Raw OOP score — previously from LLM; now OOP = SUM(criteria_results.earned_score)
+    // private BigDecimal calculateOopRaw(AIReviewResult ai, BigDecimal maxScore) {
+    //     if (ai == null || ai.aiError() || ai.oopScore() == null) {
+    //         return BigDecimal.ZERO;
+    //     }
+    //     BigDecimal safeMax = maxScore != null ? maxScore : BigDecimal.ZERO;
+    //     return ai.oopScore()
+    //             .max(BigDecimal.ZERO)
+    //             .min(safeMax)
+    //             .setScale(SCALE, ROUNDING);
+    // }
 
     // ─── NOTE BUILDERS ────────────────────────────────────────────────────────
+
 
     private String buildGuardNote(String ruleName, BigDecimal tcRaw, BigDecimal oopRaw) {
         return switch (ruleName) {
@@ -293,60 +284,79 @@ public class ScoreCalculator {
 
     // ─── INPUT DATA CLASS ─────────────────────────────────────────────────────
 
+    // [OLD-AI] Previous QuestionInput used AIReviewResult for OOP scoring:
+    // public record QuestionInput(
+    //         BigDecimal maxScore,
+    //         int passTcCount,
+    //         int totalTcCount,
+    //         AIReviewResult aiResult,          // ← replaced by oopRawScore + oopViolated
+    //         boolean hasExamFileTampering,
+    //         String tamperDetail,
+    //         boolean missingFile,
+    //         String missingDetail,
+    //         StaticAnalysisResult staticAnalysis
+    // ) { ... }
+    //
+    // Old factory: QuestionInput.of(maxScore, pass, total, aiResult, staticAnalysis)
+    // New factory: QuestionInput.of(maxScore, pass, total, oopRawScore, oopViolated, staticAnalysis)
+
     /**
      * Input data for scoring a single question/answer.
      *
      * @param maxScore             maximum score for this question
      * @param passTcCount          number of test cases that passed
      * @param totalTcCount         total number of test cases for this question
-     * @param aiResult             AI OOP review result (may be null or have aiError=true)
-     * @param structureResult      JavaParser + Reflection check result (null if not run)
+     * @param oopRawScore          pre-computed OOP score = SUM(criteria_results.earned_score)
+     * @param oopViolated          true if a fundamental OOP criterion (encapsulation/inheritance/
+     *                             polymorphism) failed — determined by DeterministicOopScorer
      * @param hasExamFileTampering true if exam .class files were tampered with
      * @param tamperDetail         description of which files were tampered
      * @param missingFile          true if student did not submit required files
      * @param missingDetail        description of missing files
-     * @param staticAnalysis       [NEW] pre-computed static analysis from JavaParser + Reflection;
-     *                             used directly for hardcode detection (no AI dependency)
+     * @param staticAnalysis       pre-computed static analysis from JavaParser + Reflection;
+     *                             used directly for hardcode detection
      */
     public record QuestionInput(
             BigDecimal maxScore,
             int passTcCount,
             int totalTcCount,
-            AIReviewResult aiResult,
+            BigDecimal oopRawScore,
+            boolean oopViolated,
             boolean hasExamFileTampering,
             String tamperDetail,
             boolean missingFile,
             String missingDetail,
             StaticAnalysisResult staticAnalysis
     ) {
-        /** Convenience constructor when no tampering, no missing file, and AI result is ready. */
+        /** Convenience constructor: normal grading (no tampering, no missing file). */
         public static QuestionInput of(BigDecimal maxScore,
                                        int passTcCount, int totalTcCount,
-                                       AIReviewResult aiResult,
+                                       BigDecimal oopRawScore, boolean oopViolated,
                                        StaticAnalysisResult staticAnalysis) {
             return new QuestionInput(maxScore, passTcCount, totalTcCount,
-                    aiResult, false, null, false, null, staticAnalysis);
+                    oopRawScore, oopViolated, false, null, false, null, staticAnalysis);
         }
 
-        // [OLD] public static QuestionInput of(BigDecimal maxScore,
-        //                                      int passTcCount, int totalTcCount,
-        //                                      AIReviewResult aiResult) {
-        //     return new QuestionInput(maxScore, passTcCount, totalTcCount,
-        //             aiResult, false, null, false, null);
-        // }
+        /** Convenience constructor: no OOP criteria defined for this question. */
+        public static QuestionInput ofNoCriteria(BigDecimal maxScore,
+                                                  int passTcCount, int totalTcCount,
+                                                  StaticAnalysisResult staticAnalysis) {
+            return new QuestionInput(maxScore, passTcCount, totalTcCount,
+                    BigDecimal.ZERO, false, false, null, false, null, staticAnalysis);
+        }
 
         /** Convenience constructor for tampered submission. */
         public static QuestionInput tampered(BigDecimal maxScore,
                                              int passTcCount, int totalTcCount,
                                              String detail) {
             return new QuestionInput(maxScore, passTcCount, totalTcCount,
-                    null, true, detail, false, null, null);
+                    BigDecimal.ZERO, false, true, detail, false, null, null);
         }
 
         /** Convenience constructor for missing file (no jar or no src). */
         public static QuestionInput missing(BigDecimal maxScore, int totalTcCount, String detail) {
             return new QuestionInput(maxScore, 0, totalTcCount,
-                    null, false, null, true, detail, null);
+                    BigDecimal.ZERO, false, false, null, true, detail, null);
         }
     }
 }

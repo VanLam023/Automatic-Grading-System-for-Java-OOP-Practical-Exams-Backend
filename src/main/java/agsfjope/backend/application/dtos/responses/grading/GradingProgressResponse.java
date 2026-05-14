@@ -27,6 +27,9 @@ public class GradingProgressResponse {
     /** Number of submissions not yet started (SUBMITTED status). */
     private long pendingCount;
 
+    /** Number of submissions that failed grading due to system errors (GRADING_FAILED status). */
+    private long failedCount;
+
     /** Overall progress status: IN_PROGRESS or COMPLETED. */
     private String status;
 
