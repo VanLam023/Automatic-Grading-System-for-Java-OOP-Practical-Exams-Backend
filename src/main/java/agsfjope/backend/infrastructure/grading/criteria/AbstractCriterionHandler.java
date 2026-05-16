@@ -24,7 +24,7 @@ public abstract class AbstractCriterionHandler implements CriterionHandler {
                 .criteria(criteria)
                 .passed(true)
                 .earnedScore(criteria.getMaxScore())
-                .feedback("✅ " + feedback)
+                .feedback(feedback)
                 .build();
     }
 
@@ -35,7 +35,7 @@ public abstract class AbstractCriterionHandler implements CriterionHandler {
                 .criteria(criteria)
                 .passed(false)
                 .earnedScore(BigDecimal.ZERO)
-                .feedback("❌ " + feedback)
+                .feedback(feedback)
                 .build();
     }
 
@@ -47,7 +47,7 @@ public abstract class AbstractCriterionHandler implements CriterionHandler {
                 .criteria(criteria)
                 .passed(false)
                 .earnedScore(earned)
-                .feedback("⚠️ " + feedback)
+                .feedback(feedback)
                 .build();
     }
 

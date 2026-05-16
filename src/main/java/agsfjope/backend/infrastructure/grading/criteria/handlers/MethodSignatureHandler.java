@@ -26,20 +26,26 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
         String expectedReturn       = param(params, "returnType");
         String accessModifier       = param(params, "accessModifier");
         List<String> expectedParams = paramList(params, "paramTypes");
+        boolean requireOverride     = paramBool(params, "requireOverride", false);
 
         if (context.isJarAvailable()) {
-            return checkViaReflection(context, answer, criteria, className, methodName, expectedReturn, expectedParams, accessModifier);
+            return checkViaReflection(context, answer, criteria, className, methodName,
+                    expectedReturn, expectedParams, accessModifier, requireOverride);
         }
-        return checkViaParser(context, answer, criteria, className, methodName, expectedReturn, expectedParams, accessModifier);
+        return checkViaParser(context, answer, criteria, className, methodName,
+                expectedReturn, expectedParams, accessModifier, requireOverride);
     }
 
     private CriteriaResult checkViaReflection(SourceCodeContext context, Answer answer,
                                                GradingCriteria criteria, String className,
                                                String methodName, String expectedReturn,
-                                               List<String> expectedParams, String accessModifier) {
+                                               List<String> expectedParams, String accessModifier,
+                                               boolean requireOverride) {
         Optional<Class<?>> clsOpt = context.loadedClass(className);
         if (clsOpt.isEmpty()) {
-            return checkViaParser(context, answer, criteria, className, methodName, expectedReturn, expectedParams, accessModifier);
+            // Fallback to parser — also handles @Override check (annotation not in bytecode)
+            return checkViaParser(context, answer, criteria, className, methodName,
+                    expectedReturn, expectedParams, accessModifier, requireOverride);
         }
 
         Class<?> cls = clsOpt.get();
@@ -72,6 +78,13 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
                 }
             }
 
+            // @Override is a SOURCE-retention annotation — it is NOT present in bytecode.
+            // We delegate the @Override check to the parser path which reads the .java AST.
+            if (requireOverride) {
+                return checkViaParser(context, answer, criteria, className, methodName,
+                        expectedReturn, expectedParams, accessModifier, requireOverride);
+            }
+
             return pass(answer, criteria, "Phương thức " + methodName + " được khai báo đúng.");
         }
 
@@ -101,7 +114,8 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
     private CriteriaResult checkViaParser(SourceCodeContext context, Answer answer,
                                           GradingCriteria criteria, String className,
                                           String methodName, String expectedReturn,
-                                          List<String> expectedParams, String accessModifier) {
+                                          List<String> expectedParams, String accessModifier,
+                                          boolean requireOverride) {
         Optional<ClassOrInterfaceDeclaration> clsOpt = context.findClass(className);
         if (clsOpt.isEmpty()) {
             return fail(answer, criteria, "Không tìm thấy class " + className + ".");
@@ -145,6 +159,16 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
                     return fail(answer, criteria,
                             "Phương thức " + methodName + " có phạm vi truy cập chưa đúng. "
                             + "Yêu cầu: " + accessModifier + ". Hiện tại: " + (current.isBlank() ? "package-private" : current) + ".");
+                }
+            }
+
+            // Check @Override annotation via AST (SOURCE-retention — only visible in .java, not bytecode)
+            if (requireOverride) {
+                boolean hasOverride = method.getAnnotations().stream()
+                        .anyMatch(a -> a.getNameAsString().equals("Override"));
+                if (!hasOverride) {
+                    return fail(answer, criteria,
+                            "Phương thức " + methodName + " thiếu annotation @Override.");
                 }
             }
 
