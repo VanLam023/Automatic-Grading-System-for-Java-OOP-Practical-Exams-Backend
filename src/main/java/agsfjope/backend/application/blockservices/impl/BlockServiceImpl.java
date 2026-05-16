@@ -1,6 +1,7 @@
 package agsfjope.backend.application.blockservices.impl;
 
 import agsfjope.backend.application.blockservices.BlockService;
+import agsfjope.backend.application.dtos.requests.block.CreateBlockRequest;
 import agsfjope.backend.application.dtos.requests.block.UpdateBlockRequest;
 import agsfjope.backend.application.dtos.responses.block.BlockResponse;
 import agsfjope.backend.core.entities.Block;
@@ -9,6 +10,7 @@ import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.core.repositories.exam.ExamRepository;
 import agsfjope.backend.core.repositories.exampaper.ExamPaperRepository;
+import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,9 +27,10 @@ import java.util.stream.Collectors;
  *
  * <p>Business rules enforced:</p>
  * <ul>
- *   <li>BR-08: Exactly 2 blocks per exam (Block 10 + Block 3). Created automatically.</li>
+ *   <li>Blocks are created manually by Exam Staff with custom names (unique within exam).</li>
  *   <li>Block.StartTime and Block.EndTime must fall within Exam.StartTime — Exam.EndTime.</li>
  *   <li>Block.EndTime must be strictly after Block.StartTime (also enforced by CHK_BlockTime).</li>
+ *   <li>Blocks cannot be deleted if they have submissions or are within 7 days of start.</li>
  * </ul>
  */
 @Slf4j
@@ -38,9 +41,10 @@ public class BlockServiceImpl implements BlockService {
     private static final String BLOCK_10 = "Block 10";
     private static final String BLOCK_3  = "Block 3";
 
-    private final BlockRepository    blockRepository;
-    private final ExamRepository     examRepository;
-    private final ExamPaperRepository examPaperRepository;
+    private final BlockRepository      blockRepository;
+    private final ExamRepository       examRepository;
+    private final ExamPaperRepository  examPaperRepository;
+    private final SubmissionRepository submissionRepository;
 
     // ─── AUTO-CREATE ─────────────────────────────────────────────────────
 
@@ -76,23 +80,46 @@ public class BlockServiceImpl implements BlockService {
         log.info("Auto-created Block 10 + Block 3 for exam '{}'", exam.getName());
     }
 
+    // ─── CREATE ──────────────────────────────────────────────────────────
+
+    /**
+     * Creates a new block within the given exam.
+     * Validates exam existence and name uniqueness.
+     */
+    @Override
+    @Transactional
+    public BlockResponse createBlock(UUID examId, CreateBlockRequest request) {
+        Exam exam = examRepository.findByExamIdAndDeletedAtIsNull(examId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy kỳ thi với ID: " + examId));
+
+        // Validate block name is unique within this exam
+        if (blockRepository.existsByExam_ExamIdAndName(examId, request.getName().trim())) {
+            throw new IllegalArgumentException(
+                    "Tên đợt thi \"" + request.getName().trim() + "\" đã tồn tại trong kỳ thi này."
+            );
+        }
+
+        Block block = Block.builder()
+                .exam(exam)
+                .name(request.getName().trim())
+                .description(request.getDescription() != null ? request.getDescription().trim() : null)
+                .build();
+
+        blockRepository.save(block);
+        log.info("Created block '{}' for exam '{}'", block.getName(), exam.getName());
+        return mapToResponse(block);
+    }
+
     // ─── READ ─────────────────────────────────────────────────────────────
 
     /**
-     * Returns both blocks for the given exam, ordered by name (Block 10, Block 3).
+     * Returns all blocks for the given exam, ordered by name.
      */
     @Override
     @Transactional
     public List<BlockResponse> getBlocksByExamId(UUID examId) {
         Exam exam = examRepository.findByExamIdAndDeletedAtIsNull(examId)
                 .orElseThrow(() -> new NotFoundException("Không tìm thấy kỳ thi với ID: " + examId));
-
-        // BR-08: Nếu exam chưa có block (exam tạo trước khi có logic auto-create),
-        // tự tạo Block 10 + Block 3 ngay lúc này để đảm bảo tính nhất quán.
-        if (!blockRepository.existsByExam_ExamId(examId)) {
-            log.warn("Exam '{}' has no blocks yet — auto-creating Block 10 + Block 3.", exam.getName());
-            createDefaultBlocks(exam);
-        }
 
         return blockRepository.findByExam_ExamIdOrderByNameAsc(examId)
                 .stream()
@@ -184,6 +211,48 @@ public class BlockServiceImpl implements BlockService {
         blockRepository.save(block);
         log.info("Updated schedule for {} of exam '{}'", block.getName(), exam.getName());
         return mapToResponse(block);
+    }
+
+    // ─── DELETE ───────────────────────────────────────────────────────────
+
+    /**
+     * Deletes a block. Validates:
+     * 1. Block belongs to the given exam.
+     * 2. Block has no submissions.
+     * 3. Block is not within 7 days of its start time (if scheduled).
+     */
+    @Override
+    @Transactional
+    public void deleteBlock(UUID examId, UUID blockId) {
+        Block block = blockRepository.findByBlockId(blockId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy đợt thi với ID: " + blockId));
+
+        if (!block.getExam().getExamId().equals(examId)) {
+            throw new IllegalArgumentException(
+                    "Đợt thi " + blockId + " không thuộc kỳ thi " + examId + "."
+            );
+        }
+
+        // Cannot delete if block has submissions
+        if (submissionRepository.existsByBlock_BlockId(blockId)) {
+            throw new IllegalArgumentException(
+                    "Không thể xóa đợt thi \"" + block.getName() + "\" vì đã có bài nộp."
+            );
+        }
+
+        // Cannot delete if block is within 7 days of start
+        if (block.getStartTime() != null) {
+            OffsetDateTime now = OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+            OffsetDateTime lockAt = block.getStartTime().minusDays(7);
+            if (!now.isBefore(lockAt)) {
+                throw new IllegalArgumentException(
+                        "Không thể xóa đợt thi \"" + block.getName() + "\" trong vòng 7 ngày trước khi bắt đầu."
+                );
+            }
+        }
+
+        blockRepository.delete(block);
+        log.info("Deleted block '{}' from exam '{}'", block.getName(), block.getExam().getName());
     }
 
     // ─── MAPPING ──────────────────────────────────────────────────────────
