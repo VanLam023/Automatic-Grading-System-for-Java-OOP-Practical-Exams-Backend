@@ -27,7 +27,7 @@ import java.util.List;
 public class BankLookupServiceImpl implements BankLookupService {
 
     private static final String VIET_QR_BANKS_URL = "https://api.vietqr.io/v2/banks";
-    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+    private static HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
