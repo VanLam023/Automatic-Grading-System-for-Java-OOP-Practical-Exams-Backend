@@ -2,6 +2,7 @@ package agsfjope.backend.application.paymentservices.impl;
 
 import agsfjope.backend.application.dtos.requests.payment.PayOSWebhookRequest;
 import agsfjope.backend.application.dtos.responses.payment.PaymentResponse;
+import agsfjope.backend.application.dtos.responses.payment.AdminPaymentResponse;
 import agsfjope.backend.application.paymentservices.HandlePaymentService;
 import agsfjope.backend.application.ports.out.PaymentGatewayPort;
 import agsfjope.backend.core.entities.Payment;
@@ -11,6 +12,8 @@ import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -227,5 +230,58 @@ public class HandlePaymentServiceImpl implements HandlePaymentService {
                 .checkoutUrl(payment.getCheckoutUrl())
                 .expiresAt(payment.getExpiresAt())
                 .build();
+    }
+
+    /** Chuyển Payment entity → AdminPaymentResponse DTO. Dùng chung cho cả list và page. */
+    private AdminPaymentResponse toAdminPaymentResponse(Payment p) {
+        return AdminPaymentResponse.builder()
+                .paymentId(p.getPaymentId())
+                .amount(p.getAmount())
+                .currency(p.getCurrency())
+                .status(p.getStatus().name())
+                .payosOrderId(p.getPayosOrderId())
+                .paymentPurpose(p.getPaymentPurpose())
+                .expiresAt(p.getExpiresAt())
+                .paidAt(p.getPaidAt())
+                .createdAt(p.getCreatedAt())
+                .studentId(p.getStudent() != null ? p.getStudent().getUserId() : null)
+                .studentName(p.getStudent() != null ? p.getStudent().getFullName() : "N/A")
+                .studentEmail(p.getStudent() != null ? p.getStudent().getEmail() : "N/A")
+                .studentMssv(p.getStudent() != null ? p.getStudent().getMssv() : "N/A")
+                .build();
+    }
+
+    /** Chuẩn hóa các filter param — đảm bảo không có null truyền vào native query (tránh 42P18). */
+    private OffsetDateTime effectiveFrom(OffsetDateTime from) {
+        return from != null ? from : OffsetDateTime.of(2000, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC);
+    }
+
+    private OffsetDateTime effectiveTo(OffsetDateTime to) {
+        return to != null ? to : OffsetDateTime.now().plusYears(100);
+    }
+
+    private String effectiveSearch(String search) {
+        return (search != null && !search.isBlank()) ? search.trim() : "";
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AdminPaymentResponse> getAllPaymentsForAdmin(OffsetDateTime from, OffsetDateTime to, String search) {
+        log.info("[Payment] Admin fetching transactions. Filter from: {}, to: {}, search: {}", from, to, search);
+        return paymentRepository.findAllPayments(effectiveFrom(from), effectiveTo(to), effectiveSearch(search))
+                .stream()
+                .map(this::toAdminPaymentResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<AdminPaymentResponse> getAllPaymentsForAdminPaged(
+            OffsetDateTime from, OffsetDateTime to, String search, Pageable pageable) {
+        log.info("[Payment] Admin fetching transactions (paged). page={}, size={}, from={}, to={}, search={}",
+                pageable.getPageNumber(), pageable.getPageSize(), from, to, search);
+        return paymentRepository.findAllPaymentsPaged(
+                        effectiveFrom(from), effectiveTo(to), effectiveSearch(search), pageable)
+                .map(this::toAdminPaymentResponse);
     }
 }

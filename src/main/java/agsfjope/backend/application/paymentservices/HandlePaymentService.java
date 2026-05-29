@@ -2,7 +2,12 @@ package agsfjope.backend.application.paymentservices;
 
 import agsfjope.backend.application.dtos.requests.payment.PayOSWebhookRequest;
 import agsfjope.backend.application.dtos.responses.payment.PaymentResponse;
+import agsfjope.backend.application.dtos.responses.payment.AdminPaymentResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -19,21 +24,6 @@ import java.util.UUID;
  */
 public interface HandlePaymentService {
 
-    /**
-     * Xử lý webhook callback từ PayOS sau khi giao dịch hoàn tất.
-     * <p>
-     * Luồng xử lý:
-     * <ol>
-     *   <li>Verify checksum HMAC-SHA256 (trả về HTTP 400 nếu sai)</li>
-     *   <li>Tìm Payment theo orderCode</li>
-     *   <li>Nếu PAID: cập nhật Payment → SUCCESS, gửi email xác nhận</li>
-     *   <li>Nếu CANCELLED: cập nhật Payment → FAILED</li>
-     *   <li>TODO (Appeal): cập nhật Appeal status tương ứng</li>
-     * </ol>
-     * </p>
-     *
-     * @param webhookRequest dữ liệu webhook nhận từ PayOS
-     */
     /**
      * Xử lý webhook callback từ PayOS sau khi giao dịch hoàn tất (Dùng rawBody string để verify checksum chính xác nhất).
      */
@@ -69,4 +59,15 @@ public interface HandlePaymentService {
      * </p>
      */
     void handleExpiredPayments();
+
+    /**
+     * Truy xuất danh sách toàn bộ giao dịch trên hệ thống cho Admin với bộ lọc nâng cao.
+     */
+    List<AdminPaymentResponse> getAllPaymentsForAdmin(OffsetDateTime from, OffsetDateTime to, String search);
+
+    /**
+     * Truy xuất danh sách giao dịch có phân trang.
+     */
+    Page<AdminPaymentResponse> getAllPaymentsForAdminPaged(
+            OffsetDateTime from, OffsetDateTime to, String search, Pageable pageable);
 }

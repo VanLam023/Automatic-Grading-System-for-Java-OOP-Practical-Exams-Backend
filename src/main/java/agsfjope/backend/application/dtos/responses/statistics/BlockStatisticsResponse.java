@@ -45,7 +45,30 @@ public class BlockStatisticsResponse {
     /** Appeal and financial metrics for the block. */
     private AppealFinancialAnalysis appealFinancial;
 
+    /** Dynamic per-test-case statistics. */
+    private List<TestCaseStat> testCaseStats;
+
     // ─── Nested DTOs ────────────────────────────────────────────────────────
+
+    /**
+     * Dynamic test case statistic entry.
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TestCaseStat {
+        /** Test case display name or identifier (e.g., "Câu 1 - Test Case 1"). */
+        private String name;
+        /** Average score of this test case across submissions. */
+        private BigDecimal avgScore;
+        /** Number of runs failing this testcase. */
+        private long failureCount;
+        /** Percentage of failures (0..100). */
+        private double failureRate;
+        /** Total runs / sample size for this testcase. */
+        private long sampleSize;
+    }
 
     /**
      * Score-related statistics for the block.

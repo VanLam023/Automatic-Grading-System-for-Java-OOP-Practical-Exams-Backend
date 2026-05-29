@@ -579,6 +579,9 @@ public class ZipExamPaperParser {
 
             switch (trimmed.toUpperCase()) {
                 case "INPUT:" -> {
+                    if ("IN_INPUT".equals(state)) {
+                        throw missingOutputException(qNum, i + 1);
+                    }
                     // Flush previous complete test case if we were in OUTPUT state
                     if ("IN_OUTPUT".equals(state)) {
                         testCases.add(buildTestCase(testCases.size() + 1,
@@ -589,7 +592,7 @@ public class ZipExamPaperParser {
                     state = "IN_INPUT";
                 }
                 case "OUTPUT:" -> {
-                    if (!"IN_INPUT".equals(state) && !"IN_OUTPUT".equals(state)) {
+                    if (!"IN_INPUT".equals(state)) {
                         throw new InvalidZipStructureException(
                                 "Câu " + qNum + " dòng " + (i + 1) +
                                 ": Gặp 'OUTPUT:' mà không có 'INPUT:' trước đó trong tc" + qNum + ".txt.");
@@ -597,6 +600,9 @@ public class ZipExamPaperParser {
                     state = "IN_OUTPUT";
                 }
                 case "REMOVE_SPACES:" -> {
+                    if ("IN_INPUT".equals(state)) {
+                        throw missingOutputException(qNum, i + 1);
+                    }
                     // Flush last test case
                     if ("IN_OUTPUT".equals(state)) {
                         testCases.add(buildTestCase(testCases.size() + 1,
@@ -607,6 +613,15 @@ public class ZipExamPaperParser {
                     state = "IN_REMOVE_SPACES";
                 }
                 case "CASE_SENSITIVE:" -> {
+                    if ("IN_INPUT".equals(state)) {
+                        throw missingOutputException(qNum, i + 1);
+                    }
+                    if ("IN_OUTPUT".equals(state)) {
+                        testCases.add(buildTestCase(testCases.size() + 1,
+                                inputBuf, outputBuf, qNum, maxScore));
+                        inputBuf.setLength(0);
+                        outputBuf.setLength(0);
+                    }
                     state = "IN_CASE_SENSITIVE";
                 }
                 case "YES", "NO" -> {
@@ -626,8 +641,12 @@ public class ZipExamPaperParser {
             }
         }
 
-        // Flush the last test case if the file ended without REMOVE_SPACES
-        if ("IN_OUTPUT".equals(state) && outputBuf.length() > 0) {
+        if ("IN_INPUT".equals(state)) {
+            throw missingOutputException(qNum, lines.length);
+        }
+
+        // Flush the last test case if the file ended without flags.
+        if ("IN_OUTPUT".equals(state)) {
             testCases.add(buildTestCase(testCases.size() + 1,
                     inputBuf, outputBuf, qNum, maxScore));
         }
@@ -639,6 +658,12 @@ public class ZipExamPaperParser {
         }
 
         return new TcFileContent(testCases, removeSpaces, caseSensitive);
+    }
+
+    private InvalidZipStructureException missingOutputException(int qNum, int lineNumber) {
+        return new InvalidZipStructureException(
+                "Cau " + qNum + " dong " + lineNumber +
+                ": Gap 'INPUT:' nhung thieu 'OUTPUT:' tuong ung trong tc" + qNum + ".txt.");
     }
 
     private void appendLine(String state, String rawLine,

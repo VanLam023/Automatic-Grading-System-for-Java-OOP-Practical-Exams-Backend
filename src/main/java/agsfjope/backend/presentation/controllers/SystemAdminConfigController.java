@@ -14,6 +14,9 @@ import agsfjope.backend.application.dtos.requests.config.UpdateSystemSettingsReq
 import agsfjope.backend.application.dtos.responses.config.SystemSettingsResponse;
 import agsfjope.backend.core.enums.GradingMode;
 import agsfjope.backend.infrastructure.storage.MinioPathMigrationService;
+import agsfjope.backend.application.paymentservices.HandlePaymentService;
+import java.time.OffsetDateTime;
+import org.springframework.format.annotation.DateTimeFormat;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +42,7 @@ public class SystemAdminConfigController {
     private final SystemConfigService          systemConfigService;
     private final GradingModeConfigService      gradingModeConfigService;
     private final MinioPathMigrationService     minioMigrationService;
+    private final HandlePaymentService          handlePaymentService;
 
     /**
      * Lấy cấu hình AI hiện tại.
@@ -647,6 +651,36 @@ public class SystemAdminConfigController {
                 ? "Dry-run backfill hoàn tất — không có thay đổi thực sự"
                 : "Backfill hoàn tất — đã cập nhật jarFilePath và sourceCodePath cho các Answer";
         return ResponseEntity.ok(buildSuccessResponse(msg, data));
+    }
+
+    /**
+     * Lấy toàn bộ danh sách giao dịch trên hệ thống cho Admin với bộ lọc nâng cao và phân trang.
+     * GET /api/admin/config/payments?page=0&size=15&from=...&to=...&search=...
+     */
+    @GetMapping("/payments")
+    public ResponseEntity<Map<String, Object>> getAllPayments(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "15") int size) {
+
+        var pageable = org.springframework.data.domain.PageRequest.of(page, Math.min(size, 100));
+        var pageResult = handlePaymentService.getAllPaymentsForAdminPaged(from, to, search, pageable);
+
+        Map<String, Object> pagination = new java.util.LinkedHashMap<>();
+        pagination.put("page", pageResult.getNumber());
+        pagination.put("size", pageResult.getSize());
+        pagination.put("totalElements", pageResult.getTotalElements());
+        pagination.put("totalPages", pageResult.getTotalPages());
+        pagination.put("first", pageResult.isFirst());
+        pagination.put("last", pageResult.isLast());
+
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("content", pageResult.getContent());
+        data.put("pagination", pagination);
+
+        return ResponseEntity.ok(buildSuccessResponse("Lấy danh sách giao dịch thành công", data));
     }
 
     /**

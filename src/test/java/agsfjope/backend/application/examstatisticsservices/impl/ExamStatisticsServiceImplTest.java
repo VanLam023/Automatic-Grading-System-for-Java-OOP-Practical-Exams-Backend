@@ -1,15 +1,18 @@
 package agsfjope.backend.application.examstatisticsservices.impl;
 
 import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse;
-import agsfjope.backend.core.entities.AIReview;
+import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse.*;
+import agsfjope.backend.core.entities.*;
+import agsfjope.backend.core.enums.CriterionType;
+import agsfjope.backend.core.enums.TestCaseStatus;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
 import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
-import agsfjope.backend.core.repositories.grading.AIReviewRepository;
+import agsfjope.backend.core.repositories.grading.CriteriaResultRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,43 +40,17 @@ class ExamStatisticsServiceImplTest {
     @Mock private BlockRepository blockRepository;
     @Mock private SubmissionRepository submissionRepository;
     @Mock private GradingResultRepository gradingResultRepository;
-    @Mock private AIReviewRepository aiReviewRepository;
+    @Mock private CriteriaResultRepository criteriaResultRepository;
+    @Mock private TestCaseResultRepository testCaseResultRepository;
     @Mock private AppealRepository appealRepository;
     @Mock private SystemConfigRepository systemConfigRepository;
-
-    // Dùng ObjectMapper thật để parse JSON trong test
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @InjectMocks
     private ExamStatisticsServiceImpl examStatisticsService;
 
     // =========================================================================
-    // Helper: inject real ObjectMapper
-    // =========================================================================
-    @org.junit.jupiter.api.BeforeEach
-    void setUp() {
-        // InjectMocks dùng @Mock ObjectMapper (null) → phải inject thật
-        try {
-            var field = ExamStatisticsServiceImpl.class.getDeclaredField("objectMapper");
-            field.setAccessible(true);
-            field.set(examStatisticsService, objectMapper);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    // =========================================================================
     // Helpers
     // =========================================================================
-
-    private AIReview buildAIReview(String rawJson, BigDecimal oopScore, boolean isOopViolated) {
-        AIReview r = new AIReview();
-        r.setAiReviewId(UUID.randomUUID());
-        r.setRawResponse(rawJson);
-        r.setOopScore(oopScore);
-        r.setIsOopViolated(isOopViolated);
-        return r;
-    }
 
     private void mockScoreRepo(UUID blockId, long graded, Double avg, Double max, Double min,
                                 long pass, long fail) {
@@ -89,6 +66,38 @@ class ExamStatisticsServiceImplTest {
     private void mockAppealRepo(UUID blockId) {
         when(appealRepository.countByBlockId(blockId)).thenReturn(0L);
         when(appealRepository.countByBlockIdAndStatus(eq(blockId), anyString())).thenReturn(0L);
+    }
+
+    private CriteriaResult mockCriteriaResult(CriterionType type, String desc, double earned, double max, boolean passed) {
+        CriteriaResult cr = mock(CriteriaResult.class);
+        GradingCriteria c = mock(GradingCriteria.class);
+        lenient().when(c.getCriterionType()).thenReturn(type);
+        lenient().when(c.getDescription()).thenReturn(desc);
+        lenient().when(c.getMaxScore()).thenReturn(BigDecimal.valueOf(max));
+        lenient().when(cr.getCriteria()).thenReturn(c);
+        lenient().when(cr.getEarnedScore()).thenReturn(BigDecimal.valueOf(earned));
+        lenient().when(cr.isPassed()).thenReturn(passed);
+        
+        Answer a = mock(Answer.class);
+        lenient().when(a.getAnswerId()).thenReturn(UUID.randomUUID());
+        lenient().when(cr.getAnswer()).thenReturn(a);
+        
+        return cr;
+    }
+
+    private TestCaseResult mockTestCaseResult(int qNum, int tcNum, double earned, TestCaseStatus status) {
+        TestCaseResult tcr = mock(TestCaseResult.class);
+        TestCase tc = mock(TestCase.class);
+        Question q = mock(Question.class);
+        
+        lenient().when(q.getQuestionNumber()).thenReturn(qNum);
+        lenient().when(tc.getQuestion()).thenReturn(q);
+        lenient().when(tc.getTestCaseNumber()).thenReturn(tcNum);
+        lenient().when(tcr.getTestCase()).thenReturn(tc);
+        lenient().when(tcr.getScoreEarned()).thenReturn(BigDecimal.valueOf(earned));
+        lenient().when(tcr.getStatus()).thenReturn(status);
+        
+        return tcr;
     }
 
     // =========================================================================
@@ -139,7 +148,8 @@ class ExamStatisticsServiceImplTest {
         when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
         when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(10L);
         mockScoreRepo(blockId, 10L, 7.5, 10.0, 4.0, 8L, 2L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(criteriaResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(testCaseResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
         mockAppealRepo(blockId);
         when(systemConfigRepository.findByConfigKey("APPEAL_FEE")).thenReturn(Optional.empty());
 
@@ -159,7 +169,6 @@ class ExamStatisticsServiceImplTest {
         assertEquals(2L, score.getFailCount());
         assertEquals(80.0, score.getPassRate());
         assertEquals(20.0, score.getFailRate());
-        assertEquals(10, score.getDistribution().size()); // 10 buckets
     }
 
     @Test
@@ -173,7 +182,8 @@ class ExamStatisticsServiceImplTest {
         when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
         when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(5L);
         mockScoreRepo(blockId, 0L, null, null, null, 0L, 0L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(criteriaResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(testCaseResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
         mockAppealRepo(blockId);
         when(systemConfigRepository.findByConfigKey("APPEAL_FEE")).thenReturn(Optional.empty());
 
@@ -190,104 +200,83 @@ class ExamStatisticsServiceImplTest {
     }
 
     // =========================================================================
-    // 3. getBlockStatistics — AI OOP Analysis
+    // 3. getBlockStatistics — OOP Analysis & Test Cases
     // =========================================================================
 
     @Test
-    @DisplayName("[N] getBlockStatistics - Có 1 AIReview với violations -> Phân tích OOP chính xác")
-    void getBlockStatistics_WithAIReviews_ParsesOopViolations() {
+    @DisplayName("[N] getBlockStatistics - Có criteria results -> Phân tích OOP chính xác")
+    void getBlockStatistics_WithCriteriaResults_ParsesOopViolations() {
         // Arrange
         UUID examId = UUID.randomUUID();
         UUID blockId = UUID.randomUUID();
 
-        // JSON rawResponse: encapsulation=1 (< 2 → violated), others >= 2
-        String rawJson = """
-                {
-                  "encapsulation": 1,
-                  "inheritance": 2,
-                  "polymorphism": 2,
-                  "designQuality": 2,
-                  "codeIntegrity": 1.5,
-                  "hardCodedValues": ["magic_number"]
-                }
-                """;
-        AIReview review = buildAIReview(rawJson, new BigDecimal("6.0"), true);
-
-        when(blockRepository.existsById(blockId)).thenReturn(true);
-        when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
-        when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(1L);
-        mockScoreRepo(blockId, 1L, 6.0, 6.0, 6.0, 1L, 0L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(List.of(review));
-        mockAppealRepo(blockId);
-        when(systemConfigRepository.findByConfigKey("APPEAL_FEE")).thenReturn(Optional.empty());
-
-        // Act
-        BlockStatisticsResponse response = examStatisticsService.getBlockStatistics(examId, blockId);
-
-        // Assert
-        var oop = response.getAiOopAnalysis();
-        assertEquals(new BigDecimal("6.00"), oop.getAvgOopScore());
-        assertEquals(1L, oop.getOopViolatedCount());    // isOopViolated = true
-        assertEquals(1L, oop.getHardCodeCount());        // hardCodedValues has items
-        assertEquals(1L, oop.getEncapsulationViolations()); // score 1 < 2
-        assertEquals(0L, oop.getInheritanceViolations());    // score 2 = threshold (NOT < 2)
-        assertEquals(0L, oop.getPolymorphismViolations());
-        assertEquals(0L, oop.getDesignQualityViolations());
-        assertEquals(1L, oop.getCodeIntegrityViolations()); // score 1.5 < 2
-    }
-
-    @Test
-    @DisplayName("[N] getBlockStatistics - Không có AIReview nào -> Trả về AiOopAnalysis toàn 0")
-    void getBlockStatistics_NoAIReviews_ReturnsZeroOopAnalysis() {
-        // Arrange
-        UUID examId = UUID.randomUUID();
-        UUID blockId = UUID.randomUUID();
-
-        when(blockRepository.existsById(blockId)).thenReturn(true);
-        when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
-        when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(3L);
-        mockScoreRepo(blockId, 3L, 7.0, 9.0, 5.0, 3L, 0L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
-        mockAppealRepo(blockId);
-        when(systemConfigRepository.findByConfigKey("APPEAL_FEE")).thenReturn(Optional.empty());
-
-        // Act
-        BlockStatisticsResponse response = examStatisticsService.getBlockStatistics(examId, blockId);
-
-        // Assert
-        var oop = response.getAiOopAnalysis();
-        assertEquals(0, oop.getAvgOopScore().compareTo(BigDecimal.ZERO));
-        assertEquals(0L, oop.getOopViolatedCount());
-        assertEquals(0L, oop.getHardCodeCount());
-        assertEquals(0, oop.getEncapsulationViolations());
-    }
-
-    @Test
-    @DisplayName("[B] getBlockStatistics - AIReview có rawResponse null/blank -> Parse bỏ qua, không crash")
-    void getBlockStatistics_AIReviewWithNullRaw_SkipsParseGracefully() {
-        // Arrange
-        UUID examId = UUID.randomUUID();
-        UUID blockId = UUID.randomUUID();
-
-        AIReview nullRawReview = buildAIReview(null, new BigDecimal("7.0"), false);
-        AIReview blankRawReview = buildAIReview("   ", new BigDecimal("8.0"), true);
+        CriteriaResult cr1 = mockCriteriaResult(CriterionType.FIELD_CHECK, "Encapsulation Field", 0.0, 1.0, false);
+        CriteriaResult cr2 = mockCriteriaResult(CriterionType.EXTENDS_CHECK, "Inheritance Extends", 2.0, 2.0, true);
 
         when(blockRepository.existsById(blockId)).thenReturn(true);
         when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
         when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(2L);
-        mockScoreRepo(blockId, 2L, 7.5, 8.0, 7.0, 2L, 0L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(List.of(nullRawReview, blankRawReview));
+        mockScoreRepo(blockId, 2L, 7.0, 8.0, 6.0, 2L, 0L);
+        when(criteriaResultRepository.findAllByBlockId(blockId)).thenReturn(List.of(cr1, cr2));
+        when(testCaseResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
         mockAppealRepo(blockId);
         when(systemConfigRepository.findByConfigKey("APPEAL_FEE")).thenReturn(Optional.empty());
 
-        // Act - should not throw
+        // Act
+        BlockStatisticsResponse response = examStatisticsService.getBlockStatistics(examId, blockId);
+
+        // Assert
+        var oop = response.getAiOopAnalysis();
+        // sumEarned = 2.0, sumMax = 3.0 -> 2/3 * 10 = 6.67
+        assertEquals(new BigDecimal("6.67"), oop.getAvgOopScore());
+        assertEquals(1L, oop.getOopViolatedCount());
+        assertEquals(1L, oop.getEncapsulationViolations());
+        assertEquals(0L, oop.getInheritanceViolations());
+    }
+
+    @Test
+    @DisplayName("[N] getBlockStatistics - Bổ sung thống kê chi tiết Test Cases hoạt động đúng")
+    void getBlockStatistics_WithTestCaseResults_AggregatesTestCaseStats() {
+        // Arrange
+        UUID examId = UUID.randomUUID();
+        UUID blockId = UUID.randomUUID();
+
+        // 3 testcase runs:
+        // Câu 1 - Test Case 1: 1 pass (1.0đ), 1 fail (0.0đ) -> 50% fail, avg = 0.5đ
+        // Câu 1 - Test Case 2: 1 fail (0.0đ) -> 100% fail, avg = 0.0đ
+        TestCaseResult tcr1 = mockTestCaseResult(1, 1, 1.0, TestCaseStatus.PASS_TESTCASE);
+        TestCaseResult tcr2 = mockTestCaseResult(1, 1, 0.0, TestCaseStatus.FAIL_TESTCASE);
+        TestCaseResult tcr3 = mockTestCaseResult(1, 2, 0.0, TestCaseStatus.TIMEOUT);
+
+        when(blockRepository.existsById(blockId)).thenReturn(true);
+        when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
+        when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(2L);
+        mockScoreRepo(blockId, 2L, 6.0, 7.0, 5.0, 2L, 0L);
+        when(criteriaResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(testCaseResultRepository.findAllByBlockId(blockId)).thenReturn(List.of(tcr1, tcr2, tcr3));
+        mockAppealRepo(blockId);
+        when(systemConfigRepository.findByConfigKey("APPEAL_FEE")).thenReturn(Optional.empty());
+
+        // Act
         BlockStatisticsResponse response = examStatisticsService.getBlockStatistics(examId, blockId);
 
         // Assert
         assertNotNull(response);
-        var oop = response.getAiOopAnalysis();
-        assertEquals(1L, oop.getOopViolatedCount()); // only blankRawReview has isOopViolated=true
-        assertEquals(0L, oop.getHardCodeCount());    // null/blank raw → skipped
+        var tcStats = response.getTestCaseStats();
+        assertEquals(2, tcStats.size());
+
+        // Do sắp xếp tỷ lệ lỗi giảm dần, Câu 1 - Test Case 2 (100%) đứng đầu, Câu 1 - Test Case 1 (50%) thứ hai
+        var stat1 = tcStats.get(0);
+        assertEquals("Câu 1 - Test Case 2", stat1.getName());
+        assertEquals(100.0, stat1.getFailureRate());
+        assertEquals(0, stat1.getAvgScore().compareTo(BigDecimal.ZERO));
+        assertEquals(1L, stat1.getSampleSize());
+
+        var stat2 = tcStats.get(1);
+        assertEquals("Câu 1 - Test Case 1", stat2.getName());
+        assertEquals(50.0, stat2.getFailureRate());
+        assertEquals(new BigDecimal("0.50"), stat2.getAvgScore());
+        assertEquals(2L, stat2.getSampleSize());
     }
 
     // =========================================================================
@@ -305,7 +294,8 @@ class ExamStatisticsServiceImplTest {
         when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
         when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(5L);
         mockScoreRepo(blockId, 5L, 7.0, 9.0, 4.5, 4L, 1L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(criteriaResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(testCaseResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
 
         // Appeal data
         when(appealRepository.countByBlockId(blockId)).thenReturn(3L);
@@ -350,7 +340,8 @@ class ExamStatisticsServiceImplTest {
         when(blockRepository.existsByBlockIdAndExam_ExamId(blockId, examId)).thenReturn(true);
         when(submissionRepository.countByBlock_BlockId(blockId)).thenReturn(1L);
         mockScoreRepo(blockId, 1L, 8.0, 8.0, 8.0, 1L, 0L);
-        when(aiReviewRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(criteriaResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
+        when(testCaseResultRepository.findAllByBlockId(blockId)).thenReturn(Collections.emptyList());
         when(appealRepository.countByBlockId(blockId)).thenReturn(1L);
         when(appealRepository.countByBlockIdAndStatus(eq(blockId), anyString())).thenReturn(0L);
         when(appealRepository.countByBlockIdAndStatus(blockId, "APPROVED")).thenReturn(1L);

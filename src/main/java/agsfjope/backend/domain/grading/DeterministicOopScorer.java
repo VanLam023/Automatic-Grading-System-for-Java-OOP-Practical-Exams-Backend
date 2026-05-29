@@ -141,7 +141,10 @@ public class DeterministicOopScorer {
             case FIELD_CHECK,          // encapsulation: private field
             GETTER_SETTER,             // encapsulation: access methods
             EXTENDS_CHECK,             // inheritance
-            IMPLEMENTS_CHECK           // polymorphism
+            IMPLEMENTS_CHECK,          // polymorphism
+            CONSTRUCTOR_CHECK,         // constructor signature impacts OOP design
+            CLASS_EXISTS,              // missing class indicates structural violation
+            INTERFACE_EXISTS           // missing interface indicates structural violation
                 -> true;
             default -> false;
         };

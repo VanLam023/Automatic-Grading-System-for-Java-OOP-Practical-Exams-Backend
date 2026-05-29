@@ -4,6 +4,7 @@ import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsRes
 import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse.*;
 import agsfjope.backend.application.examstatisticsservices.ExamStatisticsService;
 import agsfjope.backend.core.entities.CriteriaResult;
+import agsfjope.backend.core.entities.TestCaseResult;
 import agsfjope.backend.core.enums.CriterionType;
 import agsfjope.backend.core.exceptions.auth.NotFoundException;
 import agsfjope.backend.core.repositories.appeal.AppealRepository;
@@ -11,6 +12,7 @@ import agsfjope.backend.core.repositories.block.BlockRepository;
 import agsfjope.backend.core.repositories.config.SystemConfigRepository;
 import agsfjope.backend.core.repositories.grading.CriteriaResultRepository;
 import agsfjope.backend.core.repositories.grading.GradingResultRepository;
+import agsfjope.backend.core.repositories.grading.TestCaseResultRepository;
 import agsfjope.backend.core.repositories.submission.SubmissionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +64,7 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
     private final SubmissionRepository     submissionRepository;
     private final GradingResultRepository  gradingResultRepository;
     private final CriteriaResultRepository criteriaResultRepository;
+    private final TestCaseResultRepository testCaseResultRepository;
     private final AppealRepository         appealRepository;
     private final SystemConfigRepository   systemConfigRepository;
 
@@ -80,6 +83,7 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
         ScoreAnalysis         scoreAnalysis   = buildScoreAnalysis(blockId, gradedSubmissions);
         AiOopAnalysis         aiOopAnalysis   = buildAiOopAnalysis(blockId);
         AppealFinancialAnalysis appealFinancial = buildAppealFinancial(blockId);
+        List<TestCaseStat>    testCaseStats   = buildTestCaseStats(blockId);
 
         return BlockStatisticsResponse.builder()
                 .totalSubmissions(totalSubmissions)
@@ -87,6 +91,7 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                 .scoreAnalysis(scoreAnalysis)
                 .aiOopAnalysis(aiOopAnalysis)
                 .appealFinancial(appealFinancial)
+                .testCaseStats(testCaseStats)
                 .build();
     }
 
@@ -328,6 +333,70 @@ public class ExamStatisticsServiceImpl implements ExamStatisticsService {
                     catch (Exception e) { return new BigDecimal("200000"); }
                 })
                 .orElse(new BigDecimal("200000"));
+    }
+
+    // ─── TEST CASE ANALYSIS ──────────────────────────────────────────────────
+
+    private List<TestCaseStat> buildTestCaseStats(UUID blockId) {
+        List<TestCaseResult> results = testCaseResultRepository.findAllByBlockId(blockId);
+
+        if (results.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, TestCaseAccumulator> map = new LinkedHashMap<>();
+
+        for (TestCaseResult tcr : results) {
+            if (tcr.getTestCase() == null || tcr.getTestCase().getQuestion() == null) {
+                continue;
+            }
+            Integer qNum = tcr.getTestCase().getQuestion().getQuestionNumber();
+            Integer tcNum = tcr.getTestCase().getTestCaseNumber();
+            String name = "Câu " + qNum + " - Test Case " + tcNum;
+
+            BigDecimal earned = tcr.getScoreEarned() != null ? tcr.getScoreEarned() : BigDecimal.ZERO;
+            boolean failed = tcr.getStatus() != agsfjope.backend.core.enums.TestCaseStatus.PASS_TESTCASE;
+
+            map.computeIfAbsent(name, k -> new TestCaseAccumulator()).add(earned, failed);
+        }
+
+        return map.entrySet().stream()
+                .map(e -> {
+                    String name = e.getKey();
+                    TestCaseAccumulator acc = e.getValue();
+                    long sample = acc.sampleSize;
+                    BigDecimal avg = BigDecimal.ZERO;
+                    if (sample > 0) {
+                        avg = acc.sumEarned.divide(BigDecimal.valueOf(sample), 2, RoundingMode.HALF_UP);
+                    }
+                    double rate = sample > 0 ? round(acc.failureCount * 100.0 / sample) : 0.0;
+
+                    return TestCaseStat.builder()
+                            .name(name)
+                            .avgScore(avg)
+                            .failureCount(acc.failureCount)
+                            .failureRate(rate)
+                            .sampleSize(sample)
+                            .build();
+                })
+                .sorted((a, b) -> Double.compare(b.getFailureRate(), a.getFailureRate()))
+                .toList();
+    }
+
+    private static final class TestCaseAccumulator {
+        private BigDecimal sumEarned = BigDecimal.ZERO;
+        private long failureCount = 0;
+        private long sampleSize = 0;
+
+        private void add(BigDecimal earned, boolean failed) {
+            if (earned != null) {
+                sumEarned = sumEarned.add(earned);
+            }
+            sampleSize++;
+            if (failed) {
+                failureCount++;
+            }
+        }
     }
 
     // ─── UTILITIES ──────────────────────────────────────────────────────────

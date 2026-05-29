@@ -118,12 +118,29 @@ public class GradingCriteriaService {
     public List<GradingCriteriaResponse> saveBatch(UUID questionId, List<GradingCriteriaRequest> requests) {
         Question question = findQuestionOrThrow(questionId);
 
-        // Delete existing criteria for this question
+        // Load existing criteria
         List<GradingCriteria> existing = criteriaRepo.findByQuestion_QuestionIdOrderByDisplayOrderAsc(questionId);
+
+        // If frontend sent an empty list intentionally (e.g. user continued without changes),
+        // do NOT delete existing criteria. Return current list unchanged.
+        if (requests == null || requests.isEmpty()) {
+            log.info("[Criteria] Empty batch received for question {} — preserving {} existing criteria", questionId, existing.size());
+            return existing.stream().map(GradingCriteriaResponse::from).toList();
+        }
+
+        // Validate total max score matches question.maxScore
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        for (GradingCriteriaRequest r : requests) {
+            if (r.getMaxScore() != null) total = total.add(r.getMaxScore());
+        }
+        if (question.getMaxScore() == null || total.compareTo(question.getMaxScore()) != 0) {
+            throw new IllegalArgumentException("Tổng điểm của các tiêu chí (" + total + ") phải bằng điểm tối đa của câu hỏi (" + question.getMaxScore() + ").");
+        }
+
+        // Delete existing and re-insert with fresh displayOrder
         criteriaRepo.deleteAll(existing);
         criteriaRepo.flush();
 
-        // Re-insert with fresh displayOrder
         List<GradingCriteria> toSave = new java.util.ArrayList<>();
         for (int i = 0; i < requests.size(); i++) {
             GradingCriteriaRequest req = requests.get(i);

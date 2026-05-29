@@ -123,12 +123,20 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
 
         ClassOrInterfaceDeclaration cls = clsOpt.get();
 
-        for (MethodDeclaration method : cls.getMethods()) {
-            if (!method.getNameAsString().equals(methodName)) continue;
+        List<MethodDeclaration> sameNameMethods = cls.getMethods().stream()
+                .filter(m -> m.getNameAsString().equals(methodName))
+                .toList();
+
+        String lastMismatchReason = null;
+
+        for (MethodDeclaration method : sameNameMethods) {
 
             if (!expectedParams.isEmpty()) {
                 List<Parameter> actualParams = method.getParameters();
-                if (actualParams.size() != expectedParams.size()) continue;
+                if (actualParams.size() != expectedParams.size()) {
+                    lastMismatchReason = "Phương thức " + methodName + " có số lượng tham số chưa đúng.";
+                    continue;
+                }
                 boolean paramsOk = true;
                 for (int i = 0; i < actualParams.size(); i++) {
                     if (!normalizeType(actualParams.get(i).getTypeAsString())
@@ -137,15 +145,18 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
                         break;
                     }
                 }
-                if (!paramsOk) continue;
+                if (!paramsOk) {
+                    lastMismatchReason = "Phương thức " + methodName + " có kiểu tham số chưa đúng.";
+                    continue;
+                }
             }
 
             if (expectedReturn != null) {
                 String actualReturn = method.getTypeAsString();
                 if (!normalizeType(actualReturn).equalsIgnoreCase(normalizeType(expectedReturn))) {
-                    return fail(answer, criteria,
-                            "Phương thức " + methodName + " có kiểu trả về chưa đúng. "
-                            + "Yêu cầu: " + expectedReturn + ". Hiện tại: " + actualReturn + ".");
+                    lastMismatchReason = "Phương thức " + methodName + " có kiểu trả về chưa đúng. "
+                        + "Yêu cầu: " + expectedReturn + ". Hiện tại: " + actualReturn + ".";
+                    continue;
                 }
             }
 
@@ -156,9 +167,9 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
                     String current = method.getModifiers().stream()
                             .map(m -> m.getKeyword().asString())
                             .collect(Collectors.joining(", "));
-                    return fail(answer, criteria,
-                            "Phương thức " + methodName + " có phạm vi truy cập chưa đúng. "
-                            + "Yêu cầu: " + accessModifier + ". Hiện tại: " + (current.isBlank() ? "package-private" : current) + ".");
+                    lastMismatchReason = "Phương thức " + methodName + " có phạm vi truy cập chưa đúng. "
+                        + "Yêu cầu: " + accessModifier + ". Hiện tại: " + (current.isBlank() ? "package-private" : current) + ".";
+                    continue;
                 }
             }
 
@@ -167,13 +178,17 @@ public class MethodSignatureHandler extends AbstractCriterionHandler {
                 boolean hasOverride = method.getAnnotations().stream()
                         .anyMatch(a -> a.getNameAsString().equals("Override"));
                 if (!hasOverride) {
-                    return fail(answer, criteria,
-                            "Phương thức " + methodName + " thiếu annotation @Override.");
+                    lastMismatchReason = "Phương thức " + methodName + " thiếu annotation @Override.";
+                    continue;
                 }
             }
 
             return pass(answer, criteria, "Phương thức " + methodName + " được khai báo đúng.");
         }
+
+            if (!sameNameMethods.isEmpty() && lastMismatchReason != null) {
+                return fail(answer, criteria, lastMismatchReason);
+            }
 
         String found = cls.getMethods().stream()
                 .map(m -> m.getNameAsString() + "(" + m.getParameters().stream()

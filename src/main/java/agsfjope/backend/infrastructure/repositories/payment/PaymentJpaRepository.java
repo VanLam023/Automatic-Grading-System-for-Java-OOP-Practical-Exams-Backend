@@ -96,4 +96,66 @@ public interface PaymentJpaRepository extends JpaRepository<Payment, UUID> {
     void updateStatus(@Param("paymentId") UUID paymentId,
                       @Param("status") PaymentStatus status,
                       @Param("now") OffsetDateTime now);
+
+    /**
+     * Tìm tất cả Payments trên hệ thống có lọc theo khoảng thời gian và từ khóa tìm kiếm.
+     *
+     * @param from   Thời điểm bắt đầu (inclusive)
+     * @param to     Thời điểm kết thúc (inclusive)
+     * @param search Từ khóa tìm kiếm (tên, email, MSSV của sinh viên nộp tiền hoặc PayOS Order ID)
+     * @return Danh sách giao dịch phù hợp, sắp xếp giảm dần theo thời gian tạo.
+     */
+    @Query(value = """
+            SELECT p.* FROM Payments p
+            LEFT JOIN Users u ON p.StudentID = u.UserID
+            WHERE p.CreatedAt >= :from
+              AND p.CreatedAt <= :to
+              AND (
+                   :search = ''
+                   OR LOWER(COALESCE(u.FullName, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(u.Email, ''))    LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(u.MSSV, ''))     LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(p.PayosOrderID,'')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  )
+            ORDER BY p.CreatedAt DESC
+            """,
+           countQuery = """
+            SELECT COUNT(*) FROM Payments p
+            LEFT JOIN Users u ON p.StudentID = u.UserID
+            WHERE p.CreatedAt >= :from
+              AND p.CreatedAt <= :to
+              AND (
+                   :search = ''
+                   OR LOWER(COALESCE(u.FullName, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(u.Email, ''))    LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(u.MSSV, ''))     LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(p.PayosOrderID,'')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  )
+            """,
+           nativeQuery = true)
+    org.springframework.data.domain.Page<Payment> findAllPaymentsPaged(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to,
+            @Param("search") String search,
+            org.springframework.data.domain.Pageable pageable);
+
+    @Query(value = """
+            SELECT p.* FROM Payments p
+            LEFT JOIN Users u ON p.StudentID = u.UserID
+            WHERE p.CreatedAt >= :from
+              AND p.CreatedAt <= :to
+              AND (
+                   :search = ''
+                   OR LOWER(COALESCE(u.FullName, '')) LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(u.Email, ''))    LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(u.MSSV, ''))     LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(COALESCE(p.PayosOrderID,'')) LIKE LOWER(CONCAT('%', :search, '%'))
+                  )
+            ORDER BY p.CreatedAt DESC
+            """, nativeQuery = true)
+    List<Payment> findAllPayments(
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to,
+            @Param("search") String search);
 }
+

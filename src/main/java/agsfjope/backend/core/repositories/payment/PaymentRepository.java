@@ -2,6 +2,8 @@ package agsfjope.backend.core.repositories.payment;
 
 import agsfjope.backend.core.entities.Payment;
 import agsfjope.backend.core.enums.PaymentStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -91,4 +93,14 @@ public interface PaymentRepository {
      * @param newStatus trạng thái mới (SUCCESS / FAILED / REFUNDED)
      */
     void updateStatus(UUID paymentId, PaymentStatus newStatus);
+
+    /**
+     * Lấy toàn bộ danh sách giao dịch có lọc theo khoảng thời gian và tìm kiếm.
+     */
+    List<Payment> findAllPayments(OffsetDateTime from, OffsetDateTime to, String search);
+
+    /**
+     * Lấy danh sách giao dịch có phân trang (admin view).
+     */
+    Page<Payment> findAllPaymentsPaged(OffsetDateTime from, OffsetDateTime to, String search, Pageable pageable);
 }

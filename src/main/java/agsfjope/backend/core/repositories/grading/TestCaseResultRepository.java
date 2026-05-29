@@ -48,4 +48,17 @@ public interface TestCaseResultRepository extends JpaRepository<TestCaseResult, 
     @Transactional
     @Query("DELETE FROM TestCaseResult tcr WHERE tcr.answer.submission.submissionId = :submissionId")
     void deleteByAnswer_Submission_SubmissionId(@Param("submissionId") UUID submissionId);
+
+    /**
+     * Find all test case results for all submissions in a specific block.
+     * Eagerly fetches testCase and question to avoid N+1 queries.
+     *
+     * @param blockId the block's UUID
+     * @return list of test case results for the block
+     */
+    @Query("SELECT tcr FROM TestCaseResult tcr " +
+           "JOIN FETCH tcr.testCase tc " +
+           "JOIN FETCH tc.question q " +
+           "WHERE tcr.answer.submission.block.blockId = :blockId")
+    List<TestCaseResult> findAllByBlockId(@Param("blockId") UUID blockId);
 }

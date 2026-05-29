@@ -4,6 +4,7 @@ import agsfjope.backend.application.dtos.responses.grading.AnswerGradingDetail;
 import agsfjope.backend.application.dtos.responses.grading.GradingResultResponse;
 import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse;
 import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse.ScoreBucket;
+import agsfjope.backend.application.dtos.responses.statistics.BlockStatisticsResponse.TestCaseStat;
 import agsfjope.backend.application.examstatisticsservices.ExamStatisticsService;
 import agsfjope.backend.application.gradingservices.GradingQueryService;
 import lombok.RequiredArgsConstructor;
@@ -88,6 +89,7 @@ public class ExcelExportService {
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
             XSSFSheet sheet = workbook.createSheet("Bảng Điểm");
+            sheet.setDisplayGridlines(true);
 
             // ── Xác định số câu hỏi tối đa (để tạo cột động) ──────────────────
             int maxQuestions = results.stream()
@@ -234,6 +236,9 @@ public class ExcelExportService {
             // ── Sheet 4: Phúc Khảo & Tài Chính + Pie Chart ──────────────────────
             buildAppealFinancialSheet(workbook, stats, blockName, semester);
 
+            // ── Sheet 5: Chi Tiết Test Case ──────────────────────────────────────
+            buildTestCaseStatsSheet(workbook, stats, blockName, semester);
+
             return toBytes(workbook);
         }
     }
@@ -264,6 +269,7 @@ public class ExcelExportService {
     private void buildOverviewSheet(XSSFWorkbook wb, BlockStatisticsResponse stats,
                                     String blockName, String semester) {
         XSSFSheet sheet = wb.createSheet("Tổng Quan");
+        sheet.setDisplayGridlines(true);
 
         CellStyle labelStyle  = createLabelStyle(wb);
         CellStyle valueStyle  = createValueStyle(wb);
@@ -294,6 +300,7 @@ public class ExcelExportService {
     private void buildScoreAnalysisSheet(XSSFWorkbook wb, BlockStatisticsResponse stats,
                                           String blockName, String semester) {
         XSSFSheet sheet = wb.createSheet("Phân Tích Điểm");
+        sheet.setDisplayGridlines(true);
         var sa = stats.getScoreAnalysis();
 
         CellStyle labelStyle = createLabelStyle(wb);
@@ -353,6 +360,7 @@ public class ExcelExportService {
     private void buildAiOopSheet(XSSFWorkbook wb, BlockStatisticsResponse stats,
                                    String blockName, String semester) {
         XSSFSheet sheet = wb.createSheet("Phân Tích AI OOP");
+        sheet.setDisplayGridlines(true);
         var ai = stats.getAiOopAnalysis();
 
         CellStyle labelStyle = createLabelStyle(wb);
@@ -416,6 +424,7 @@ public class ExcelExportService {
     private void buildAppealFinancialSheet(XSSFWorkbook wb, BlockStatisticsResponse stats,
                                             String blockName, String semester) {
         XSSFSheet sheet = wb.createSheet("Phúc Khảo & Tài Chính");
+        sheet.setDisplayGridlines(true);
         var af = stats.getAppealFinancial();
 
         CellStyle labelStyle = createLabelStyle(wb);
@@ -447,6 +456,86 @@ public class ExcelExportService {
                             af.getApprovedCount(), af.getDeniedCount()},
                 "Trạng Thái Phúc Khảo",
                 14, 0, 30, 14);
+    }
+
+    /** Sheet 5: Chi Tiết Test Case + Bar Chart */
+    private void buildTestCaseStatsSheet(XSSFWorkbook wb, BlockStatisticsResponse stats,
+                                         String blockName, String semester) {
+        XSSFSheet sheet = wb.createSheet("Chi Tiết Test Case");
+        sheet.setDisplayGridlines(true);
+        var tcStats = stats.getTestCaseStats();
+
+        CellStyle labelStyle = createLabelStyle(wb);
+        CellStyle valueStyle = createValueStyle(wb);
+        CellStyle titleStyle = createTitleStyle(wb);
+        CellStyle hdrStyle   = createHeaderStyle(wb, COLOR_HEADER);
+        CellStyle scoreStyle = createScoreStyle(wb, null);
+        CellStyle normalStyle = createDataStyle(wb, null);
+
+        addSheetTitle(sheet, "Phân Tích Chi Tiết Lỗi & Hiệu Năng Test Case — " + blockName + " [" + semester + "]", titleStyle, 7);
+
+        int row = 2;
+        Row hdr = sheet.createRow(row++);
+        hdr.setHeightInPoints(20);
+        createStyledCell(hdr, 0, "STT",          hdrStyle);
+        createStyledCell(hdr, 1, "Tên Test Case", hdrStyle);
+        createStyledCell(hdr, 2, "Điểm TB",       hdrStyle);
+        createStyledCell(hdr, 3, "Số lượt lỗi",   hdrStyle);
+        createStyledCell(hdr, 4, "Tỷ lệ lỗi",     hdrStyle);
+        createStyledCell(hdr, 5, "Tỷ lệ đạt",     hdrStyle);
+        createStyledCell(hdr, 6, "Số lượt chạy",   hdrStyle);
+
+        if (tcStats != null && !tcStats.isEmpty()) {
+            // Sắp xếp tự động từ Test Case dễ nhất (tỷ lệ thành công cao nhất/lỗi thấp nhất) đến khó nhất
+            List<TestCaseStat> sortedList = new ArrayList<>(tcStats);
+            sortedList.sort(Comparator.comparingDouble(TestCaseStat::getFailureRate));
+
+            for (int i = 0; i < sortedList.size(); i++) {
+                TestCaseStat tc = sortedList.get(i);
+                Row r = sheet.createRow(row++);
+                r.setHeightInPoints(16);
+
+                double failRate = tc.getFailureRate();
+                double successRate = Math.max(0, 100.0 - failRate);
+
+                createStyledCell(r, 0, String.valueOf(i + 1), normalStyle);
+                createStyledCell(r, 1, nullSafe(tc.getName()), normalStyle);
+
+                Cell avgCell = r.createCell(2);
+                avgCell.setCellValue(tc.getAvgScore() != null ? tc.getAvgScore().doubleValue() : 0.0);
+                avgCell.setCellStyle(scoreStyle);
+
+                Cell failCountCell = r.createCell(3);
+                failCountCell.setCellValue(tc.getFailureCount());
+                failCountCell.setCellStyle(scoreStyle);
+
+                createStyledCell(r, 4, pct(failRate), normalStyle);
+                createStyledCell(r, 5, pct(successRate), normalStyle);
+
+                Cell sampleCell = r.createCell(6);
+                sampleCell.setCellValue(tc.getSampleSize());
+                sampleCell.setCellStyle(scoreStyle);
+            }
+
+            // Đặt độ rộng cột
+            sheet.setColumnWidth(0, WIDTH_STT);
+            sheet.setColumnWidth(1, 32 * 256);
+            sheet.setColumnWidth(2, WIDTH_SCORE);
+            sheet.setColumnWidth(3, WIDTH_SCORE);
+            sheet.setColumnWidth(4, WIDTH_SCORE);
+            sheet.setColumnWidth(5, WIDTH_SCORE);
+            sheet.setColumnWidth(6, WIDTH_SCORE);
+
+            // Bar chart: Số lượt lỗi theo Test Case
+            addBarChart(sheet, wb,
+                    sortedList.stream().map(TestCaseStat::getName).toList(),
+                    sortedList.stream().mapToLong(TestCaseStat::getFailureCount).toArray(),
+                    "Số Lượt Lỗi Theo Test Case",
+                    row + 3, 0, row + 22, 12);
+        } else {
+            Row r = sheet.createRow(row++);
+            createStyledCell(r, 1, "Chưa có dữ liệu thống kê Test Case.", normalStyle);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

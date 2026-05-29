@@ -27,15 +27,24 @@ public class ExtendsCheckHandler extends AbstractCriterionHandler {
 
         ClassOrInterfaceDeclaration cls = clsOpt.get();
 
+        // Chuẩn hóa tên class cha cần kiểm tra (xóa mọi khoảng trắng để so sánh generics chính xác)
+        String targetParentNormalized = parentClass.replaceAll("\\s+", "");
+
         boolean extendsCorrectly = cls.getExtendedTypes().stream()
-                .anyMatch(ext -> ext.getNameAsString().equals(parentClass));
+                .anyMatch(ext -> {
+                    String actualName = ext.getNameAsString(); // ví dụ: ArrayList
+                    String actualFull = ext.toString();       // ví dụ: ArrayList<Book>
+                    
+                    return actualName.equalsIgnoreCase(parentClass.trim()) 
+                           || actualFull.replaceAll("\\s+", "").equalsIgnoreCase(targetParentNormalized);
+                });
 
         if (extendsCorrectly) {
             return pass(answer, criteria, "Class " + className + " kế thừa đúng từ " + parentClass + ".");
         }
 
         String actualExtends = cls.getExtendedTypes().stream()
-                .map(ext -> ext.getNameAsString())
+                .map(ext -> ext.toString())
                 .reduce((a, b) -> a + ", " + b)
                 .orElse("không có");
 

@@ -4,6 +4,8 @@ import agsfjope.backend.core.entities.Payment;
 import agsfjope.backend.core.enums.PaymentStatus;
 import agsfjope.backend.core.repositories.payment.PaymentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
@@ -68,5 +70,15 @@ public class PaymentRepositoryImpl implements PaymentRepository {
     public void updateStatus(UUID paymentId, PaymentStatus newStatus) {
         // Gọi custom JPQL UPDATE để tránh phải load toàn bộ entity
         paymentJpaRepository.updateStatus(paymentId, newStatus, OffsetDateTime.now());
+    }
+
+    @Override
+    public List<Payment> findAllPayments(OffsetDateTime from, OffsetDateTime to, String search) {
+        return paymentJpaRepository.findAllPayments(from, to, search);
+    }
+
+    @Override
+    public Page<Payment> findAllPaymentsPaged(OffsetDateTime from, OffsetDateTime to, String search, Pageable pageable) {
+        return paymentJpaRepository.findAllPaymentsPaged(from, to, search, pageable);
     }
 }
