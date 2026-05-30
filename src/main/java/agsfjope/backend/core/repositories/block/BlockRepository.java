@@ -79,5 +79,25 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
     @Query("SELECT b FROM Block b JOIN FETCH b.exam e WHERE e.deletedAt IS NULL " +
            "ORDER BY e.semester DESC, e.name ASC, b.name ASC")
     List<Block> findAllWithExamOrderBySemesterDesc();
-}
 
+
+    /**
+     * Tìm các block khác trong cùng kỳ thi có khoảng thời gian bị chồng với khoảng thời gian đang chọn.
+     * Điều kiện overlap: newStart < existingEnd && newEnd > existingStart.
+     */
+    @Query("""
+           SELECT b FROM Block b
+           WHERE b.exam.examId = :examId
+             AND b.blockId <> :blockId
+             AND b.startTime IS NOT NULL
+             AND b.endTime IS NOT NULL
+             AND :startTime < b.endTime
+             AND :endTime > b.startTime
+           ORDER BY b.startTime ASC
+           """)
+    List<Block> findOverlappingBlocksInExam(@Param("examId") UUID examId,
+                                            @Param("blockId") UUID blockId,
+                                            @Param("startTime") java.time.OffsetDateTime startTime,
+                                            @Param("endTime") java.time.OffsetDateTime endTime);
+
+}

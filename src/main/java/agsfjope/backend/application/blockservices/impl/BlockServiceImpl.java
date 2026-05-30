@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -40,6 +41,8 @@ public class BlockServiceImpl implements BlockService {
 
     private static final String BLOCK_10 = "Block 10";
     private static final String BLOCK_3  = "Block 3";
+    private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final DateTimeFormatter BLOCK_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
     private final BlockRepository      blockRepository;
     private final ExamRepository       examRepository;
@@ -166,7 +169,7 @@ public class BlockServiceImpl implements BlockService {
 
         Exam exam = block.getExam();
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        OffsetDateTime now = OffsetDateTime.now(VIETNAM_ZONE);
 
         // If block already passed, use a dedicated message
         if (block.getEndTime() != null && now.isAfter(block.getEndTime())) {
@@ -203,6 +206,8 @@ public class BlockServiceImpl implements BlockService {
             );
         }
 
+        validateNoOverlapWithinExam(examId, blockId, request.getStartTime(), request.getEndTime());
+
         // Apply updates
         block.setExamDate(request.getExamDate());
         block.setStartTime(request.getStartTime());
@@ -211,6 +216,28 @@ public class BlockServiceImpl implements BlockService {
         blockRepository.save(block);
         log.info("Updated schedule for {} of exam '{}'", block.getName(), exam.getName());
         return mapToResponse(block);
+    }
+
+    private void validateNoOverlapWithinExam(UUID examId, UUID blockId, OffsetDateTime startTime, OffsetDateTime endTime) {
+        List<Block> overlappingBlocks = blockRepository.findOverlappingBlocksInExam(examId, blockId, startTime, endTime);
+        if (overlappingBlocks.isEmpty()) {
+            return;
+        }
+
+        Block conflictingBlock = overlappingBlocks.get(0);
+        throw new IllegalArgumentException(buildOverlappingBlockMessage(conflictingBlock));
+    }
+
+    private String buildOverlappingBlockMessage(Block conflictingBlock) {
+        String startLabel = formatBlockTime(conflictingBlock.getStartTime());
+        String endLabel = formatBlockTime(conflictingBlock.getEndTime());
+        return "Có block thi \"" + conflictingBlock.getName() + "\" diễn ra vào "
+                + startLabel + " đến " + endLabel
+                + ", vui lòng chọn khoảng thời gian khác.";
+    }
+
+    private String formatBlockTime(OffsetDateTime time) {
+        return time.atZoneSameInstant(VIETNAM_ZONE).format(BLOCK_TIME_FORMATTER);
     }
 
     // ─── DELETE ───────────────────────────────────────────────────────────
@@ -242,7 +269,7 @@ public class BlockServiceImpl implements BlockService {
 
         // Cannot delete if block is within 7 days of start
         if (block.getStartTime() != null) {
-            OffsetDateTime now = OffsetDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+            OffsetDateTime now = OffsetDateTime.now(VIETNAM_ZONE);
             OffsetDateTime lockAt = block.getStartTime().minusDays(7);
             if (!now.isBefore(lockAt)) {
                 throw new IllegalArgumentException(
