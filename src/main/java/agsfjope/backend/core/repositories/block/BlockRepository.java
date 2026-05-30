@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,7 +37,7 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
      * @return true if at least one block starts on or before the threshold
      */
     @Query("SELECT COUNT(b) > 0 FROM Block b WHERE b.exam.examId = :examId AND b.startTime <= :threshold")
-    boolean existsBlockStartingOnOrBefore(@Param("examId") UUID examId, @Param("threshold") java.time.OffsetDateTime threshold);
+    boolean existsBlockStartingOnOrBefore(@Param("examId") UUID examId, @Param("threshold") OffsetDateTime threshold);
 
     /**
      * Checks if a block belongs to a specific exam.
@@ -64,7 +65,7 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
      * Tìm tất cả các Block có thời gian bắt đầu trong một khoảng thời gian nhất định (window).
      * Dùng cho Scheduler để nhắc nhở kỳ thi sắp mở.
      */
-    List<Block> findByStartTimeBetween(java.time.OffsetDateTime after, java.time.OffsetDateTime before);
+    List<Block> findByStartTimeBetween(OffsetDateTime after, OffsetDateTime before);
 
     /** Kiểm tra tên block đã tồn tại trong exam chưa (unique constraint ExamID + Name). */
     boolean existsByExam_ExamIdAndName(UUID examId, String name);
@@ -80,24 +81,22 @@ public interface BlockRepository extends JpaRepository<Block, UUID> {
            "ORDER BY e.semester DESC, e.name ASC, b.name ASC")
     List<Block> findAllWithExamOrderBySemesterDesc();
 
-
     /**
-     * Tìm các block khác trong cùng kỳ thi có khoảng thời gian bị chồng với khoảng thời gian đang chọn.
-     * Điều kiện overlap: newStart < existingEnd && newEnd > existingStart.
+     * Tìm block bị chồng thời gian với khoảng thời gian truyền vào trên toàn hệ thống.
+     * Bao gồm cả block cùng kỳ thi lẫn block của kỳ thi khác, miễn là kỳ thi chưa bị xóa.
+     * Có thể loại trừ block hiện tại khi đang update bằng cách truyền currentBlockId.
      */
-    @Query("""
-           SELECT b FROM Block b
-           WHERE b.exam.examId = :examId
-             AND b.blockId <> :blockId
-             AND b.startTime IS NOT NULL
-             AND b.endTime IS NOT NULL
-             AND :startTime < b.endTime
-             AND :endTime > b.startTime
-           ORDER BY b.startTime ASC
-           """)
-    List<Block> findOverlappingBlocksInExam(@Param("examId") UUID examId,
-                                            @Param("blockId") UUID blockId,
-                                            @Param("startTime") java.time.OffsetDateTime startTime,
-                                            @Param("endTime") java.time.OffsetDateTime endTime);
-
+    @Query("SELECT b FROM Block b JOIN FETCH b.exam e " +
+           "WHERE e.deletedAt IS NULL " +
+           "AND (:currentBlockId IS NULL OR b.blockId <> :currentBlockId) " +
+           "AND b.startTime IS NOT NULL " +
+           "AND b.endTime IS NOT NULL " +
+           "AND :startTime < b.endTime " +
+           "AND :endTime > b.startTime " +
+           "ORDER BY b.startTime ASC")
+    List<Block> findOverlappingBlocksAcrossAllExams(
+            @Param("currentBlockId") UUID currentBlockId,
+            @Param("startTime") OffsetDateTime startTime,
+            @Param("endTime") OffsetDateTime endTime
+    );
 }

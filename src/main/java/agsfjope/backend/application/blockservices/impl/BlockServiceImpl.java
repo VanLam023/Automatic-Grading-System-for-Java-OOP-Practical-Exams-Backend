@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
  *   <li>Blocks are created manually by Exam Staff with custom names (unique within exam).</li>
  *   <li>Block.StartTime and Block.EndTime must fall within Exam.StartTime — Exam.EndTime.</li>
  *   <li>Block.EndTime must be strictly after Block.StartTime (also enforced by CHK_BlockTime).</li>
+ *   <li>No block is allowed to overlap with any other scheduled block across the system.</li>
  *   <li>Blocks cannot be deleted if they have submissions or are within 7 days of start.</li>
  * </ul>
  */
@@ -42,7 +43,7 @@ public class BlockServiceImpl implements BlockService {
     private static final String BLOCK_10 = "Block 10";
     private static final String BLOCK_3  = "Block 3";
     private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-    private static final DateTimeFormatter BLOCK_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
+    private static final DateTimeFormatter CONFLICT_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
     private final BlockRepository      blockRepository;
     private final ExamRepository       examRepository;
@@ -152,6 +153,7 @@ public class BlockServiceImpl implements BlockService {
      * <ol>
      *   <li>Block belongs to the given exam.</li>
      *   <li>Block.StartTime + EndTime fall within Exam.StartTime — Exam.EndTime.</li>
+     *   <li>Block does not overlap any scheduled block across all exams.</li>
      * </ol>
      */
     @Override
@@ -206,7 +208,7 @@ public class BlockServiceImpl implements BlockService {
             );
         }
 
-        validateNoOverlapWithinExam(examId, blockId, request.getStartTime(), request.getEndTime());
+        validateNoOverlapAcrossAllExams(block.getBlockId(), request.getStartTime(), request.getEndTime());
 
         // Apply updates
         block.setExamDate(request.getExamDate());
@@ -216,28 +218,6 @@ public class BlockServiceImpl implements BlockService {
         blockRepository.save(block);
         log.info("Updated schedule for {} of exam '{}'", block.getName(), exam.getName());
         return mapToResponse(block);
-    }
-
-    private void validateNoOverlapWithinExam(UUID examId, UUID blockId, OffsetDateTime startTime, OffsetDateTime endTime) {
-        List<Block> overlappingBlocks = blockRepository.findOverlappingBlocksInExam(examId, blockId, startTime, endTime);
-        if (overlappingBlocks.isEmpty()) {
-            return;
-        }
-
-        Block conflictingBlock = overlappingBlocks.get(0);
-        throw new IllegalArgumentException(buildOverlappingBlockMessage(conflictingBlock));
-    }
-
-    private String buildOverlappingBlockMessage(Block conflictingBlock) {
-        String startLabel = formatBlockTime(conflictingBlock.getStartTime());
-        String endLabel = formatBlockTime(conflictingBlock.getEndTime());
-        return "Có block thi \"" + conflictingBlock.getName() + "\" diễn ra vào "
-                + startLabel + " đến " + endLabel
-                + ", vui lòng chọn khoảng thời gian khác.";
-    }
-
-    private String formatBlockTime(OffsetDateTime time) {
-        return time.atZoneSameInstant(VIETNAM_ZONE).format(BLOCK_TIME_FORMATTER);
     }
 
     // ─── DELETE ───────────────────────────────────────────────────────────
@@ -280,6 +260,28 @@ public class BlockServiceImpl implements BlockService {
 
         blockRepository.delete(block);
         log.info("Deleted block '{}' from exam '{}'", block.getName(), block.getExam().getName());
+    }
+
+    private void validateNoOverlapAcrossAllExams(UUID currentBlockId, OffsetDateTime startTime, OffsetDateTime endTime) {
+        List<Block> overlappingBlocks = blockRepository.findOverlappingBlocksAcrossAllExams(currentBlockId, startTime, endTime);
+        if (overlappingBlocks.isEmpty()) {
+            return;
+        }
+
+        Block conflictingBlock = overlappingBlocks.get(0);
+        throw new IllegalArgumentException(
+                "Đã có block thi \"" + conflictingBlock.getName() + "\" diễn ra vào "
+                + formatConflictDateTime(conflictingBlock.getStartTime())
+                + " đến "
+                + formatConflictDateTime(conflictingBlock.getEndTime())
+                + ", ở kì "
+                + (conflictingBlock.getExam() != null ? conflictingBlock.getExam().getName() : "Không rõ")
+                + " vui lòng chọn khoảng thời gian khác."
+        );
+    }
+
+    private String formatConflictDateTime(OffsetDateTime value) {
+        return value.atZoneSameInstant(VIETNAM_ZONE).format(CONFLICT_TIME_FORMATTER);
     }
 
     // ─── MAPPING ──────────────────────────────────────────────────────────
