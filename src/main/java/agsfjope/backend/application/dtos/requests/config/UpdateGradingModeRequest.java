@@ -78,4 +78,17 @@ public class UpdateGradingModeRequest {
         }
         return testCaseWeight.add(oopWeight).compareTo(new BigDecimal("100")) == 0;
     }
+
+    /**
+     * Cross-field validation to ensure both oopCommentOnly and failIfOopViolated are not enabled at the same time.
+     *
+     * @return true when not both are true
+     */
+    @AssertTrue(message = "Không thể đồng thời bật 'Chỉ nhận xét OOP' và 'Rớt nếu vi phạm OOP'")
+    public boolean isOopRulesValid() {
+        if (oopCommentOnly == null || failIfOopViolated == null) {
+            return true;
+        }
+        return !(oopCommentOnly && failIfOopViolated);
+    }
 }

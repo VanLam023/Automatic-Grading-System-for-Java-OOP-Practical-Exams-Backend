@@ -68,6 +68,9 @@ public class GradingModeConfigServiceImpl implements GradingModeConfigService {
                 if (total.compareTo(new BigDecimal("100")) != 0) {
                         throw new InvalidConfigException("MSG-80: Tổng trọng số TestCaseWeight + OopWeight phải bằng 100");
                 }
+                if (Boolean.TRUE.equals(request.getOopCommentOnly()) && Boolean.TRUE.equals(request.getFailIfOopViolated())) {
+                        throw new InvalidConfigException("Không thể đồng thời bật 'Chỉ nhận xét OOP' và 'Rớt nếu vi phạm OOP'");
+                }
 
                 gradingModeConfigRepository.findByMode(request.getMode())
                                 .ifPresent(existing -> {
@@ -97,6 +100,9 @@ public class GradingModeConfigServiceImpl implements GradingModeConfigService {
         BigDecimal total = request.getTestCaseWeight().add(request.getOopWeight());
         if (total.compareTo(new BigDecimal("100")) != 0) {
             throw new InvalidConfigException("MSG-80: Tổng trọng số TestCaseWeight + OopWeight phải bằng 100");
+        }
+        if (Boolean.TRUE.equals(request.getOopCommentOnly()) && Boolean.TRUE.equals(request.getFailIfOopViolated())) {
+            throw new InvalidConfigException("Không thể đồng thời bật 'Chỉ nhận xét OOP' và 'Rớt nếu vi phạm OOP'");
         }
 
         GradingModeConfig config = gradingModeConfigRepository.findByMode(mode)

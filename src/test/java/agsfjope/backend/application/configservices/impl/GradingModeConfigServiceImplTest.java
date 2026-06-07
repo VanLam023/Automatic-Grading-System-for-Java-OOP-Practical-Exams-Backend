@@ -271,6 +271,24 @@ class GradingModeConfigServiceImplTest {
         verify(gradingModeConfigRepository).save(mode1Config);
     }
 
+    @Test
+    @DisplayName("[A] updateGradingMode - Throw InvalidConfigException khi cả oopCommentOnly và failIfOopViolated đều là true")
+    void updateGradingMode_BothOopRulesTrue_ThrowInvalidConfigException() {
+        // Arrange
+        UpdateGradingModeRequest request = buildValidRequest(
+                new BigDecimal("50.00"), new BigDecimal("50.00"));
+        request.setOopCommentOnly(true);
+        request.setFailIfOopViolated(true);
+
+        // Act & Assert
+        assertThatThrownBy(() -> service.updateGradingMode(GradingMode.MODE_2, request))
+                .isInstanceOf(InvalidConfigException.class)
+                .hasMessageContaining("Không thể đồng thời bật 'Chỉ nhận xét OOP' và 'Rớt nếu vi phạm OOP'");
+
+        verify(gradingModeConfigRepository, never()).save(any());
+    }
+
+
     // =========================================================================
     // setDefaultGradingMode()
     // =========================================================================
