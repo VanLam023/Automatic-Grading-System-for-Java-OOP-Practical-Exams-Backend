@@ -1,148 +1,91 @@
 # AGSFJOPE – Backend API Service
 
 > **Automated Practical Exam Evaluation & Grading System for Java OOP**  
-> *Hệ thống chấm điểm tự động bài thi thực hành Lập trình Hướng đối tượng Java (FPT University)*
+> *Core backend microservice powering automated practical exam evaluation and grading for FPT University's Java OOP curriculum.*
 
 [![Java 17](https://img.shields.io/badge/Java-17-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)](https://www.oracle.com/java/)
 [![Spring Boot 3.x](https://img.shields.io/badge/Spring_Boot-3.x-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Clean Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Hexagonal-blueviolet?style=for-the-badge)](#-kiến-trúc-hệ-thống)
-[![Unit Tests](https://img.shields.io/badge/Service_Tests-100%25_Coverage-success?style=for-the-badge&logo=junit5&logoColor=white)](#-chất-lượng-code--kiểm-thử-unit-test)
+[![Clean Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Hexagonal-blueviolet?style=for-the-badge)](#3-architecture--tech-stack)
+[![PayOS Ready](https://img.shields.io/badge/PayOS-FinTech_Integrated-0088CC?style=for-the-badge)](#4-key-engineering-highlights)
 
 ---
 
-## 📌 1. Dự án này là gì? (Project Overview)
+## 📌 1. Project Overview
 
-**AGSFJOPE Backend** là hệ thống xử lý trung tâm (Core Microservice/RESTful API) chịu trách nhiệm tự động hóa toàn bộ quy trình chấm điểm, đánh giá cấu trúc hướng đối tượng (OOP), quản lý kỳ thi, vận hành tài chính phúc khảo và ghi nhật ký hoạt động cho bài thi thực hành Java OOP.
+**AGSFJOPE Backend** is the core processing microservice (RESTful API) responsible for automating practical exam evaluations, enforcing Object-Oriented Programming (OOP) structural rules, managing exam blocks, processing financial wallet transactions, and maintaining system-wide audit logging for Java OOP practical exams.
 
-Hệ thống được thiết kế theo chuẩn **Clean Architecture / Hexagonal Architecture**, đáp ứng các tiêu chuẩn khắt khe về độ tin cậy, tính nhất quán, khả năng mở rộng và hiệu năng xử lý cao.
-
----
-
-## 💡 2. Dùng để làm gì? (Problem Solved & Value)
-
-Trong môi trường đào tạo CNTT, việc chấm bài thi lập trình Java OOP thủ công gặp nhiều thách thức:
-- **Tốn thời gian & công sức**: Giảng viên phải mở từng project, tải dependency, chạy test thủ công cho hàng trăm sinh viên.
-- **Tính cảm quan & Thiếu nhất quán**: Đánh giá vi phạm chuẩn OOP (encapsulated fields, interface implementation, override annotations...) dễ bị bỏ sót hoặc không đồng đều giữa các giảng viên.
-- **Quy trình phúc khảo chậm trễ**: Xử lý thu phí, phân công chấm lại và hoàn tiền diễn ra thủ công.
-
-**Giải pháp của AGSFJOPE Backend:**
-- ⚡ **Chấm tự động siêu tốc**: Rút ngắn thời gian chấm toàn khóa thi từ **vài ngày xuống còn vài giây**.
-- 🎯 **Đánh giá chuẩn xác 100%**: Kết hợp giữa **Chạy Test Case tự động** và **Engine Phân tích Cấu trúc AST (JavaParser)** để bắt chính xác từng lỗi vi phạm OOP.
-- 💳 **Tự động hóa Fintech & Ví điện tử**: Tích hợp thanh toán QR PayOS, trừ phí ví khi tạo phúc khảo và **hoàn tiền tự động vào ví sinh viên** ngay khi phúc khảo được chấp thuận.
+Built following **Clean Architecture / Hexagonal Architecture** principles, the system delivers exceptional reliability, strict evaluation consistency, fault tolerance, and high-throughput concurrent batch grading capabilities.
 
 ---
 
-## 🏗️ 3. Kiến trúc & Công nghệ (Architecture & Tech Stack)
+## 💡 2. Problem Solved & Core Value
 
-### 🧱 Mô hình Clean Architecture (Ports & Adapters)
-Hệ thống phân tách tuyệt đối giữa Domain Logic và các Infrastructure bên ngoài:
+In IT education, evaluating practical Java OOP programming exams manually presents significant operational hurdles:
+- **Time-Consuming & Labor-Intensive**: Instructors must manually unpack projects, configure pre-compiled dependencies, and execute test suites individually for hundreds of students.
+- **Subjective & Inconsistent Feedback**: Compliance checks for OOP standards (encapsulated fields, interface implementations, mandatory `@Override` annotations) are easily overlooked or inconsistently enforced across different graders.
+- **Manual & Opaque Appeals Process**: Fee collection, regrading re-assignment, and refund management traditionally rely on fragmented, manual workflows.
+
+**AGSFJOPE Backend Solution:**
+- ⚡ **High-Speed Automated Evaluation**: Reduces batch grading processing time from **days down to seconds**.
+- 🎯 **100% Deterministic & Objective Scoring**: Blends **automated Sandbox Test Case execution** with a custom **JavaParser AST Analysis Engine** to detect structural OOP violations with absolute precision.
+- 💳 **Automated FinTech & Wallet Lifecycle**: Seamlessly integrates PayOS QR payment gateways, debits student wallets upon appeal submission, and **automatically issues refunds** directly to student wallets upon approved appeals.
+
+---
+
+## 🏗️ 3. Architecture & Tech Stack
+
+### 🧱 Clean Architecture (Ports & Adapters)
+The backend maintains strict isolation between Core Domain Logic and external Infrastructure adapters:
 
 ```txt
 agsfjope.backend/
 ├── presentation/      # REST Controllers, Global Exception Handlers, DTO Requests/Responses
-├── application/       # UseCases/Services, DTOs, Ports (Inbound & Outbound Interfaces)
-├── core/              # Domain Entities, Repositories Interfaces, Enums, Custom Exceptions
+├── application/       # Use Cases/Services, DTOs, Ports (Inbound & Outbound Interfaces)
+├── core/              # Domain Entities, Repository Interfaces, Enums, Custom Exceptions
 ├── infrastructure/    # JPA Implementations, JavaParser AST Analyzers, AI Adapters, PayOS, MinIO/Supabase
 └── configuration/     # Security (JWT), Async/ThreadPool, Swagger Javadoc, Storage, Database Flyway
 ```
 
-### 🛠️ Tech Stack Chính
-- **Core Framework**: Java 17, Spring Boot 3.x, Spring Security, Spring Data JPA, Spring AOP.
-- **Database & Migration**: PostgreSQL 15, Flyway Migration (V1~V18).
+### 🛠️ Core Technology Stack
+- **Framework & Core**: Java 17, Spring Boot 3.x, Spring Security, Spring Data JPA, Spring AOP.
+- **Database & Schema**: PostgreSQL 15, Flyway Database Migration (V1~V18).
 - **Static Analysis Engine**: JavaParser AST (Abstract Syntax Tree), Java Reflection API.
-- **Storage & Cloud**: Supabase Storage / MinIO S3 Object Storage API.
-- **Payment & FinTech**: PayOS API (QR Code Payment, Webhook Signature HMAC-SHA256).
-- **AI Integration**: Strategy Pattern cho Gemini API, OpenAI API, Claude API.
-- **Documentation**: Therapi Runtime Javadoc + SpringDoc OpenAPI.
+- **Cloud & Object Storage**: Supabase Storage / MinIO S3 Object Storage API.
+- **FinTech Payment Gateway**: PayOS API (Dynamic QR Code Generation, Webhook Signature Verification with HMAC-SHA256).
+- **AI Integration**: Strategy Pattern supporting Gemini API, OpenAI API, and Claude API.
+- **API Documentation**: Therapi Runtime Javadoc + SpringDoc OpenAPI.
 
 ---
 
-## ⭐ 4. Điểm nhấn Kĩ thuật Nổi bật (Engineering Highlights)
+## ⭐ 4. Key Engineering Highlights
 
-### 1️⃣ Deterministic JavaParser AST Grading Engine (Chấm điểm Cấu trúc OOP không dùng AI)
-Engine phân tích cú pháp tĩnh dựa trên cây cú pháp trừu tượng (AST) của **JavaParser**, hỗ trợ kiểm tra định lượng 9 tiêu chí OOP mà không cần phụ thuộc vào AI:
-- `ClassExistsHandler` & `InterfaceExistsHandler`: Kiểm tra sự tồn tại của Lớp và Giao diện.
-- `FieldCheckHandler`: Kiểm tra thuộc tính, kiểu dữ liệu, modifier (`private`, `protected`).
-- `MethodSignatureHandler`: Phân tích chữ ký phương thức và **kiểm tra bắt buộc annotation `@Override`**.
-- `ConstructorHandler`, `GetterSetterHandler`: Kiểm tra tính đóng gói (Encapsulation).
-- `ExtendsHandler` & `ImplementsHandler`: Kiểm tra quan hệ Kế thừa & Đa hình.
-- `NamingConventionHandler`: Kiểm tra quy chuẩn đặt tên Java (CamelCase, PascalCase).
+### 1️⃣ Deterministic JavaParser AST Grading Engine
+A static code analysis engine powered by **JavaParser** (Abstract Syntax Tree), delivering quantitative evaluation for 9 core OOP structural criteria without relying on external AI models:
+- `ClassExistsHandler` & `InterfaceExistsHandler`: Verifies existence and visibility of required Classes and Interfaces.
+- `FieldCheckHandler`: Validates field attributes, data types, and access modifiers (`private`, `protected`).
+- `MethodSignatureHandler`: Analyzes method signatures and **enforces mandatory `@Override` annotations**.
+- `ConstructorHandler` & `GetterSetterHandler`: Verifies Encapsulation standards.
+- `ExtendsHandler` & `ImplementsHandler`: Validates Inheritance & Polymorphism hierarchies.
+- `NamingConventionHandler`: Enforces Java Naming Conventions (CamelCase, PascalCase).
 
-### 2️⃣ Multi-LLM Strategy Pattern (Chấm điểm hỗ trợ bởi AI)
-Thiết kế theo **Strategy Pattern** cho phép hệ thống linh hoạt chuyển đổi hoặc fallback giữa các nhà cung cấp LLM (Gemini, OpenAI, Claude) kèm Prompt Engineering tối ưu để sinh nhận xét mã nguồn tự động.
+### 2️⃣ Multi-LLM Strategy Pattern
+Designed using the **Strategy Pattern** to enable dynamic switching and fallback mechanisms across multiple LLM providers (Gemini, OpenAI, Claude), leveraging tailored Prompt Engineering to generate qualitative code reviews.
 
 ### 3️⃣ Isolated Sandbox Execution & Anti-Tampering Security
-- **Sandbox Executor**: Biên dịch và chạy test cases sinh viên trong môi trường isolated cách ly với giới hạn thời gian (Timeout) và bộ nhớ khắt khe.
-- **Anti-Tampering Checksum**: Tự động so sánh Checksum của các file `.class` tiền biên dịch (precompiled template interfaces/classes của đề thi). Nếu phát hiện sinh viên chỉnh sửa file gốc của đề thi -> **Tự động kích hoạt điểm 0 bài nộp**.
+- **Sandbox Executor**: Compiles and executes student test cases inside an isolated runtime sandbox with strict memory limits and execution timeouts.
+- **Anti-Tampering Checksum Verification**: Automatically compares cryptographic checksums of pre-compiled template `.class` files provided in exam papers. If student code modifies original exam paper binaries, the submission is **automatically awarded 0 points**.
 
-### 4️⃣ Concurrency & Parallel Submission Batch Processing
-- Xử lý hàng trăm bài nộp song song bằng `CompletableFuture.runAsync()`.
-- Kiểm soát tài nguyên máy chủ thông qua `Semaphore(3)` giới hạn tối đa 3 bài nộp được chấm đồng thời trong thread pool riêng biệt.
-- **Pre-fetch Transaction Isolation**: Đọc cấu hình bài thi và đề thi trong Transaction độc lập trước khi đẩy vào worker thread, tránh xung đột ORM Hibernate Session.
+### 4️⃣ Concurrency & High-Throughput Parallel Batch Grading
+- Asynchronously processes hundreds of submissions in parallel using `CompletableFuture.runAsync()`.
+- Controls server hardware load via `Semaphore(3)` throttling, permitting a maximum of 3 concurrent submission evaluations within dedicated thread pools.
+- **Pre-fetch Transaction Isolation**: Pre-loads exam metadata in isolated transactions prior to worker thread dispatch, preventing Hibernate Session concurrency conflicts.
 
-### 5️⃣ Hệ thống Ví điện tử & Tích hợp Cổng thanh toán PayOS
-- Hỗ trợ Nạp tiền ví qua PayOS Dynamic QR Code với Webhook xác thực chữ ký an toàn.
-- Vòng đời giao dịch ví rõ ràng: `DEPOSIT`, `APPEAL_PAYMENT`, `APPEAL_REFUND`, `WITHDRAWAL`.
-- Tự động trừ tiền ví khi sinh viên phúc khảo và **tự động hoàn tiền vào ví sinh viên** nếu đơn phúc khảo được Exam Staff duyệt **APPROVED**.
+### 5️⃣ Digital Wallet & PayOS FinTech Integration
+- Real-time wallet top-ups via PayOS Dynamic QR Codes backed by cryptographic Webhook signature verification.
+- Complete financial transaction lifecycle tracking: `DEPOSIT`, `APPEAL_PAYMENT`, `APPEAL_REFUND`, and `WITHDRAWAL`.
+- Automatic wallet debit upon appeal creation and **instant automated refund credit** when an appeal is approved (`APPROVED`) by Exam Staff.
 
-### 6️⃣ AOP Audit Logging & Security System
-- Sử dụng **Spring AOP (`@Auditable`)** ghi nhận vết mọi thao tác nhạy cảm (Tạo đề thi, sửa điểm, đổi cấu hình hệ thống, duyệt rút tiền) vào bảng `AuditLogs` bất đồng bộ mà không ảnh hưởng latency của API.
-- Cấu hình SMTP Email linh hoạt đọc trực tiếp từ Database (`SystemConfigs`), thay đổi cấu hình mail không cần khởi động lại Server.
-
----
-
-## 🧪 5. Chất lượng Code & Kiểm thử (Unit Test Coverage)
-
-Dự án áp dụng quy chuẩn kiểm thử diện rộng cho toàn bộ tầng **Service Implementation (`*ServiceImpl.java`)**:
-- Áp dụng ma trận Test Case **Decision Table**: (N) Normal, (B) Boundary, (A) Abnormal.
-- Bao phủ 100% các Use Cases chính: `AuthService`, `BlockService`, `ExamPaperService`, `SubmissionService`, `GradingService`, `StaffAppealService`, `LecturerAppealService`, `WalletService`, `NotificationService`, `ExamStatisticsService`.
-- Tự động sinh báo cáo kiểm thử đạt chuẩn mẫu báo cáo kỹ thuật.
-
----
-
-## 🚀 6. Hướng dẫn Cài đặt & Chạy ứng dụng
-
-### Yêu cầu hệ thống
-- Java Development Kit (JDK) 17+
-- Apache Maven 3.8+
-- PostgreSQL 15+
-- Docker & Docker Compose (Tùy chọn)
-
-### Các bước khởi chạy
-
-1. **Clone Repository**
-   ```bash
-   git clone https://github.com/VanLam023/AGSFJOPE-Backend.git
-   cd AGSFJOPE-Backend
-   ```
-
-2. **Cấu hình Biến Môi trường**
-   Tạo file `src/main/resources/application-local.yml` hoặc thiết lập môi trường:
-   ```yaml
-   spring:
-     datasource:
-       url: jdbc:postgresql://localhost:5432/oop_exam_db
-       username: postgres
-       password: your_password
-   ```
-
-3. **Biên dịch & Khởi chạy**
-   ```bash
-   # Biên dịch dự án và chạy Flyway DB Migration
-   mvn clean package -DskipTests
-
-   # Khởi chạy ứng dụng
-   mvn spring-boot:run
-   ```
-
-4. **Truy cập Swagger API Documentation**
-   Sau khi server khởi động (mặc định port `8080`):
-   `http://localhost:8080/swagger-ui.html`
-
----
-
-## 📝 License & Contact
-- **Project**: FPT University Capstone Project
-- **Authors**: AGSFJOPE Development Team
-- **Contact**: `lamtvse173173@fpt.edu.vn`
+### 6️⃣ AOP Audit Logging & Dynamic System Security
+- Utilizes **Spring AOP (`@Auditable`)** to asynchronously log sensitive system operations (exam paper creation, score overrides, system configuration updates, withdrawal approvals) into `AuditLogs` without affecting API latency.
+- Dynamic SMTP Email configuration loaded directly from Database (`SystemConfigs`), allowing instant email credential updates without requiring server restarts.
